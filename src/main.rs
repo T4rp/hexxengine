@@ -75,135 +75,139 @@ impl VulkanContext {
         let raw_window_handle = window.window_handle().unwrap().as_raw();
         let raw_display_handle = window.display_handle().unwrap().as_raw();
 
-        unsafe {
-            let entry = Entry::load().unwrap();
-            let instance = Self::create_instance(&entry, raw_display_handle);
-            let surface_fn = ash::khr::surface::Instance::new(&entry, &instance);
+        let entry = unsafe { Entry::load().unwrap() };
+        let instance = Self::create_instance(&entry, raw_display_handle);
+        let surface_fn = ash::khr::surface::Instance::new(&entry, &instance);
 
-            let surface = ash_window::create_surface(
+        let surface = unsafe {
+            ash_window::create_surface(
                 &entry,
                 &instance,
                 raw_display_handle,
                 raw_window_handle,
                 None,
             )
+            .unwrap()
+        };
+
+        let physical_devices = unsafe { instance.enumerate_physical_devices().unwrap() };
+
+        // TODO: improve selection method
+        let physical_device = physical_devices[0];
+        let queue_family_properties =
+            unsafe { instance.get_physical_device_queue_family_properties(physical_device) };
+
+        let graphics_queue_index = queue_family_properties
+            .iter()
+            .enumerate()
+            .find_map(|(i, &props)| {
+                if props.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
+                    Some(i as u32)
+                } else {
+                    None
+                }
+            })
             .unwrap();
 
-            let physical_devices = instance.enumerate_physical_devices().unwrap();
+        let device_queue_create_infos = &[vk::DeviceQueueCreateInfo::default()
+            .queue_family_index(graphics_queue_index)
+            .queue_priorities(&[0.5])];
 
-            // TODO: improve selection method
-            let physical_device = physical_devices[0];
-            let queue_family_properties =
-                instance.get_physical_device_queue_family_properties(physical_device);
+        let device_extensions = &[
+            vk::KHR_SWAPCHAIN_NAME.as_ptr(),
+            vk::KHR_SYNCHRONIZATION2_NAME.as_ptr(),
+            vk::KHR_CREATE_RENDERPASS2_NAME.as_ptr(),
+        ];
 
-            let graphics_queue_index = queue_family_properties
-                .iter()
-                .enumerate()
-                .find_map(|(i, &props)| {
-                    if props.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
-                        Some(i as u32)
-                    } else {
-                        None
-                    }
-                })
-                .unwrap();
+        let device_create_info = vk::DeviceCreateInfo::default()
+            .queue_create_infos(device_queue_create_infos)
+            .enabled_extension_names(device_extensions);
 
-            let device_queue_create_infos = &[vk::DeviceQueueCreateInfo::default()
-                .queue_family_index(graphics_queue_index)
-                .queue_priorities(&[0.5])];
-
-            let device_extensions = &[
-                vk::KHR_SWAPCHAIN_NAME.as_ptr(),
-                vk::KHR_SYNCHRONIZATION2_NAME.as_ptr(),
-                vk::KHR_CREATE_RENDERPASS2_NAME.as_ptr(),
-            ];
-
-            let device_create_info = vk::DeviceCreateInfo::default()
-                .queue_create_infos(device_queue_create_infos)
-                .enabled_extension_names(device_extensions);
-
-            let device = instance
+        let device = unsafe {
+            instance
                 .create_device(physical_device, &device_create_info, None)
-                .unwrap();
+                .unwrap()
+        };
 
-            let graphics_queue = device.get_device_queue(graphics_queue_index, 0);
+        let graphics_queue = unsafe { device.get_device_queue(graphics_queue_index, 0) };
 
-            let all_surface_formats = surface_fn
+        let all_surface_formats = unsafe {
+            surface_fn
                 .get_physical_device_surface_formats(physical_device, surface)
-                .unwrap();
+                .unwrap()
+        };
 
-            let surface_format = all_surface_formats
-                .into_iter()
-                .find(|&format| {
-                    format.format == vk::Format::B8G8R8A8_SRGB
-                        && format.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
-                })
-                .unwrap();
+        let surface_format = all_surface_formats
+            .into_iter()
+            .find(|&format| {
+                format.format == vk::Format::B8G8R8A8_SRGB
+                    && format.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
+            })
+            .unwrap();
 
-            let (swapchain, swapchain_images, swapchain_image_views) = Self::create_swapchain(
-                &entry,
-                &instance,
-                &device,
-                physical_device,
-                surface,
-                surface_format,
-                &window,
-            );
+        let (swapchain, swapchain_images, swapchain_image_views) = Self::create_swapchain(
+            &entry,
+            &instance,
+            &device,
+            physical_device,
+            surface,
+            surface_format,
+            &window,
+        );
 
-            Self {
-                entry,
-                instance,
-                surface,
-                device,
-            }
+        Self {
+            entry,
+            instance,
+            surface,
+            device,
         }
     }
 
     fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> ash::Instance {
+        let mut extensions = vec![ash::ext::debug_utils::NAME.as_ptr()];
+        let mut validation_layers = vec![];
+
+        if USE_VALIDATION_LAYERS {
+            validation_layers.push(c"VK_LAYER_KHRONOS_validation".as_ptr())
+        }
+
+        let surface_extensions =
+            ash_window::enumerate_required_extensions(raw_display_handle).unwrap();
+
+        extensions.extend_from_slice(surface_extensions);
+
+        let appinfo = ApplicationInfo::default()
+            .application_name(c"HexxEngine")
+            .api_version(ash::vk::API_VERSION_1_3);
+
+        let create_info = vk::InstanceCreateInfo::default()
+            .application_info(&appinfo)
+            .enabled_extension_names(&extensions)
+            .enabled_layer_names(&validation_layers);
+
+        let instance = unsafe { entry.create_instance(&create_info, None).unwrap() };
+        let debug_utils_fn = ash::ext::debug_utils::Instance::new(&entry, &instance);
+
+        let messager_create_info = DebugUtilsMessengerCreateInfoEXT::default()
+            .message_severity(
+                vk::DebugUtilsMessageSeverityFlagsEXT::ERROR
+                    | vk::DebugUtilsMessageSeverityFlagsEXT::WARNING
+                    | vk::DebugUtilsMessageSeverityFlagsEXT::INFO,
+            )
+            .message_type(
+                vk::DebugUtilsMessageTypeFlagsEXT::GENERAL
+                    | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION
+                    | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE,
+            )
+            .pfn_user_callback(Some(debug_messager_callback));
+
         unsafe {
-            let mut extensions = vec![ash::ext::debug_utils::NAME.as_ptr()];
-            let mut validation_layers = vec![];
-
-            if USE_VALIDATION_LAYERS {
-                validation_layers.push(c"VK_LAYER_KHRONOS_validation".as_ptr())
-            }
-
-            let surface_extensions =
-                ash_window::enumerate_required_extensions(raw_display_handle).unwrap();
-
-            extensions.extend_from_slice(surface_extensions);
-
-            let appinfo = ApplicationInfo::default()
-                .application_name(c"HexxEngine")
-                .api_version(ash::vk::API_VERSION_1_3);
-
-            let create_info = vk::InstanceCreateInfo::default()
-                .application_info(&appinfo)
-                .enabled_extension_names(&extensions)
-                .enabled_layer_names(&validation_layers);
-
-            let instance = entry.create_instance(&create_info, None).unwrap();
-            let debug_utils_fn = ash::ext::debug_utils::Instance::new(&entry, &instance);
-
-            let messager_create_info = DebugUtilsMessengerCreateInfoEXT::default()
-                .message_severity(
-                    vk::DebugUtilsMessageSeverityFlagsEXT::ERROR
-                        | vk::DebugUtilsMessageSeverityFlagsEXT::WARNING
-                        | vk::DebugUtilsMessageSeverityFlagsEXT::INFO,
-                )
-                .message_type(
-                    vk::DebugUtilsMessageTypeFlagsEXT::GENERAL
-                        | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION
-                        | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE,
-                )
-                .pfn_user_callback(Some(debug_messager_callback));
-
             debug_utils_fn
                 .create_debug_utils_messenger(&messager_create_info, None)
-                .unwrap();
+                .unwrap()
+        };
 
-            instance
-        }
+        instance
     }
 
     fn create_swapchain(
@@ -218,73 +222,75 @@ impl VulkanContext {
         let surface_fn = ash::khr::surface::Instance::new(entry, instance);
         let swapchain_fn = ash::khr::swapchain::Device::new(instance, device);
 
-        unsafe {
-            let surface_capabilities = surface_fn
+        let surface_capabilities = unsafe {
+            surface_fn
                 .get_physical_device_surface_capabilities(physical_device, surface)
-                .unwrap();
+                .unwrap()
+        };
 
-            let surface_min_image_extent = surface_capabilities.min_image_extent;
-            let surface_max_image_extent = surface_capabilities.max_image_extent;
+        let surface_min_image_extent = surface_capabilities.min_image_extent;
+        let surface_max_image_extent = surface_capabilities.max_image_extent;
 
+        let window_dimensions = window.inner_position().unwrap();
+
+        let image_extent = if surface_max_image_extent.width != u32::MAX {
+            surface_max_image_extent
+        } else {
             let window_dimensions = window.inner_position().unwrap();
+            vk::Extent2D {
+                width: window_dimensions.x as u32,
+                height: window_dimensions.y as u32,
+            }
+        };
 
-            let image_extent = if surface_max_image_extent.width != u32::MAX {
-                surface_max_image_extent
-            } else {
-                let window_dimensions = window.inner_position().unwrap();
-                vk::Extent2D {
-                    width: window_dimensions.x as u32,
-                    height: window_dimensions.y as u32,
-                }
-            };
+        let create_swapchain_info = vk::SwapchainCreateInfoKHR::default()
+            .surface(surface)
+            .image_format(surface_format.format)
+            .image_color_space(surface_format.color_space)
+            .present_mode(vk::PresentModeKHR::FIFO)
+            .image_array_layers(1)
+            .min_image_count(surface_capabilities.min_image_count + 1)
+            .pre_transform(surface_capabilities.current_transform)
+            .clipped(true)
+            .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
+            .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
+            .image_extent(image_extent)
+            .old_swapchain(vk::SwapchainKHR::null());
 
-            let create_swapchain_info = vk::SwapchainCreateInfoKHR::default()
-                .surface(surface)
-                .image_format(surface_format.format)
-                .image_color_space(surface_format.color_space)
-                .present_mode(vk::PresentModeKHR::FIFO)
-                .image_array_layers(1)
-                .min_image_count(surface_capabilities.min_image_count + 1)
-                .pre_transform(surface_capabilities.current_transform)
-                .clipped(true)
-                .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
-                .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
-                .image_extent(image_extent)
-                .old_swapchain(vk::SwapchainKHR::null());
-
-            let swapchain = swapchain_fn
+        let swapchain = unsafe {
+            swapchain_fn
                 .create_swapchain(&create_swapchain_info, None)
-                .unwrap();
+                .unwrap()
+        };
 
-            let swapchain_images = swapchain_fn.get_swapchain_images(swapchain).unwrap();
+        let swapchain_images = unsafe { swapchain_fn.get_swapchain_images(swapchain).unwrap() };
 
-            let image_views: Vec<vk::ImageView> = swapchain_images
-                .iter()
-                .map(|image| {
-                    let image_create_info = vk::ImageViewCreateInfo::default()
-                        .image(*image)
-                        .view_type(vk::ImageViewType::TYPE_2D)
-                        .format(surface_format.format)
-                        .components(vk::ComponentMapping {
-                            r: vk::ComponentSwizzle::IDENTITY,
-                            g: vk::ComponentSwizzle::IDENTITY,
-                            b: vk::ComponentSwizzle::IDENTITY,
-                            a: vk::ComponentSwizzle::IDENTITY,
-                        })
-                        .subresource_range(vk::ImageSubresourceRange {
-                            aspect_mask: vk::ImageAspectFlags::COLOR,
-                            base_mip_level: 0,
-                            level_count: 1,
-                            base_array_layer: 0,
-                            layer_count: 1,
-                        });
+        let image_views: Vec<vk::ImageView> = swapchain_images
+            .iter()
+            .map(|image| {
+                let image_create_info = vk::ImageViewCreateInfo::default()
+                    .image(*image)
+                    .view_type(vk::ImageViewType::TYPE_2D)
+                    .format(surface_format.format)
+                    .components(vk::ComponentMapping {
+                        r: vk::ComponentSwizzle::IDENTITY,
+                        g: vk::ComponentSwizzle::IDENTITY,
+                        b: vk::ComponentSwizzle::IDENTITY,
+                        a: vk::ComponentSwizzle::IDENTITY,
+                    })
+                    .subresource_range(vk::ImageSubresourceRange {
+                        aspect_mask: vk::ImageAspectFlags::COLOR,
+                        base_mip_level: 0,
+                        level_count: 1,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                    });
 
-                    device.create_image_view(&image_create_info, None).unwrap()
-                })
-                .collect();
+                unsafe { device.create_image_view(&image_create_info, None).unwrap() }
+            })
+            .collect();
 
-            (swapchain, swapchain_images, image_views)
-        }
+        (swapchain, swapchain_images, image_views)
     }
 }
 
