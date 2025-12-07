@@ -7,7 +7,7 @@ use ash::vk::{
     self, ApplicationInfo, DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT,
     DebugUtilsMessengerCallbackDataEXT, DebugUtilsMessengerCreateInfoEXT,
 };
-use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
@@ -66,6 +66,7 @@ struct VulkanContext {
     entry: Entry,
     instance: ash::Instance,
     surface: vk::SurfaceKHR,
+    device: ash::Device,
 }
 
 impl VulkanContext {
@@ -75,7 +76,67 @@ impl VulkanContext {
 
         unsafe {
             let entry = Entry::load().unwrap();
+            let instance = Self::create_instance(&entry, raw_display_handle);
 
+            let surface = ash_window::create_surface(
+                &entry,
+                &instance,
+                raw_display_handle,
+                raw_window_handle,
+                None,
+            )
+            .unwrap();
+
+            let physical_devices = instance.enumerate_physical_devices().unwrap();
+
+            // TODO: improve selection method
+            let physical_device = physical_devices[0];
+            let queue_family_properties =
+                instance.get_physical_device_queue_family_properties(physical_device);
+
+            let graphics_queue_index = queue_family_properties
+                .iter()
+                .enumerate()
+                .find_map(|(i, &props)| {
+                    if props.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
+                        Some(i as u32)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap();
+
+            let device_queue_create_infos = &[vk::DeviceQueueCreateInfo::default()
+                .queue_family_index(graphics_queue_index)
+                .queue_priorities(&[0.5])];
+
+            let device_extensions = &[
+                vk::KHR_SWAPCHAIN_NAME.as_ptr(),
+                vk::KHR_SYNCHRONIZATION2_NAME.as_ptr(),
+                vk::KHR_CREATE_RENDERPASS2_NAME.as_ptr(),
+            ];
+
+            let device_create_info = vk::DeviceCreateInfo::default()
+                .queue_create_infos(device_queue_create_infos)
+                .enabled_extension_names(device_extensions);
+
+            let device = instance
+                .create_device(physical_device, &device_create_info, None)
+                .unwrap();
+
+            let graphics_queue = device.get_device_queue(graphics_queue_index, 0);
+
+            Self {
+                entry,
+                instance,
+                surface,
+                device,
+            }
+        }
+    }
+
+    fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> ash::Instance {
+        unsafe {
             let mut extensions = vec![ash::ext::debug_utils::NAME.as_ptr()];
             let mut validation_layers = vec![];
 
@@ -117,20 +178,7 @@ impl VulkanContext {
                 .create_debug_utils_messenger(&messager_create_info, None)
                 .unwrap();
 
-            let surface = ash_window::create_surface(
-                &entry,
-                &instance,
-                raw_display_handle,
-                raw_window_handle,
-                None,
-            )
-            .unwrap();
-
-            Self {
-                entry,
-                instance,
-                surface,
-            }
+            instance
         }
     }
 }
