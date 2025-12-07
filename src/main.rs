@@ -8,6 +8,7 @@ use ash::vk::{
     DebugUtilsMessengerCallbackDataEXT, DebugUtilsMessengerCreateInfoEXT,
 };
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
+use winit::window;
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
@@ -77,6 +78,7 @@ impl VulkanContext {
         unsafe {
             let entry = Entry::load().unwrap();
             let instance = Self::create_instance(&entry, raw_display_handle);
+            let surface_fn = ash::khr::surface::Instance::new(&entry, &instance);
 
             let surface = ash_window::create_surface(
                 &entry,
@@ -125,6 +127,28 @@ impl VulkanContext {
                 .unwrap();
 
             let graphics_queue = device.get_device_queue(graphics_queue_index, 0);
+
+            let all_surface_formats = surface_fn
+                .get_physical_device_surface_formats(physical_device, surface)
+                .unwrap();
+
+            let surface_format = all_surface_formats
+                .into_iter()
+                .find(|&format| {
+                    format.format == vk::Format::B8G8R8A8_SRGB
+                        && format.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
+                })
+                .unwrap();
+
+            let (swapchain, swapchain_images, swapchain_image_views) = Self::create_swapchain(
+                &entry,
+                &instance,
+                &device,
+                physical_device,
+                surface,
+                surface_format,
+                &window,
+            );
 
             Self {
                 entry,
@@ -179,6 +203,87 @@ impl VulkanContext {
                 .unwrap();
 
             instance
+        }
+    }
+
+    fn create_swapchain(
+        entry: &ash::Entry,
+        instance: &ash::Instance,
+        device: &ash::Device,
+        physical_device: vk::PhysicalDevice,
+        surface: vk::SurfaceKHR,
+        surface_format: vk::SurfaceFormatKHR,
+        window: &Window,
+    ) -> (vk::SwapchainKHR, Vec<vk::Image>, Vec<vk::ImageView>) {
+        let surface_fn = ash::khr::surface::Instance::new(entry, instance);
+        let swapchain_fn = ash::khr::swapchain::Device::new(instance, device);
+
+        unsafe {
+            let surface_capabilities = surface_fn
+                .get_physical_device_surface_capabilities(physical_device, surface)
+                .unwrap();
+
+            let surface_min_image_extent = surface_capabilities.min_image_extent;
+            let surface_max_image_extent = surface_capabilities.max_image_extent;
+
+            let window_dimensions = window.inner_position().unwrap();
+
+            let image_extent = if surface_max_image_extent.width != u32::MAX {
+                surface_max_image_extent
+            } else {
+                let window_dimensions = window.inner_position().unwrap();
+                vk::Extent2D {
+                    width: window_dimensions.x as u32,
+                    height: window_dimensions.y as u32,
+                }
+            };
+
+            let create_swapchain_info = vk::SwapchainCreateInfoKHR::default()
+                .surface(surface)
+                .image_format(surface_format.format)
+                .image_color_space(surface_format.color_space)
+                .present_mode(vk::PresentModeKHR::FIFO)
+                .image_array_layers(1)
+                .min_image_count(surface_capabilities.min_image_count + 1)
+                .pre_transform(surface_capabilities.current_transform)
+                .clipped(true)
+                .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
+                .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
+                .image_extent(image_extent)
+                .old_swapchain(vk::SwapchainKHR::null());
+
+            let swapchain = swapchain_fn
+                .create_swapchain(&create_swapchain_info, None)
+                .unwrap();
+
+            let swapchain_images = swapchain_fn.get_swapchain_images(swapchain).unwrap();
+
+            let image_views: Vec<vk::ImageView> = swapchain_images
+                .iter()
+                .map(|image| {
+                    let image_create_info = vk::ImageViewCreateInfo::default()
+                        .image(*image)
+                        .view_type(vk::ImageViewType::TYPE_2D)
+                        .format(surface_format.format)
+                        .components(vk::ComponentMapping {
+                            r: vk::ComponentSwizzle::IDENTITY,
+                            g: vk::ComponentSwizzle::IDENTITY,
+                            b: vk::ComponentSwizzle::IDENTITY,
+                            a: vk::ComponentSwizzle::IDENTITY,
+                        })
+                        .subresource_range(vk::ImageSubresourceRange {
+                            aspect_mask: vk::ImageAspectFlags::COLOR,
+                            base_mip_level: 0,
+                            level_count: 1,
+                            base_array_layer: 0,
+                            layer_count: 1,
+                        });
+
+                    device.create_image_view(&image_create_info, None).unwrap()
+                })
+                .collect();
+
+            (swapchain, swapchain_images, image_views)
         }
     }
 }
