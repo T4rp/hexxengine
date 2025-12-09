@@ -18,6 +18,7 @@ use winit::{
 };
 
 const USE_VALIDATION_LAYERS: bool = true;
+const MAX_FRAMES: usize = 2;
 
 struct App {
     window: Option<Rc<Window>>,
@@ -61,6 +62,11 @@ unsafe extern "system" fn debug_messager_callback(
 
         vk::FALSE
     }
+}
+
+struct RenderFrame {
+    command_pool: vk::CommandPool,
+    command_buffer: vk::CommandBuffer,
 }
 
 struct VulkanContext {
@@ -117,6 +123,7 @@ impl VulkanContext {
             vk::KHR_SWAPCHAIN_NAME.as_ptr(),
             vk::KHR_SYNCHRONIZATION2_NAME.as_ptr(),
             vk::KHR_CREATE_RENDERPASS2_NAME.as_ptr(),
+            vk::KHR_DYNAMIC_RENDERING_NAME.as_ptr(),
         ];
 
         let device_create_info = vk::DeviceCreateInfo::default()
@@ -130,6 +137,8 @@ impl VulkanContext {
         };
 
         let graphics_queue = unsafe { device.get_device_queue(graphics_queue_index, 0) };
+
+        let render_frames = Self::create_render_frames(&device, graphics_queue_index);
 
         let all_surface_formats = unsafe {
             surface_fn
@@ -291,6 +300,39 @@ impl VulkanContext {
             .collect();
 
         (swapchain, swapchain_images, image_views)
+    }
+
+    fn create_render_frames(device: &ash::Device, queue_family_index: u32) {
+        let mut frames: Vec<RenderFrame> = (0..MAX_FRAMES)
+            .into_iter()
+            .map(|i| {
+                let command_pool_create_info = vk::CommandPoolCreateInfo::default()
+                    .queue_family_index(queue_family_index)
+                    .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
+
+                let command_pool = unsafe {
+                    device
+                        .create_command_pool(&command_pool_create_info, None)
+                        .unwrap()
+                };
+
+                let command_buffer_alloc_info = vk::CommandBufferAllocateInfo::default()
+                    .command_pool(command_pool)
+                    .level(vk::CommandBufferLevel::PRIMARY)
+                    .command_buffer_count(1);
+
+                let command_buffer = unsafe {
+                    device
+                        .allocate_command_buffers(&command_buffer_alloc_info)
+                        .unwrap()[0]
+                };
+
+                RenderFrame {
+                    command_pool,
+                    command_buffer,
+                }
+            })
+            .collect();
     }
 }
 
