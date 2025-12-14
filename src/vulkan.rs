@@ -1,11 +1,12 @@
 use std::borrow::Cow;
-use std::ffi;
 use std::rc::Rc;
+use std::{ffi, sync};
 
 use ash::Entry;
 use ash::vk::{
-    self, ApplicationInfo, DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT,
-    DebugUtilsMessengerCallbackDataEXT, DebugUtilsMessengerCreateInfoEXT,
+    self, ApplicationInfo, CommandBufferSubmitInfo, DebugUtilsMessageSeverityFlagsEXT,
+    DebugUtilsMessageTypeFlagsEXT, DebugUtilsMessengerCallbackDataEXT,
+    DebugUtilsMessengerCreateInfoEXT,
 };
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
@@ -38,6 +39,13 @@ unsafe extern "system" fn debug_messager_callback(
         println!(
             "{message_severity:?}:\n{message_type:?} [{message_id_name} ({message_id_number})] : {message}\n",
         );
+
+        if message_severity.contains(vk::DebugUtilsMessageSeverityFlagsEXT::ERROR)
+            || message_severity.contains(vk::DebugUtilsMessageSeverityFlagsEXT::WARNING)
+        {
+            let bt = std::backtrace::Backtrace::capture();
+            println!("Backtrace:\n{bt}");
+        }
 
         vk::FALSE
     }
@@ -96,7 +104,13 @@ impl VulkanContext {
             .iter()
             .enumerate()
             .find_map(|(i, &props)| {
-                if props.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
+                let surface_support = unsafe {
+                    surface_fn
+                        .get_physical_device_surface_support(physical_device, i as u32, surface)
+                        .unwrap_or(false)
+                };
+
+                if props.queue_flags.contains(vk::QueueFlags::GRAPHICS) && surface_support {
                     Some(i as u32)
                 } else {
                     None
@@ -115,9 +129,21 @@ impl VulkanContext {
             vk::KHR_DYNAMIC_RENDERING_NAME.as_ptr(),
         ];
 
+        let mut vk13_features = vk::PhysicalDeviceVulkan13Features::default()
+            .dynamic_rendering(true)
+            .synchronization2(true);
+
+        let mut vk12_features =
+            vk::PhysicalDeviceVulkan12Features::default().descriptor_indexing(true);
+
+        let mut physical_device_features = vk::PhysicalDeviceFeatures2::default()
+            .push_next(&mut vk13_features)
+            .push_next(&mut vk12_features);
+
         let device_create_info = vk::DeviceCreateInfo::default()
             .queue_create_infos(device_queue_create_infos)
-            .enabled_extension_names(device_extensions);
+            .enabled_extension_names(device_extensions)
+            .push_next(&mut physical_device_features);
 
         let device = unsafe {
             instance
@@ -170,18 +196,154 @@ impl VulkanContext {
         }
     }
 
+    fn transition_image(
+        &mut self,
+        command_buffer: vk::CommandBuffer,
+        image: vk::Image,
+        current_layout: vk::ImageLayout,
+        new_layout: vk::ImageLayout,
+    ) {
+        let aspect_mask = if current_layout == vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL {
+            vk::ImageAspectFlags::DEPTH
+        } else {
+            vk::ImageAspectFlags::COLOR
+        };
+
+        let image_barriers = &[vk::ImageMemoryBarrier2::default()
+            .src_stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)
+            .src_access_mask(vk::AccessFlags2::MEMORY_WRITE)
+            .dst_stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)
+            .dst_access_mask(vk::AccessFlags2::MEMORY_WRITE | vk::AccessFlags2::MEMORY_READ)
+            .old_layout(current_layout)
+            .new_layout(new_layout)
+            .subresource_range(vk::ImageSubresourceRange {
+                aspect_mask: aspect_mask,
+                base_mip_level: 0,
+                level_count: vk::REMAINING_MIP_LEVELS,
+                base_array_layer: 0,
+                layer_count: vk::REMAINING_ARRAY_LAYERS,
+            })
+            .image(image)];
+
+        let dep_info = vk::DependencyInfo::default().image_memory_barriers(image_barriers);
+
+        unsafe { self.device.cmd_pipeline_barrier2(command_buffer, &dep_info) };
+    }
+
     pub fn draw(&mut self) {
+        let swapchain_fn = ash::khr::swapchain::Device::new(&self.instance, &self.device);
         let current_frame = &self.render_frames[self.current_frame];
+        let command_buffer = current_frame.command_buffer;
+        let swapchain_semaphore = current_frame.swapchain_semaphore;
+        let render_semaphore = current_frame.render_semaphore;
+        let in_flight_fence = current_frame.in_flight_fence;
 
         unsafe {
             self.device
-                .wait_for_fences(&[current_frame.in_flight_fence], true, u64::MAX)
+                .wait_for_fences(&[in_flight_fence], true, u64::MAX)
                 .unwrap();
 
+            self.device.reset_fences(&[in_flight_fence]).unwrap();
+
+            let (image_index, should_recreate) = swapchain_fn
+                .acquire_next_image(
+                    self.swapchain,
+                    u64::MAX,
+                    swapchain_semaphore,
+                    vk::Fence::null(),
+                )
+                .unwrap();
+
+            let swapchain_image = self.swapchain_images[image_index as usize];
+
             self.device
-                .reset_fences(&[current_frame.in_flight_fence])
+                .reset_command_buffer(
+                    current_frame.command_buffer,
+                    vk::CommandBufferResetFlags::empty(),
+                )
+                .unwrap();
+
+            let command_buffer_being_info = vk::CommandBufferBeginInfo::default()
+                .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+
+            self.device
+                .begin_command_buffer(command_buffer, &command_buffer_being_info)
+                .unwrap();
+
+            self.transition_image(
+                command_buffer,
+                swapchain_image,
+                vk::ImageLayout::UNDEFINED,
+                vk::ImageLayout::GENERAL,
+            );
+
+            let clear_range = &[vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: vk::REMAINING_MIP_LEVELS,
+                base_array_layer: 0,
+                layer_count: vk::REMAINING_ARRAY_LAYERS,
+            }];
+
+            self.device.cmd_clear_color_image(
+                command_buffer,
+                swapchain_image,
+                vk::ImageLayout::GENERAL,
+                &vk::ClearColorValue {
+                    float32: [1.0, 0.0, 0.0, 1.0],
+                },
+                clear_range,
+            );
+
+            self.transition_image(
+                command_buffer,
+                swapchain_image,
+                vk::ImageLayout::GENERAL,
+                vk::ImageLayout::PRESENT_SRC_KHR,
+            );
+
+            self.device.end_command_buffer(command_buffer).unwrap();
+
+            let command_buffer_submit_info = &[vk::CommandBufferSubmitInfo::default()
+                .command_buffer(command_buffer)
+                .device_mask(0)];
+
+            let wait_info = &[vk::SemaphoreSubmitInfo::default()
+                .semaphore(swapchain_semaphore)
+                .stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT_KHR)
+                .device_index(0)
+                .value(0)];
+
+            let signal_info = &[vk::SemaphoreSubmitInfo::default()
+                .semaphore(render_semaphore)
+                .stage_mask(vk::PipelineStageFlags2::ALL_GRAPHICS)
+                .device_index(0)
+                .value(0)];
+
+            let submit_info = &[vk::SubmitInfo2::default()
+                .wait_semaphore_infos(wait_info)
+                .signal_semaphore_infos(signal_info)
+                .command_buffer_infos(command_buffer_submit_info)];
+
+            self.device
+                .queue_submit2(self.graphics_queue, submit_info, in_flight_fence)
+                .unwrap();
+
+            let swapchains = &[self.swapchain];
+            let wait_semaphores = &[render_semaphore];
+            let image_indices = &[image_index];
+
+            let present_info = vk::PresentInfoKHR::default()
+                .swapchains(swapchains)
+                .wait_semaphores(wait_semaphores)
+                .image_indices(image_indices);
+
+            swapchain_fn
+                .queue_present(self.graphics_queue, &present_info)
                 .unwrap();
         }
+
+        self.current_frame = (self.current_frame + 1) % MAX_FRAMES;
     }
 
     fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> ash::Instance {
@@ -249,7 +411,6 @@ impl VulkanContext {
                 .unwrap()
         };
 
-        let surface_min_image_extent = surface_capabilities.min_image_extent;
         let surface_max_image_extent = surface_capabilities.max_image_extent;
 
         let image_extent = if surface_max_image_extent.width != u32::MAX {
@@ -272,7 +433,7 @@ impl VulkanContext {
             .pre_transform(surface_capabilities.current_transform)
             .clipped(true)
             .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
-            .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
+            .image_usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::COLOR_ATTACHMENT)
             .image_extent(image_extent)
             .old_swapchain(vk::SwapchainKHR::null());
 
@@ -337,7 +498,8 @@ impl VulkanContext {
                         .unwrap()[0]
                 };
 
-                let semaphore_create_info = vk::SemaphoreCreateInfo::default();
+                let semaphore_create_info =
+                    vk::SemaphoreCreateInfo::default().flags(vk::SemaphoreCreateFlags::empty());
 
                 let fence_create_info =
                     vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
