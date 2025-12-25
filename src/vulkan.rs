@@ -1,6 +1,7 @@
 use std::borrow::Cow;
+use std::io::Cursor;
 use std::rc::Rc;
-use std::{ffi, sync};
+use std::{ffi, fs, sync};
 
 use ash::Entry;
 use ash::vk::{
@@ -71,6 +72,7 @@ pub struct VulkanContext {
     graphics_queue_family_index: u32,
     render_frames: Vec<RenderFrame>,
     current_frame: usize,
+    graphics_pipeline: vk::Pipeline,
 }
 
 impl VulkanContext {
@@ -179,6 +181,8 @@ impl VulkanContext {
             &window,
         );
 
+        let graphics_pipeline = Self::create_graphics_pipeline(&device);
+
         let current_frame: usize = 0;
 
         Self {
@@ -193,6 +197,7 @@ impl VulkanContext {
             swapchain_image_views,
             render_frames,
             current_frame,
+            graphics_pipeline,
         }
     }
 
@@ -530,5 +535,108 @@ impl VulkanContext {
             .collect();
 
         frames
+    }
+
+    fn create_shader_module(device: &ash::Device, data: &[u8]) -> vk::ShaderModule {
+        let mut cursor = Cursor::new(data);
+        let spv = ash::util::read_spv(&mut cursor).unwrap();
+
+        let create_info = vk::ShaderModuleCreateInfo::default().code(&spv);
+
+        unsafe { device.create_shader_module(&create_info, None).unwrap() }
+    }
+
+    fn create_graphics_pipeline(device: &ash::Device) -> vk::Pipeline {
+        let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default();
+
+        let pipeline_layout = unsafe {
+            device
+                .create_pipeline_layout(&pipeline_layout_info, None)
+                .unwrap()
+        };
+
+        let dynamic_states = &[vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
+
+        let dynamic_state_info =
+            vk::PipelineDynamicStateCreateInfo::default().dynamic_states(dynamic_states);
+
+        let viewports = &[vk::Viewport::default()];
+        let scissors = &[vk::Rect2D::default()];
+
+        let viewport_state_info = vk::PipelineViewportStateCreateInfo::default()
+            .viewports(viewports)
+            .scissors(scissors);
+
+        let vert_shader_code = fs::read("shaders/tri.vert.spv").unwrap();
+        let frag_shader_code = fs::read("shaders/tri.frag.spv").unwrap();
+
+        let vertex_shader = Self::create_shader_module(device, &vert_shader_code);
+        let fragment_shader = Self::create_shader_module(device, &frag_shader_code);
+
+        let vert_stage_info = vk::PipelineShaderStageCreateInfo::default()
+            .stage(vk::ShaderStageFlags::VERTEX)
+            .module(vertex_shader)
+            .name(c"main");
+
+        let frag_stage_info = vk::PipelineShaderStageCreateInfo::default()
+            .stage(vk::ShaderStageFlags::FRAGMENT)
+            .module(fragment_shader)
+            .name(c"main");
+
+        let shader_stages = &[vert_stage_info, frag_stage_info];
+
+        let vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default();
+
+        let input_assembly_state_info = vk::PipelineInputAssemblyStateCreateInfo::default()
+            .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
+            .primitive_restart_enable(false);
+
+        let rasterization_info = vk::PipelineRasterizationStateCreateInfo::default()
+            .depth_clamp_enable(false)
+            .polygon_mode(vk::PolygonMode::FILL)
+            .line_width(1.0)
+            .cull_mode(vk::CullModeFlags::BACK)
+            .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
+            .depth_bias_enable(false);
+
+        let multisample_info = vk::PipelineMultisampleStateCreateInfo::default()
+            .sample_shading_enable(false)
+            .rasterization_samples(vk::SampleCountFlags::TYPE_1);
+
+        let color_blender_state_info = vk::PipelineColorBlendStateCreateInfo::default();
+
+        let depth_stencil_state_info = vk::PipelineDepthStencilStateCreateInfo::default()
+            .depth_test_enable(false)
+            .depth_write_enable(false)
+            .depth_compare_op(vk::CompareOp::NEVER)
+            .depth_bounds_test_enable(false)
+            .stencil_test_enable(false)
+            .front(vk::StencilOpState::default())
+            .back(vk::StencilOpState::default())
+            .min_depth_bounds(0.0)
+            .max_depth_bounds(1.0);
+
+        let graphics_pipeline_create_info = &[vk::GraphicsPipelineCreateInfo::default()
+            .stages(shader_stages)
+            .vertex_input_state(&vertex_input_state_info)
+            .input_assembly_state(&input_assembly_state_info)
+            .dynamic_state(&dynamic_state_info)
+            .viewport_state(&viewport_state_info)
+            .rasterization_state(&rasterization_info)
+            .multisample_state(&multisample_info)
+            .color_blend_state(&color_blender_state_info)
+            .layout(pipeline_layout)
+            .depth_stencil_state(&depth_stencil_state_info)
+            .subpass(0)];
+
+        unsafe {
+            device
+                .create_graphics_pipelines(
+                    vk::PipelineCache::null(),
+                    graphics_pipeline_create_info,
+                    None,
+                )
+                .unwrap()[0]
+        }
     }
 }
