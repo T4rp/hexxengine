@@ -237,7 +237,7 @@ impl VulkanContext {
 
     pub fn draw(&mut self) {
         let swapchain_fn = ash::khr::swapchain::Device::new(&self.instance, &self.device);
-        let current_frame = &self.render_frames[self.current_frame];
+        let current_frame = &self.render_frames[self.current_frame % MAX_FRAMES];
         let command_buffer = current_frame.command_buffer;
         let swapchain_semaphore = current_frame.swapchain_semaphore;
         let render_semaphore = current_frame.render_semaphore;
@@ -348,7 +348,7 @@ impl VulkanContext {
                 .unwrap();
         }
 
-        self.current_frame = (self.current_frame + 1) % MAX_FRAMES;
+        self.current_frame = self.current_frame + 1;
     }
 
     fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> ash::Instance {
