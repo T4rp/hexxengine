@@ -642,7 +642,7 @@ impl VulkanContext {
             .polygon_mode(vk::PolygonMode::FILL)
             .line_width(1.0)
             .cull_mode(vk::CullModeFlags::BACK)
-            .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
+            .front_face(vk::FrontFace::CLOCKWISE)
             .depth_bias_enable(false);
 
         let multisample_info = vk::PipelineMultisampleStateCreateInfo::default()
@@ -675,7 +675,8 @@ impl VulkanContext {
 
         let color_attachment_formats = [surface_format.format];
         let mut rendering_create_info = vk::PipelineRenderingCreateInfo::default()
-            .color_attachment_formats(&color_attachment_formats);
+            .color_attachment_formats(&color_attachment_formats)
+            .depth_attachment_format(vk::Format::D32_SFLOAT);
 
         let graphics_pipeline_create_info = &[vk::GraphicsPipelineCreateInfo::default()
             .stages(shader_stages)
