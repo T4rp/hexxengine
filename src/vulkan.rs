@@ -1,13 +1,13 @@
 use std::borrow::Cow;
 use std::io::Cursor;
 use std::rc::Rc;
-use std::{ffi, fs, sync};
+use std::{ffi, fs};
 
 use ash::Entry;
+use ash::vk::ApplicationInfo;
 use ash::vk::{
-    self, ApplicationInfo, CommandBufferSubmitInfo, DebugUtilsMessageSeverityFlagsEXT,
-    DebugUtilsMessageTypeFlagsEXT, DebugUtilsMessengerCallbackDataEXT,
-    DebugUtilsMessengerCreateInfoEXT,
+    self, DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT,
+    DebugUtilsMessengerCallbackDataEXT, DebugUtilsMessengerCreateInfoEXT,
 };
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
@@ -73,6 +73,8 @@ pub struct VulkanContext {
     render_frames: Vec<RenderFrame>,
     current_frame: usize,
     graphics_pipeline: vk::Pipeline,
+    surface_format: vk::SurfaceFormatKHR,
+    swapchain_extent: vk::Extent2D,
 }
 
 impl VulkanContext {
@@ -171,17 +173,18 @@ impl VulkanContext {
             })
             .unwrap();
 
-        let (swapchain, swapchain_images, swapchain_image_views) = Self::create_swapchain(
-            &entry,
-            &instance,
-            &device,
-            physical_device,
-            surface,
-            surface_format,
-            &window,
-        );
+        let (swapchain, swapchain_images, swapchain_image_views, swapchain_extent) =
+            Self::create_swapchain(
+                &entry,
+                &instance,
+                &device,
+                physical_device,
+                surface,
+                surface_format,
+                &window,
+            );
 
-        let graphics_pipeline = Self::create_graphics_pipeline(&device);
+        let graphics_pipeline = Self::create_graphics_pipeline(&device, surface_format);
 
         let current_frame: usize = 0;
 
@@ -189,12 +192,14 @@ impl VulkanContext {
             entry,
             instance,
             surface,
+            surface_format,
             device,
             graphics_queue_family_index,
             graphics_queue,
             swapchain,
             swapchain_images,
             swapchain_image_views,
+            swapchain_extent,
             render_frames,
             current_frame,
             graphics_pipeline,
@@ -260,6 +265,7 @@ impl VulkanContext {
                 .unwrap();
 
             let swapchain_image = self.swapchain_images[image_index as usize];
+            let swapchain_image_view = self.swapchain_image_views[image_index as usize];
 
             self.device
                 .reset_command_buffer(
@@ -279,31 +285,63 @@ impl VulkanContext {
                 command_buffer,
                 swapchain_image,
                 vk::ImageLayout::UNDEFINED,
-                vk::ImageLayout::GENERAL,
+                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
             );
 
-            let clear_range = &[vk::ImageSubresourceRange {
-                aspect_mask: vk::ImageAspectFlags::COLOR,
-                base_mip_level: 0,
-                level_count: vk::REMAINING_MIP_LEVELS,
-                base_array_layer: 0,
-                layer_count: vk::REMAINING_ARRAY_LAYERS,
-            }];
+            let rendering_attachment = &[vk::RenderingAttachmentInfo::default()
+                .image_view(swapchain_image_view)
+                .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .load_op(vk::AttachmentLoadOp::CLEAR)
+                .store_op(vk::AttachmentStoreOp::STORE)
+                .clear_value(vk::ClearValue {
+                    color: vk::ClearColorValue {
+                        float32: [0.0, 0.0, 0.0, 1.0],
+                    },
+                })];
 
-            self.device.cmd_clear_color_image(
+            let render_area = vk::Rect2D {
+                offset: vk::Offset2D { x: 0, y: 0 },
+                extent: self.swapchain_extent,
+            };
+
+            let rendering_info = vk::RenderingInfo::default()
+                .color_attachments(rendering_attachment)
+                .render_area(render_area)
+                .layer_count(1);
+
+            self.device
+                .cmd_begin_rendering(command_buffer, &rendering_info);
+
+            self.device
+                .cmd_set_scissor(command_buffer, 0, &[render_area]);
+
+            self.device.cmd_set_viewport(
                 command_buffer,
-                swapchain_image,
-                vk::ImageLayout::GENERAL,
-                &vk::ClearColorValue {
-                    float32: [1.0, 0.0, 0.0, 1.0],
-                },
-                clear_range,
+                0,
+                &[vk::Viewport {
+                    x: 0.0,
+                    y: 0.0,
+                    width: render_area.extent.width as f32,
+                    height: render_area.extent.height as f32,
+                    min_depth: 0.0,
+                    max_depth: 1.0,
+                }],
             );
+
+            self.device.cmd_bind_pipeline(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.graphics_pipeline,
+            );
+
+            self.device.cmd_draw(command_buffer, 3, 1, 0, 0);
+
+            self.device.cmd_end_rendering(command_buffer);
 
             self.transition_image(
                 command_buffer,
                 swapchain_image,
-                vk::ImageLayout::GENERAL,
+                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 vk::ImageLayout::PRESENT_SRC_KHR,
             );
 
@@ -406,7 +444,12 @@ impl VulkanContext {
         surface: vk::SurfaceKHR,
         surface_format: vk::SurfaceFormatKHR,
         window: &Window,
-    ) -> (vk::SwapchainKHR, Vec<vk::Image>, Vec<vk::ImageView>) {
+    ) -> (
+        vk::SwapchainKHR,
+        Vec<vk::Image>,
+        Vec<vk::ImageView>,
+        vk::Extent2D,
+    ) {
         let surface_fn = ash::khr::surface::Instance::new(entry, instance);
         let swapchain_fn = ash::khr::swapchain::Device::new(instance, device);
 
@@ -475,7 +518,7 @@ impl VulkanContext {
             })
             .collect();
 
-        (swapchain, swapchain_images, image_views)
+        (swapchain, swapchain_images, image_views, image_extent)
     }
 
     fn create_render_frames(device: &ash::Device, queue_family_index: u32) -> Vec<RenderFrame> {
@@ -546,7 +589,10 @@ impl VulkanContext {
         unsafe { device.create_shader_module(&create_info, None).unwrap() }
     }
 
-    fn create_graphics_pipeline(device: &ash::Device) -> vk::Pipeline {
+    fn create_graphics_pipeline(
+        device: &ash::Device,
+        surface_format: vk::SurfaceFormatKHR,
+    ) -> vk::Pipeline {
         let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default();
 
         let pipeline_layout = unsafe {
@@ -603,7 +649,18 @@ impl VulkanContext {
             .sample_shading_enable(false)
             .rasterization_samples(vk::SampleCountFlags::TYPE_1);
 
-        let color_blender_state_info = vk::PipelineColorBlendStateCreateInfo::default();
+        let color_blend_attachment_states = &[vk::PipelineColorBlendAttachmentState::default()
+            .color_write_mask(vk::ColorComponentFlags::RGBA)
+            .blend_enable(true)
+            .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
+            .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+            .color_blend_op(vk::BlendOp::ADD)
+            .src_alpha_blend_factor(vk::BlendFactor::ONE)
+            .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
+            .alpha_blend_op(vk::BlendOp::ADD)];
+
+        let color_blender_state_info = vk::PipelineColorBlendStateCreateInfo::default()
+            .attachments(color_blend_attachment_states);
 
         let depth_stencil_state_info = vk::PipelineDepthStencilStateCreateInfo::default()
             .depth_test_enable(false)
@@ -616,6 +673,10 @@ impl VulkanContext {
             .min_depth_bounds(0.0)
             .max_depth_bounds(1.0);
 
+        let color_attachment_formats = [surface_format.format];
+        let mut rendering_create_info = vk::PipelineRenderingCreateInfo::default()
+            .color_attachment_formats(&color_attachment_formats);
+
         let graphics_pipeline_create_info = &[vk::GraphicsPipelineCreateInfo::default()
             .stages(shader_stages)
             .vertex_input_state(&vertex_input_state_info)
@@ -627,7 +688,8 @@ impl VulkanContext {
             .color_blend_state(&color_blender_state_info)
             .layout(pipeline_layout)
             .depth_stencil_state(&depth_stencil_state_info)
-            .subpass(0)];
+            .subpass(0)
+            .push_next(&mut rendering_create_info)];
 
         unsafe {
             device
