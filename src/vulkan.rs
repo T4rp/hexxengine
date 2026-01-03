@@ -75,6 +75,7 @@ pub struct VulkanContext {
     graphics_pipeline: vk::Pipeline,
     surface_format: vk::SurfaceFormatKHR,
     swapchain_extent: vk::Extent2D,
+    allocator: vk_mem::Allocator,
 }
 
 impl VulkanContext {
@@ -155,6 +156,11 @@ impl VulkanContext {
                 .unwrap()
         };
 
+        let allocator_create_info =
+            vk_mem::AllocatorCreateInfo::new(&instance, &device, physical_device);
+
+        let allocator = unsafe { vk_mem::Allocator::new(allocator_create_info).unwrap() };
+
         let graphics_queue = unsafe { device.get_device_queue(graphics_queue_family_index, 0) };
 
         let render_frames = Self::create_render_frames(&device, graphics_queue_family_index);
@@ -203,6 +209,7 @@ impl VulkanContext {
             render_frames,
             current_frame,
             graphics_pipeline,
+            allocator,
         }
     }
 
