@@ -78,13 +78,211 @@ pub struct VulkanContext {
     allocator: vk_mem::Allocator,
 }
 
+fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> ash::Instance {
+    let mut extensions = vec![ash::ext::debug_utils::NAME.as_ptr()];
+    let mut validation_layers = vec![];
+
+    if USE_VALIDATION_LAYERS {
+        validation_layers.push(c"VK_LAYER_KHRONOS_validation".as_ptr())
+    }
+
+    let surface_extensions = ash_window::enumerate_required_extensions(raw_display_handle).unwrap();
+
+    extensions.extend_from_slice(surface_extensions);
+
+    let appinfo = ApplicationInfo::default()
+        .application_name(c"HexxEngine")
+        .api_version(ash::vk::API_VERSION_1_3);
+
+    let create_info = vk::InstanceCreateInfo::default()
+        .application_info(&appinfo)
+        .enabled_extension_names(&extensions)
+        .enabled_layer_names(&validation_layers);
+
+    let instance = unsafe { entry.create_instance(&create_info, None).unwrap() };
+    let debug_utils_fn = ash::ext::debug_utils::Instance::new(&entry, &instance);
+
+    let messager_create_info = DebugUtilsMessengerCreateInfoEXT::default()
+        .message_severity(
+            vk::DebugUtilsMessageSeverityFlagsEXT::ERROR
+                | vk::DebugUtilsMessageSeverityFlagsEXT::WARNING
+                | vk::DebugUtilsMessageSeverityFlagsEXT::INFO,
+        )
+        .message_type(
+            vk::DebugUtilsMessageTypeFlagsEXT::GENERAL
+                | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION
+                | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE,
+        )
+        .pfn_user_callback(Some(debug_messager_callback));
+
+    unsafe {
+        debug_utils_fn
+            .create_debug_utils_messenger(&messager_create_info, None)
+            .unwrap()
+    };
+
+    instance
+}
+
+fn create_swapchain(
+    entry: &ash::Entry,
+    instance: &ash::Instance,
+    device: &ash::Device,
+    physical_device: vk::PhysicalDevice,
+    surface: vk::SurfaceKHR,
+    surface_format: vk::SurfaceFormatKHR,
+    window: &Window,
+) -> (
+    vk::SwapchainKHR,
+    Vec<vk::Image>,
+    Vec<vk::ImageView>,
+    vk::Extent2D,
+) {
+    let surface_fn = ash::khr::surface::Instance::new(entry, instance);
+    let swapchain_fn = ash::khr::swapchain::Device::new(instance, device);
+
+    let surface_capabilities = unsafe {
+        surface_fn
+            .get_physical_device_surface_capabilities(physical_device, surface)
+            .unwrap()
+    };
+
+    let surface_max_image_extent = surface_capabilities.max_image_extent;
+
+    let image_extent = if surface_max_image_extent.width != u32::MAX {
+        surface_max_image_extent
+    } else {
+        let window_dimensions = window.inner_position().unwrap();
+        vk::Extent2D {
+            width: window_dimensions.x as u32,
+            height: window_dimensions.y as u32,
+        }
+    };
+
+    let create_swapchain_info = vk::SwapchainCreateInfoKHR::default()
+        .surface(surface)
+        .image_format(surface_format.format)
+        .image_color_space(surface_format.color_space)
+        .present_mode(vk::PresentModeKHR::FIFO)
+        .image_array_layers(1)
+        .min_image_count(surface_capabilities.min_image_count + 1)
+        .pre_transform(surface_capabilities.current_transform)
+        .clipped(true)
+        .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
+        .image_usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::COLOR_ATTACHMENT)
+        .image_extent(image_extent)
+        .old_swapchain(vk::SwapchainKHR::null());
+
+    let swapchain = unsafe {
+        swapchain_fn
+            .create_swapchain(&create_swapchain_info, None)
+            .unwrap()
+    };
+
+    let swapchain_images = unsafe { swapchain_fn.get_swapchain_images(swapchain).unwrap() };
+
+    let image_views: Vec<vk::ImageView> = swapchain_images
+        .iter()
+        .map(|image| {
+            let image_create_info = vk::ImageViewCreateInfo::default()
+                .image(*image)
+                .view_type(vk::ImageViewType::TYPE_2D)
+                .format(surface_format.format)
+                .components(vk::ComponentMapping {
+                    r: vk::ComponentSwizzle::IDENTITY,
+                    g: vk::ComponentSwizzle::IDENTITY,
+                    b: vk::ComponentSwizzle::IDENTITY,
+                    a: vk::ComponentSwizzle::IDENTITY,
+                })
+                .subresource_range(vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                });
+
+            unsafe { device.create_image_view(&image_create_info, None).unwrap() }
+        })
+        .collect();
+
+    (swapchain, swapchain_images, image_views, image_extent)
+}
+
+fn create_render_frames(device: &ash::Device, queue_family_index: u32) -> Vec<RenderFrame> {
+    let frames: Vec<RenderFrame> = (0..MAX_FRAMES)
+        .into_iter()
+        .map(|_i| {
+            let command_pool_create_info = vk::CommandPoolCreateInfo::default()
+                .queue_family_index(queue_family_index)
+                .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
+
+            let command_pool = unsafe {
+                device
+                    .create_command_pool(&command_pool_create_info, None)
+                    .unwrap()
+            };
+
+            let command_buffer_alloc_info = vk::CommandBufferAllocateInfo::default()
+                .command_pool(command_pool)
+                .level(vk::CommandBufferLevel::PRIMARY)
+                .command_buffer_count(1);
+
+            let command_buffer = unsafe {
+                device
+                    .allocate_command_buffers(&command_buffer_alloc_info)
+                    .unwrap()[0]
+            };
+
+            let semaphore_create_info =
+                vk::SemaphoreCreateInfo::default().flags(vk::SemaphoreCreateFlags::empty());
+
+            let fence_create_info =
+                vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
+
+            let swapchain_semaphore = unsafe {
+                device
+                    .create_semaphore(&semaphore_create_info, None)
+                    .unwrap()
+            };
+
+            let render_semaphore = unsafe {
+                device
+                    .create_semaphore(&semaphore_create_info, None)
+                    .unwrap()
+            };
+
+            let in_flight_fence = unsafe { device.create_fence(&fence_create_info, None).unwrap() };
+
+            RenderFrame {
+                command_pool,
+                command_buffer,
+                swapchain_semaphore,
+                render_semaphore,
+                in_flight_fence,
+            }
+        })
+        .collect();
+
+    frames
+}
+
+fn create_shader_module(device: &ash::Device, data: &[u8]) -> vk::ShaderModule {
+    let mut cursor = Cursor::new(data);
+    let spv = ash::util::read_spv(&mut cursor).unwrap();
+
+    let create_info = vk::ShaderModuleCreateInfo::default().code(&spv);
+
+    unsafe { device.create_shader_module(&create_info, None).unwrap() }
+}
+
 impl VulkanContext {
     pub fn new(window: Rc<Window>) -> Self {
         let raw_window_handle = window.window_handle().unwrap().as_raw();
         let raw_display_handle = window.display_handle().unwrap().as_raw();
 
         let entry = unsafe { Entry::load().unwrap() };
-        let instance = Self::create_instance(&entry, raw_display_handle);
+        let instance = create_instance(&entry, raw_display_handle);
         let surface_fn = ash::khr::surface::Instance::new(&entry, &instance);
 
         let surface = unsafe {
@@ -163,7 +361,7 @@ impl VulkanContext {
 
         let graphics_queue = unsafe { device.get_device_queue(graphics_queue_family_index, 0) };
 
-        let render_frames = Self::create_render_frames(&device, graphics_queue_family_index);
+        let render_frames = create_render_frames(&device, graphics_queue_family_index);
 
         let all_surface_formats = unsafe {
             surface_fn
@@ -180,7 +378,7 @@ impl VulkanContext {
             .unwrap();
 
         let (swapchain, swapchain_images, swapchain_image_views, swapchain_extent) =
-            Self::create_swapchain(
+            create_swapchain(
                 &entry,
                 &instance,
                 &device,
@@ -396,206 +594,6 @@ impl VulkanContext {
         self.current_frame = self.current_frame + 1;
     }
 
-    fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> ash::Instance {
-        let mut extensions = vec![ash::ext::debug_utils::NAME.as_ptr()];
-        let mut validation_layers = vec![];
-
-        if USE_VALIDATION_LAYERS {
-            validation_layers.push(c"VK_LAYER_KHRONOS_validation".as_ptr())
-        }
-
-        let surface_extensions =
-            ash_window::enumerate_required_extensions(raw_display_handle).unwrap();
-
-        extensions.extend_from_slice(surface_extensions);
-
-        let appinfo = ApplicationInfo::default()
-            .application_name(c"HexxEngine")
-            .api_version(ash::vk::API_VERSION_1_3);
-
-        let create_info = vk::InstanceCreateInfo::default()
-            .application_info(&appinfo)
-            .enabled_extension_names(&extensions)
-            .enabled_layer_names(&validation_layers);
-
-        let instance = unsafe { entry.create_instance(&create_info, None).unwrap() };
-        let debug_utils_fn = ash::ext::debug_utils::Instance::new(&entry, &instance);
-
-        let messager_create_info = DebugUtilsMessengerCreateInfoEXT::default()
-            .message_severity(
-                vk::DebugUtilsMessageSeverityFlagsEXT::ERROR
-                    | vk::DebugUtilsMessageSeverityFlagsEXT::WARNING
-                    | vk::DebugUtilsMessageSeverityFlagsEXT::INFO,
-            )
-            .message_type(
-                vk::DebugUtilsMessageTypeFlagsEXT::GENERAL
-                    | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION
-                    | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE,
-            )
-            .pfn_user_callback(Some(debug_messager_callback));
-
-        unsafe {
-            debug_utils_fn
-                .create_debug_utils_messenger(&messager_create_info, None)
-                .unwrap()
-        };
-
-        instance
-    }
-
-    fn create_swapchain(
-        entry: &ash::Entry,
-        instance: &ash::Instance,
-        device: &ash::Device,
-        physical_device: vk::PhysicalDevice,
-        surface: vk::SurfaceKHR,
-        surface_format: vk::SurfaceFormatKHR,
-        window: &Window,
-    ) -> (
-        vk::SwapchainKHR,
-        Vec<vk::Image>,
-        Vec<vk::ImageView>,
-        vk::Extent2D,
-    ) {
-        let surface_fn = ash::khr::surface::Instance::new(entry, instance);
-        let swapchain_fn = ash::khr::swapchain::Device::new(instance, device);
-
-        let surface_capabilities = unsafe {
-            surface_fn
-                .get_physical_device_surface_capabilities(physical_device, surface)
-                .unwrap()
-        };
-
-        let surface_max_image_extent = surface_capabilities.max_image_extent;
-
-        let image_extent = if surface_max_image_extent.width != u32::MAX {
-            surface_max_image_extent
-        } else {
-            let window_dimensions = window.inner_position().unwrap();
-            vk::Extent2D {
-                width: window_dimensions.x as u32,
-                height: window_dimensions.y as u32,
-            }
-        };
-
-        let create_swapchain_info = vk::SwapchainCreateInfoKHR::default()
-            .surface(surface)
-            .image_format(surface_format.format)
-            .image_color_space(surface_format.color_space)
-            .present_mode(vk::PresentModeKHR::FIFO)
-            .image_array_layers(1)
-            .min_image_count(surface_capabilities.min_image_count + 1)
-            .pre_transform(surface_capabilities.current_transform)
-            .clipped(true)
-            .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
-            .image_usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::COLOR_ATTACHMENT)
-            .image_extent(image_extent)
-            .old_swapchain(vk::SwapchainKHR::null());
-
-        let swapchain = unsafe {
-            swapchain_fn
-                .create_swapchain(&create_swapchain_info, None)
-                .unwrap()
-        };
-
-        let swapchain_images = unsafe { swapchain_fn.get_swapchain_images(swapchain).unwrap() };
-
-        let image_views: Vec<vk::ImageView> = swapchain_images
-            .iter()
-            .map(|image| {
-                let image_create_info = vk::ImageViewCreateInfo::default()
-                    .image(*image)
-                    .view_type(vk::ImageViewType::TYPE_2D)
-                    .format(surface_format.format)
-                    .components(vk::ComponentMapping {
-                        r: vk::ComponentSwizzle::IDENTITY,
-                        g: vk::ComponentSwizzle::IDENTITY,
-                        b: vk::ComponentSwizzle::IDENTITY,
-                        a: vk::ComponentSwizzle::IDENTITY,
-                    })
-                    .subresource_range(vk::ImageSubresourceRange {
-                        aspect_mask: vk::ImageAspectFlags::COLOR,
-                        base_mip_level: 0,
-                        level_count: 1,
-                        base_array_layer: 0,
-                        layer_count: 1,
-                    });
-
-                unsafe { device.create_image_view(&image_create_info, None).unwrap() }
-            })
-            .collect();
-
-        (swapchain, swapchain_images, image_views, image_extent)
-    }
-
-    fn create_render_frames(device: &ash::Device, queue_family_index: u32) -> Vec<RenderFrame> {
-        let frames: Vec<RenderFrame> = (0..MAX_FRAMES)
-            .into_iter()
-            .map(|_i| {
-                let command_pool_create_info = vk::CommandPoolCreateInfo::default()
-                    .queue_family_index(queue_family_index)
-                    .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
-
-                let command_pool = unsafe {
-                    device
-                        .create_command_pool(&command_pool_create_info, None)
-                        .unwrap()
-                };
-
-                let command_buffer_alloc_info = vk::CommandBufferAllocateInfo::default()
-                    .command_pool(command_pool)
-                    .level(vk::CommandBufferLevel::PRIMARY)
-                    .command_buffer_count(1);
-
-                let command_buffer = unsafe {
-                    device
-                        .allocate_command_buffers(&command_buffer_alloc_info)
-                        .unwrap()[0]
-                };
-
-                let semaphore_create_info =
-                    vk::SemaphoreCreateInfo::default().flags(vk::SemaphoreCreateFlags::empty());
-
-                let fence_create_info =
-                    vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
-
-                let swapchain_semaphore = unsafe {
-                    device
-                        .create_semaphore(&semaphore_create_info, None)
-                        .unwrap()
-                };
-
-                let render_semaphore = unsafe {
-                    device
-                        .create_semaphore(&semaphore_create_info, None)
-                        .unwrap()
-                };
-
-                let in_flight_fence =
-                    unsafe { device.create_fence(&fence_create_info, None).unwrap() };
-
-                RenderFrame {
-                    command_pool,
-                    command_buffer,
-                    swapchain_semaphore,
-                    render_semaphore,
-                    in_flight_fence,
-                }
-            })
-            .collect();
-
-        frames
-    }
-
-    fn create_shader_module(device: &ash::Device, data: &[u8]) -> vk::ShaderModule {
-        let mut cursor = Cursor::new(data);
-        let spv = ash::util::read_spv(&mut cursor).unwrap();
-
-        let create_info = vk::ShaderModuleCreateInfo::default().code(&spv);
-
-        unsafe { device.create_shader_module(&create_info, None).unwrap() }
-    }
-
     fn create_graphics_pipeline(
         device: &ash::Device,
         surface_format: vk::SurfaceFormatKHR,
@@ -623,8 +621,8 @@ impl VulkanContext {
         let vert_shader_code = fs::read("shaders/tri.vert.spv").unwrap();
         let frag_shader_code = fs::read("shaders/tri.frag.spv").unwrap();
 
-        let vertex_shader = Self::create_shader_module(device, &vert_shader_code);
-        let fragment_shader = Self::create_shader_module(device, &frag_shader_code);
+        let vertex_shader = create_shader_module(device, &vert_shader_code);
+        let fragment_shader = create_shader_module(device, &frag_shader_code);
 
         let vert_stage_info = vk::PipelineShaderStageCreateInfo::default()
             .stage(vk::ShaderStageFlags::VERTEX)
