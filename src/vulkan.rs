@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::io::Cursor;
 use std::rc::Rc;
-use std::{ffi, fs};
+use std::{ffi, fs, mem};
 
 use ash::Entry;
 use ash::vk::ApplicationInfo;
@@ -9,11 +9,27 @@ use ash::vk::{
     self, DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT,
     DebugUtilsMessengerCallbackDataEXT, DebugUtilsMessengerCreateInfoEXT,
 };
+use glam::{Vec2, Vec3, vec2, vec3};
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
 
 const USE_VALIDATION_LAYERS: bool = true;
 const MAX_FRAMES: usize = 2;
+
+const VERTICES: &[Vertex3d] = &[
+    Vertex3d {
+        pos: vec2(1.0, 1.0),
+        color: vec3(1.0, 0.0, 0.0),
+    },
+    Vertex3d {
+        pos: vec2(-1.0, 1.0),
+        color: vec3(0.0, 1.0, 0.0),
+    },
+    Vertex3d {
+        pos: vec2(0.0, -1.0),
+        color: vec3(0.0, 0.0, 1.0),
+    },
+];
 
 unsafe extern "system" fn debug_messager_callback(
     message_severity: DebugUtilsMessageSeverityFlagsEXT,
@@ -52,6 +68,12 @@ unsafe extern "system" fn debug_messager_callback(
     }
 }
 
+#[repr(C)]
+pub struct Vertex3d {
+    pos: Vec2,
+    color: Vec3,
+}
+
 pub struct RenderFrame {
     command_pool: vk::CommandPool,
     command_buffer: vk::CommandBuffer,
@@ -76,6 +98,30 @@ pub struct VulkanContext {
     surface_format: vk::SurfaceFormatKHR,
     swapchain_extent: vk::Extent2D,
     allocator: vk_mem::Allocator,
+}
+
+impl Vertex3d {
+    fn get_attribute_descriptions() -> [vk::VertexInputAttributeDescription; 2] {
+        [
+            vk::VertexInputAttributeDescription::default()
+                .binding(0)
+                .location(0)
+                .format(vk::Format::R32G32_SFLOAT)
+                .offset(mem::offset_of!(Vertex3d, pos) as u32),
+            vk::VertexInputAttributeDescription::default()
+                .binding(0)
+                .location(1)
+                .format(vk::Format::R32G32B32_SFLOAT)
+                .offset(mem::offset_of!(Vertex3d, color) as u32),
+        ]
+    }
+
+    fn get_binding_descriptions() -> [vk::VertexInputBindingDescription; 1] {
+        [vk::VertexInputBindingDescription::default()
+            .binding(0)
+            .stride(mem::size_of::<Vertex3d>() as u32)
+            .input_rate(vk::VertexInputRate::VERTEX)]
+    }
 }
 
 fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> ash::Instance {
@@ -636,7 +682,12 @@ impl VulkanContext {
 
         let shader_stages = &[vert_stage_info, frag_stage_info];
 
-        let vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default();
+        let vertex_attribute_descriptions = Vertex3d::get_attribute_descriptions();
+        let vertex_binding_descriptions = Vertex3d::get_binding_descriptions();
+
+        let vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default()
+            .vertex_attribute_descriptions(&vertex_attribute_descriptions)
+            .vertex_binding_descriptions(&vertex_binding_descriptions);
 
         let input_assembly_state_info = vk::PipelineInputAssemblyStateCreateInfo::default()
             .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
