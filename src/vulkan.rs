@@ -10,6 +10,7 @@ use ash::vk::{
     DebugUtilsMessengerCallbackDataEXT, DebugUtilsMessengerCreateInfoEXT,
 };
 use glam::{Vec2, Vec3, vec2, vec3};
+use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
 
@@ -98,6 +99,7 @@ pub struct VulkanContext {
     surface_format: vk::SurfaceFormatKHR,
     swapchain_extent: vk::Extent2D,
     allocator: vk_mem::Allocator,
+    vertex_buffer: (vk::Buffer, vk_mem::Allocation),
 }
 
 impl Vertex3d {
@@ -322,6 +324,26 @@ fn create_shader_module(device: &ash::Device, data: &[u8]) -> vk::ShaderModule {
     unsafe { device.create_shader_module(&create_info, None).unwrap() }
 }
 
+fn create_vertex_buffer(
+    allocator: &vk_mem::Allocator,
+    instance: &ash::Instance,
+    device: &ash::Device,
+    physical_device: vk::PhysicalDevice,
+) -> (vk::Buffer, vk_mem::Allocation) {
+    let buffer_info = vk::BufferCreateInfo::default()
+        .size((mem::size_of::<Vertex3d>() * VERTICES.len()) as u64)
+        .usage(vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
+
+    let alloc_info = vk_mem::AllocationCreateInfo {
+        usage: vk_mem::MemoryUsage::AutoPreferHost,
+        flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE
+            | vk_mem::AllocationCreateFlags::MAPPED,
+        ..Default::default()
+    };
+
+    unsafe { allocator.create_buffer(&buffer_info, &alloc_info).unwrap() }
+}
+
 impl VulkanContext {
     pub fn new(window: Rc<Window>) -> Self {
         let raw_window_handle = window.window_handle().unwrap().as_raw();
@@ -436,6 +458,17 @@ impl VulkanContext {
 
         let graphics_pipeline = Self::create_graphics_pipeline(&device, surface_format);
 
+        let vertex_buffer = create_vertex_buffer(&allocator, &instance, &device, physical_device);
+        let alloc_info = allocator.get_allocation_info(&vertex_buffer.1);
+
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                VERTICES.as_ptr(),
+                alloc_info.mapped_data.cast(),
+                VERTICES.len(),
+            )
+        };
+
         let current_frame: usize = 0;
 
         Self {
@@ -454,6 +487,7 @@ impl VulkanContext {
             current_frame,
             graphics_pipeline,
             allocator,
+            vertex_buffer,
         }
     }
 
@@ -584,6 +618,9 @@ impl VulkanContext {
                 vk::PipelineBindPoint::GRAPHICS,
                 self.graphics_pipeline,
             );
+
+            self.device
+                .cmd_bind_vertex_buffers(command_buffer, 0, &[self.vertex_buffer.0], &[0]);
 
             self.device.cmd_draw(command_buffer, 3, 1, 0, 0);
 
@@ -757,5 +794,14 @@ impl VulkanContext {
                 )
                 .unwrap()[0]
         }
+    }
+}
+
+impl Drop for VulkanContext {
+    fn drop(&mut self) {
+        unsafe {
+            self.allocator
+                .destroy_buffer(self.vertex_buffer.0, &mut self.vertex_buffer.1)
+        };
     }
 }
