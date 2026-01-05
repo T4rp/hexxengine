@@ -800,6 +800,7 @@ impl VulkanContext {
 impl Drop for VulkanContext {
     fn drop(&mut self) {
         unsafe {
+            self.device.device_wait_idle();
             self.allocator
                 .destroy_buffer(self.vertex_buffer.0, &mut self.vertex_buffer.1)
         };
