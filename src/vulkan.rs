@@ -19,12 +19,12 @@ const MAX_FRAMES: usize = 2;
 
 const VERTICES: &[Vertex3d] = &[
     Vertex3d {
-        pos: vec2(1.0, 1.0),
-        color: vec3(1.0, 0.0, 0.0),
-    },
-    Vertex3d {
         pos: vec2(-1.0, 1.0),
         color: vec3(0.0, 1.0, 0.0),
+    },
+    Vertex3d {
+        pos: vec2(1.0, 1.0),
+        color: vec3(1.0, 0.0, 0.0),
     },
     Vertex3d {
         pos: vec2(0.0, -1.0),
@@ -735,7 +735,7 @@ impl VulkanContext {
             .polygon_mode(vk::PolygonMode::FILL)
             .line_width(1.0)
             .cull_mode(vk::CullModeFlags::BACK)
-            .front_face(vk::FrontFace::CLOCKWISE)
+            .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
             .depth_bias_enable(false);
 
         let multisample_info = vk::PipelineMultisampleStateCreateInfo::default()
