@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::io::Cursor;
+use std::marker::PhantomData;
 use std::rc::Rc;
 use std::{ffi, fs, mem};
 
@@ -9,25 +10,30 @@ use ash::vk::{
     self, DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT,
     DebugUtilsMessengerCallbackDataEXT, DebugUtilsMessengerCreateInfoEXT,
 };
-use glam::{Vec2, Vec3, vec2, vec3};
+use glam::{Mat4, Vec2, Vec3, vec2, vec3};
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
 
+use crate::mesh::Vertex2d;
+
 const USE_VALIDATION_LAYERS: bool = true;
 const MAX_FRAMES: usize = 2;
 
-const VERTICES: &[Vertex3d] = &[
-    Vertex3d {
+const VERTICES: &[Vertex2d] = &[
+    Vertex2d {
         pos: vec2(-1.0, 1.0),
+        uv: vec2(-1.0, 1.0),
         color: vec3(0.0, 1.0, 0.0),
     },
-    Vertex3d {
+    Vertex2d {
         pos: vec2(1.0, 1.0),
+        uv: vec2(-1.0, 1.0),
         color: vec3(1.0, 0.0, 0.0),
     },
-    Vertex3d {
+    Vertex2d {
         pos: vec2(0.0, -1.0),
+        uv: vec2(-1.0, 1.0),
         color: vec3(0.0, 0.0, 1.0),
     },
 ];
@@ -69,10 +75,10 @@ unsafe extern "system" fn debug_messager_callback(
     }
 }
 
-#[repr(C)]
-pub struct Vertex3d {
-    pos: Vec2,
-    color: Vec3,
+pub struct MeshBuffers {
+    vertex_buffer: vk::Buffer,
+    index_buffer: vk::Buffer,
+    index_count: u32,
 }
 
 pub struct RenderFrame {
@@ -100,30 +106,6 @@ pub struct VulkanContext {
     swapchain_extent: vk::Extent2D,
     allocator: vk_mem::Allocator,
     vertex_buffer: (vk::Buffer, vk_mem::Allocation),
-}
-
-impl Vertex3d {
-    fn get_attribute_descriptions() -> [vk::VertexInputAttributeDescription; 2] {
-        [
-            vk::VertexInputAttributeDescription::default()
-                .binding(0)
-                .location(0)
-                .format(vk::Format::R32G32_SFLOAT)
-                .offset(mem::offset_of!(Vertex3d, pos) as u32),
-            vk::VertexInputAttributeDescription::default()
-                .binding(0)
-                .location(1)
-                .format(vk::Format::R32G32B32_SFLOAT)
-                .offset(mem::offset_of!(Vertex3d, color) as u32),
-        ]
-    }
-
-    fn get_binding_descriptions() -> [vk::VertexInputBindingDescription; 1] {
-        [vk::VertexInputBindingDescription::default()
-            .binding(0)
-            .stride(mem::size_of::<Vertex3d>() as u32)
-            .input_rate(vk::VertexInputRate::VERTEX)]
-    }
 }
 
 fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> ash::Instance {
@@ -331,7 +313,7 @@ fn create_vertex_buffer(
     physical_device: vk::PhysicalDevice,
 ) -> (vk::Buffer, vk_mem::Allocation) {
     let buffer_info = vk::BufferCreateInfo::default()
-        .size((mem::size_of::<Vertex3d>() * VERTICES.len()) as u64)
+        .size((mem::size_of::<Vertex2d>() * VERTICES.len()) as u64)
         .usage(vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
 
     let alloc_info = vk_mem::AllocationCreateInfo {
@@ -719,8 +701,8 @@ impl VulkanContext {
 
         let shader_stages = &[vert_stage_info, frag_stage_info];
 
-        let vertex_attribute_descriptions = Vertex3d::get_attribute_descriptions();
-        let vertex_binding_descriptions = Vertex3d::get_binding_descriptions();
+        let vertex_attribute_descriptions = Vertex2d::get_attribute_descriptions();
+        let vertex_binding_descriptions = Vertex2d::get_binding_descriptions();
 
         let vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default()
             .vertex_attribute_descriptions(&vertex_attribute_descriptions)
@@ -794,6 +776,43 @@ impl VulkanContext {
                 )
                 .unwrap()[0]
         }
+    }
+
+    fn create_descriptor_layouts(device: &ash::Device) -> Vec<vk::DescriptorSetLayout> {
+        let per_frame_bindings = [vk::DescriptorSetLayoutBinding::default()
+            .binding(0)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)];
+
+        let per_frame_layout_info =
+            vk::DescriptorSetLayoutCreateInfo::default().bindings(&per_frame_bindings);
+
+        let per_material_bindings = [vk::DescriptorSetLayoutBinding::default()
+            .binding(0)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)];
+
+        let per_material_layout_info =
+            vk::DescriptorSetLayoutCreateInfo::default().bindings(&per_material_bindings);
+
+        let mut descriptor_layouts = Vec::new();
+
+        let per_frame_layout = unsafe {
+            device
+                .create_descriptor_set_layout(&per_frame_layout_info, None)
+                .unwrap()
+        };
+
+        let per_material_layout = unsafe {
+            device
+                .create_descriptor_set_layout(&per_material_layout_info, None)
+                .unwrap()
+        };
+
+        descriptor_layouts.push(per_frame_layout);
+        descriptor_layouts.push(per_material_layout);
+
+        descriptor_layouts
     }
 }
 

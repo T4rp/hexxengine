@@ -1,9 +1,11 @@
 #version 450
 
 layout (location = 0) in vec2 inPos;
-layout (location = 1) in vec3 inColor;
+layout (location = 1) in vec2 inUv;
+layout (location = 2) in vec3 inColor;
 
 layout (location = 0) out vec3 outColor;
+layout (location = 1) out vec2 outUv;
 
 const vec3 positions[3] = vec3[3](
 	vec3(1.f,1.f, 0.0f),
@@ -22,4 +24,5 @@ void main() {
 	//output the position of each vertex
 	gl_Position = vec4(inPos, 0.0f, 1.0f);
 	outColor = inColor;
+	outUv = inUv;
 }

@@ -1,3 +1,4 @@
+mod mesh;
 mod vulkan;
 
 use std::rc::Rc;
