@@ -438,7 +438,10 @@ impl VulkanContext {
                 &window,
             );
 
-        let graphics_pipeline = Self::create_graphics_pipeline(&device, surface_format);
+        let descriptor_set_layouts = Self::create_descriptor_layouts(&device);
+
+        let graphics_pipeline =
+            Self::create_graphics_pipeline(&device, surface_format, &descriptor_set_layouts);
 
         let vertex_buffer = create_vertex_buffer(&allocator, &instance, &device, physical_device);
         let alloc_info = allocator.get_allocation_info(&vertex_buffer.1);
@@ -662,8 +665,10 @@ impl VulkanContext {
     fn create_graphics_pipeline(
         device: &ash::Device,
         surface_format: vk::SurfaceFormatKHR,
+        descriptor_set_layouts: &[vk::DescriptorSetLayout],
     ) -> vk::Pipeline {
-        let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default();
+        let pipeline_layout_info =
+            vk::PipelineLayoutCreateInfo::default().set_layouts(descriptor_set_layouts);
 
         let pipeline_layout = unsafe {
             device
