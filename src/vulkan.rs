@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::io::Cursor;
-use std::marker::PhantomData;
 use std::rc::Rc;
 use std::{ffi, fs, mem};
 
@@ -10,7 +9,7 @@ use ash::vk::{
     self, DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT,
     DebugUtilsMessengerCallbackDataEXT, DebugUtilsMessengerCreateInfoEXT,
 };
-use glam::{Mat4, Vec2, Vec3, vec2, vec3};
+use glam::{vec2, vec3};
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
@@ -106,6 +105,9 @@ pub struct VulkanContext {
     swapchain_extent: vk::Extent2D,
     allocator: vk_mem::Allocator,
     vertex_buffer: (vk::Buffer, vk_mem::Allocation),
+    should_recreate_swapchain: bool,
+    physical_device: vk::PhysicalDevice,
+    window: Rc<Window>,
 }
 
 fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> ash::Instance {
@@ -456,11 +458,15 @@ impl VulkanContext {
 
         let current_frame: usize = 0;
 
+        let should_recreate_swapchain = false;
+
         Self {
+            window,
             entry,
             instance,
             surface,
             surface_format,
+            physical_device,
             device,
             graphics_queue_family_index,
             graphics_queue,
@@ -468,6 +474,7 @@ impl VulkanContext {
             swapchain_images,
             swapchain_image_views,
             swapchain_extent,
+            should_recreate_swapchain,
             render_frames,
             current_frame,
             graphics_pipeline,
@@ -511,6 +518,11 @@ impl VulkanContext {
     }
 
     pub fn draw(&mut self) {
+        if self.should_recreate_swapchain {
+            self.recreate_swapchain_resources();
+            return;
+        }
+
         let swapchain_fn = ash::khr::swapchain::Device::new(&self.instance, &self.device);
         let current_frame = &self.render_frames[self.current_frame % MAX_FRAMES];
         let command_buffer = current_frame.command_buffer;
@@ -519,20 +531,28 @@ impl VulkanContext {
         let in_flight_fence = current_frame.in_flight_fence;
 
         unsafe {
+            // TODO: this may cause device to be lost when you rapidly resize the window
             self.device
-                .wait_for_fences(&[in_flight_fence], true, u64::MAX)
+                .wait_for_fences(&[in_flight_fence], true, 1000000000)
                 .unwrap();
+
+            let (image_index, should_recreate) = match swapchain_fn.acquire_next_image(
+                self.swapchain,
+                u64::MAX,
+                swapchain_semaphore,
+                vk::Fence::null(),
+            ) {
+                Ok(r) => r,
+                Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => (0, true),
+                Err(err) => panic!("{}", err),
+            };
+
+            if should_recreate {
+                self.should_recreate_swapchain = true;
+                return;
+            }
 
             self.device.reset_fences(&[in_flight_fence]).unwrap();
-
-            let (image_index, should_recreate) = swapchain_fn
-                .acquire_next_image(
-                    self.swapchain,
-                    u64::MAX,
-                    swapchain_semaphore,
-                    vk::Fence::null(),
-                )
-                .unwrap();
 
             let swapchain_image = self.swapchain_images[image_index as usize];
             let swapchain_image_view = self.swapchain_image_views[image_index as usize];
@@ -654,12 +674,49 @@ impl VulkanContext {
                 .wait_semaphores(wait_semaphores)
                 .image_indices(image_indices);
 
-            swapchain_fn
-                .queue_present(self.graphics_queue, &present_info)
-                .unwrap();
+            let should_recreate =
+                match swapchain_fn.queue_present(self.graphics_queue, &present_info) {
+                    Ok(r) => r,
+                    Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => true,
+                    Err(err) => panic!("{}", err),
+                };
+
+            if should_recreate {
+                self.should_recreate_swapchain = true;
+            }
         }
 
         self.current_frame = self.current_frame + 1;
+    }
+
+    pub fn recreate_swapchain_resources(&mut self) {
+        unsafe { self.device.device_wait_idle() };
+
+        let surface_fn = ash::khr::surface::Instance::new(&self.entry, &self.instance);
+        let swapchain_fn = ash::khr::swapchain::Device::new(&self.instance, &self.device);
+
+        for &image_view in self.swapchain_image_views.iter() {
+            unsafe { self.device.destroy_image_view(image_view, None) };
+        }
+
+        unsafe { swapchain_fn.destroy_swapchain(self.swapchain, None) };
+
+        let (swapchain, swapchain_images, swapchain_image_views, swapchain_extent) =
+            create_swapchain(
+                &self.entry,
+                &self.instance,
+                &self.device,
+                self.physical_device,
+                self.surface,
+                self.surface_format,
+                &self.window,
+            );
+
+        self.swapchain = swapchain;
+        self.swapchain_images = swapchain_images;
+        self.swapchain_image_views = swapchain_image_views;
+        self.swapchain_extent = swapchain_extent;
+        self.should_recreate_swapchain = false;
     }
 
     fn create_graphics_pipeline(
