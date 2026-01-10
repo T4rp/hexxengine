@@ -84,7 +84,6 @@ pub struct RenderFrame {
     command_pool: vk::CommandPool,
     command_buffer: vk::CommandBuffer,
     swapchain_semaphore: vk::Semaphore,
-    render_semaphore: vk::Semaphore,
     in_flight_fence: vk::Fence,
 }
 
@@ -99,6 +98,7 @@ pub struct VulkanContext {
     graphics_queue: vk::Queue,
     graphics_queue_family_index: u32,
     render_frames: Vec<RenderFrame>,
+    submit_semaphores: Vec<vk::Semaphore>,
     current_frame: usize,
     graphics_pipeline: vk::Pipeline,
     surface_format: vk::SurfaceFormatKHR,
@@ -243,7 +243,6 @@ fn create_swapchain(
 
 fn create_render_frames(device: &ash::Device, queue_family_index: u32) -> Vec<RenderFrame> {
     let frames: Vec<RenderFrame> = (0..MAX_FRAMES)
-        .into_iter()
         .map(|_i| {
             let command_pool_create_info = vk::CommandPoolCreateInfo::default()
                 .queue_family_index(queue_family_index)
@@ -278,25 +277,37 @@ fn create_render_frames(device: &ash::Device, queue_family_index: u32) -> Vec<Re
                     .unwrap()
             };
 
-            let render_semaphore = unsafe {
-                device
-                    .create_semaphore(&semaphore_create_info, None)
-                    .unwrap()
-            };
-
             let in_flight_fence = unsafe { device.create_fence(&fence_create_info, None).unwrap() };
 
             RenderFrame {
                 command_pool,
                 command_buffer,
                 swapchain_semaphore,
-                render_semaphore,
                 in_flight_fence,
             }
         })
         .collect();
 
     frames
+}
+
+fn create_submit_semaphores(device: &ash::Device, count: usize) -> Vec<vk::Semaphore> {
+    let semaphores: Vec<vk::Semaphore> = (0..count)
+        .map(|_i| {
+            let semaphore_create_info =
+                vk::SemaphoreCreateInfo::default().flags(vk::SemaphoreCreateFlags::empty());
+
+            let swapchain_semaphore = unsafe {
+                device
+                    .create_semaphore(&semaphore_create_info, None)
+                    .unwrap()
+            };
+
+            swapchain_semaphore
+        })
+        .collect();
+
+    semaphores
 }
 
 fn create_shader_module(device: &ash::Device, data: &[u8]) -> vk::ShaderModule {
@@ -440,6 +451,8 @@ impl VulkanContext {
                 &window,
             );
 
+        let submit_semaphores = create_submit_semaphores(&device, swapchain_images.len());
+
         let descriptor_set_layouts = Self::create_descriptor_layouts(&device);
 
         let graphics_pipeline =
@@ -476,6 +489,7 @@ impl VulkanContext {
             swapchain_extent,
             should_recreate_swapchain,
             render_frames,
+            submit_semaphores,
             current_frame,
             graphics_pipeline,
             allocator,
@@ -527,7 +541,6 @@ impl VulkanContext {
         let current_frame = &self.render_frames[self.current_frame % MAX_FRAMES];
         let command_buffer = current_frame.command_buffer;
         let swapchain_semaphore = current_frame.swapchain_semaphore;
-        let render_semaphore = current_frame.render_semaphore;
         let in_flight_fence = current_frame.in_flight_fence;
 
         unsafe {
@@ -553,6 +566,8 @@ impl VulkanContext {
             }
 
             self.device.reset_fences(&[in_flight_fence]).unwrap();
+
+            let submit_semaphore = self.submit_semaphores[image_index as usize];
 
             let swapchain_image = self.swapchain_images[image_index as usize];
             let swapchain_image_view = self.swapchain_image_views[image_index as usize];
@@ -651,7 +666,7 @@ impl VulkanContext {
                 .value(0)];
 
             let signal_info = &[vk::SemaphoreSubmitInfo::default()
-                .semaphore(render_semaphore)
+                .semaphore(submit_semaphore)
                 .stage_mask(vk::PipelineStageFlags2::ALL_GRAPHICS)
                 .device_index(0)
                 .value(0)];
@@ -666,7 +681,7 @@ impl VulkanContext {
                 .unwrap();
 
             let swapchains = &[self.swapchain];
-            let wait_semaphores = &[render_semaphore];
+            let wait_semaphores = &[submit_semaphore];
             let image_indices = &[image_index];
 
             let present_info = vk::PresentInfoKHR::default()
