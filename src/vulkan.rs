@@ -544,7 +544,6 @@ impl VulkanContext {
         let in_flight_fence = current_frame.in_flight_fence;
 
         unsafe {
-            // TODO: this may cause device to be lost when you rapidly resize the window
             self.device
                 .wait_for_fences(&[in_flight_fence], true, 1000000000)
                 .unwrap();
@@ -726,6 +725,24 @@ impl VulkanContext {
                 self.surface_format,
                 &self.window,
             );
+
+        let semaphore_create_info =
+            vk::SemaphoreCreateInfo::default().flags(vk::SemaphoreCreateFlags::empty());
+
+        for frame in self.render_frames.iter_mut() {
+            unsafe {
+                self.device
+                    .destroy_semaphore(frame.swapchain_semaphore, None);
+            };
+
+            let new_semaphore = unsafe {
+                self.device
+                    .create_semaphore(&semaphore_create_info, None)
+                    .unwrap()
+            };
+
+            frame.swapchain_semaphore = new_semaphore;
+        }
 
         self.swapchain = swapchain;
         self.swapchain_images = swapchain_images;
