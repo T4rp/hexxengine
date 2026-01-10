@@ -63,12 +63,8 @@ unsafe extern "system" fn debug_messager_callback(
             "{message_severity:?}:\n{message_type:?} [{message_id_name} ({message_id_number})] : {message}\n",
         );
 
-        if message_severity.contains(vk::DebugUtilsMessageSeverityFlagsEXT::ERROR)
-            || message_severity.contains(vk::DebugUtilsMessageSeverityFlagsEXT::WARNING)
-        {
-            let bt = std::backtrace::Backtrace::capture();
-            println!("Backtrace:\n{bt}");
-        }
+        let bt = std::backtrace::Backtrace::capture();
+        println!("Backtrace:\n{bt}");
 
         vk::FALSE
     }
@@ -143,7 +139,8 @@ fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> 
         .message_type(
             vk::DebugUtilsMessageTypeFlagsEXT::GENERAL
                 | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION
-                | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE,
+                | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE
+                | vk::DebugUtilsMessageTypeFlagsEXT::DEVICE_ADDRESS_BINDING,
         )
         .pfn_user_callback(Some(debug_messager_callback));
 
@@ -164,12 +161,16 @@ fn create_swapchain(
     surface: vk::SurfaceKHR,
     surface_format: vk::SurfaceFormatKHR,
     window: &Window,
-) -> (
-    vk::SwapchainKHR,
-    Vec<vk::Image>,
-    Vec<vk::ImageView>,
-    vk::Extent2D,
-) {
+    old_swapchain: Option<vk::SwapchainKHR>,
+) -> Result<
+    (
+        vk::SwapchainKHR,
+        Vec<vk::Image>,
+        Vec<vk::ImageView>,
+        vk::Extent2D,
+    ),
+    vk::Result,
+> {
     let surface_fn = ash::khr::surface::Instance::new(entry, instance);
     let swapchain_fn = ash::khr::swapchain::Device::new(instance, device);
 
@@ -203,13 +204,9 @@ fn create_swapchain(
         .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
         .image_usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::COLOR_ATTACHMENT)
         .image_extent(image_extent)
-        .old_swapchain(vk::SwapchainKHR::null());
+        .old_swapchain(old_swapchain.unwrap_or(vk::SwapchainKHR::null()));
 
-    let swapchain = unsafe {
-        swapchain_fn
-            .create_swapchain(&create_swapchain_info, None)
-            .unwrap()
-    };
+    let swapchain = unsafe { swapchain_fn.create_swapchain(&create_swapchain_info, None)? };
 
     let swapchain_images = unsafe { swapchain_fn.get_swapchain_images(swapchain).unwrap() };
 
@@ -238,7 +235,7 @@ fn create_swapchain(
         })
         .collect();
 
-    (swapchain, swapchain_images, image_views, image_extent)
+    Ok((swapchain, swapchain_images, image_views, image_extent))
 }
 
 fn create_render_frames(device: &ash::Device, queue_family_index: u32) -> Vec<RenderFrame> {
@@ -449,7 +446,9 @@ impl VulkanContext {
                 surface,
                 surface_format,
                 &window,
-            );
+                None,
+            )
+            .unwrap();
 
         let submit_semaphores = create_submit_semaphores(&device, swapchain_images.len());
 
@@ -704,19 +703,12 @@ impl VulkanContext {
     }
 
     pub fn recreate_swapchain_resources(&mut self) {
-        unsafe { self.device.device_wait_idle() };
+        unsafe { self.device.device_wait_idle().unwrap() };
 
-        let surface_fn = ash::khr::surface::Instance::new(&self.entry, &self.instance);
         let swapchain_fn = ash::khr::swapchain::Device::new(&self.instance, &self.device);
 
-        for &image_view in self.swapchain_image_views.iter() {
-            unsafe { self.device.destroy_image_view(image_view, None) };
-        }
-
-        unsafe { swapchain_fn.destroy_swapchain(self.swapchain, None) };
-
         let (swapchain, swapchain_images, swapchain_image_views, swapchain_extent) =
-            create_swapchain(
+            match create_swapchain(
                 &self.entry,
                 &self.instance,
                 &self.device,
@@ -724,7 +716,20 @@ impl VulkanContext {
                 self.surface,
                 self.surface_format,
                 &self.window,
-            );
+                Some(self.swapchain),
+            ) {
+                Ok(r) => r,
+                Err(vk::Result::ERROR_NATIVE_WINDOW_IN_USE_KHR) => {
+                    return;
+                }
+                Err(err) => panic!("{}", err),
+            };
+
+        for &image_view in self.swapchain_image_views.iter() {
+            unsafe { self.device.destroy_image_view(image_view, None) };
+        }
+
+        unsafe { swapchain_fn.destroy_swapchain(self.swapchain, None) };
 
         let semaphore_create_info =
             vk::SemaphoreCreateInfo::default().flags(vk::SemaphoreCreateFlags::empty());
@@ -913,7 +918,7 @@ impl VulkanContext {
 impl Drop for VulkanContext {
     fn drop(&mut self) {
         unsafe {
-            self.device.device_wait_idle().unwrap();
+            let _ = self.device.device_wait_idle();
             self.allocator
                 .destroy_buffer(self.vertex_buffer.0, &mut self.vertex_buffer.1)
         };
