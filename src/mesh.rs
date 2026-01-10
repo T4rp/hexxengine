@@ -1,8 +1,9 @@
 use std::mem;
 
 use ash::vk;
-use glam::{Vec2, Vec3};
+use glam::{Mat4, Vec2, Vec3};
 
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct Vertex2d {
     pub pos: Vec2,
@@ -39,6 +40,7 @@ impl Vertex2d {
     }
 }
 
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct MeshVertex {
     pub pos: Vec3,
@@ -73,4 +75,11 @@ impl MeshVertex {
             .stride(mem::size_of::<MeshVertex>() as u32)
             .input_rate(vk::VertexInputRate::VERTEX)]
     }
+}
+
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct CameraUniform {
+    proj: Mat4,
+    view: Mat4,
 }

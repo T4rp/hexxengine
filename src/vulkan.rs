@@ -37,6 +37,11 @@ const VERTICES: &[Vertex2d] = &[
     },
 ];
 
+const DESCRIPTOR_RATIOS: &[(vk::DescriptorType, u32)] = &[
+    (vk::DescriptorType::COMBINED_IMAGE_SAMPLER, 1),
+    (vk::DescriptorType::UNIFORM_BUFFER, 1),
+];
+
 unsafe extern "system" fn debug_messager_callback(
     message_severity: DebugUtilsMessageSeverityFlagsEXT,
     message_type: DebugUtilsMessageTypeFlagsEXT,
@@ -81,6 +86,8 @@ pub struct RenderFrame {
     command_buffer: vk::CommandBuffer,
     swapchain_semaphore: vk::Semaphore,
     in_flight_fence: vk::Fence,
+    per_frame_set: vk::DescriptorSet,
+    per_material_set: vk::DescriptorSet,
 }
 
 pub struct VulkanContext {
@@ -104,6 +111,8 @@ pub struct VulkanContext {
     should_recreate_swapchain: bool,
     physical_device: vk::PhysicalDevice,
     window: Rc<Window>,
+    descriptor_set_layouts: Vec<vk::DescriptorSetLayout>,
+    descriptor_pool: vk::DescriptorPool,
 }
 
 fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> ash::Instance {
@@ -238,7 +247,12 @@ fn create_swapchain(
     Ok((swapchain, swapchain_images, image_views, image_extent))
 }
 
-fn create_render_frames(device: &ash::Device, queue_family_index: u32) -> Vec<RenderFrame> {
+fn create_render_frames(
+    device: &ash::Device,
+    descriptor_pool: vk::DescriptorPool,
+    descriptor_set_layout: &[vk::DescriptorSetLayout],
+    queue_family_index: u32,
+) -> Vec<RenderFrame> {
     let frames: Vec<RenderFrame> = (0..MAX_FRAMES)
         .map(|_i| {
             let command_pool_create_info = vk::CommandPoolCreateInfo::default()
@@ -276,11 +290,23 @@ fn create_render_frames(device: &ash::Device, queue_family_index: u32) -> Vec<Re
 
             let in_flight_fence = unsafe { device.create_fence(&fence_create_info, None).unwrap() };
 
+            let descriptor_set_alloc_info = vk::DescriptorSetAllocateInfo::default()
+                .descriptor_pool(descriptor_pool)
+                .set_layouts(descriptor_set_layout);
+
+            let descriptor_sets = unsafe {
+                device
+                    .allocate_descriptor_sets(&descriptor_set_alloc_info)
+                    .unwrap()
+            };
+
             RenderFrame {
                 command_pool,
                 command_buffer,
                 swapchain_semaphore,
                 in_flight_fence,
+                per_frame_set: descriptor_sets[0],
+                per_material_set: descriptor_sets[1],
             }
         })
         .collect();
@@ -421,7 +447,15 @@ impl VulkanContext {
 
         let graphics_queue = unsafe { device.get_device_queue(graphics_queue_family_index, 0) };
 
-        let render_frames = create_render_frames(&device, graphics_queue_family_index);
+        let descriptor_pool = Self::create_descriptor_pool(&device, 3);
+        let descriptor_set_layouts = Self::create_descriptor_layouts(&device);
+
+        let render_frames = create_render_frames(
+            &device,
+            descriptor_pool,
+            &descriptor_set_layouts,
+            graphics_queue_family_index,
+        );
 
         let all_surface_formats = unsafe {
             surface_fn
@@ -451,8 +485,6 @@ impl VulkanContext {
             .unwrap();
 
         let submit_semaphores = create_submit_semaphores(&device, swapchain_images.len());
-
-        let descriptor_set_layouts = Self::create_descriptor_layouts(&device);
 
         let graphics_pipeline =
             Self::create_graphics_pipeline(&device, surface_format, &descriptor_set_layouts);
@@ -493,6 +525,8 @@ impl VulkanContext {
             graphics_pipeline,
             allocator,
             vertex_buffer,
+            descriptor_set_layouts,
+            descriptor_pool,
         }
     }
 
@@ -875,6 +909,29 @@ impl VulkanContext {
                 )
                 .unwrap()[0]
         }
+    }
+
+    fn create_descriptor_pool(device: &ash::Device, set_count: u32) -> vk::DescriptorPool {
+        let descriptor_pool_sizes: Vec<vk::DescriptorPoolSize> = DESCRIPTOR_RATIOS
+            .iter()
+            .map(|(ty, ratio)| {
+                vk::DescriptorPoolSize::default()
+                    .ty(*ty)
+                    .descriptor_count(ratio * set_count * MAX_FRAMES as u32)
+            })
+            .collect();
+
+        let descriptor_pool_info = vk::DescriptorPoolCreateInfo::default()
+            .max_sets(set_count * MAX_FRAMES as u32)
+            .pool_sizes(&descriptor_pool_sizes);
+
+        let descriptor_pool = unsafe {
+            device
+                .create_descriptor_pool(&descriptor_pool_info, None)
+                .unwrap()
+        };
+
+        descriptor_pool
     }
 
     fn create_descriptor_layouts(device: &ash::Device) -> Vec<vk::DescriptorSetLayout> {
