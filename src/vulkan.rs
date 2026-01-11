@@ -9,12 +9,12 @@ use ash::vk::{
     self, DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT,
     DebugUtilsMessengerCallbackDataEXT, DebugUtilsMessengerCreateInfoEXT,
 };
-use glam::{vec2, vec3};
+use glam::{Quat, Vec3, vec2, vec3};
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
 
-use crate::mesh::Vertex2d;
+use crate::mesh::{CameraUniform, Vertex2d};
 
 const USE_VALIDATION_LAYERS: bool = true;
 const MAX_FRAMES: usize = 2;
@@ -81,6 +81,8 @@ pub struct MeshBuffers {
     index_count: u32,
 }
 
+type PerFrameDescriptorData = (vk::Buffer, vk_mem::Allocation);
+
 pub struct RenderFrame {
     command_pool: vk::CommandPool,
     command_buffer: vk::CommandBuffer,
@@ -88,6 +90,7 @@ pub struct RenderFrame {
     in_flight_fence: vk::Fence,
     per_frame_set: vk::DescriptorSet,
     per_material_set: vk::DescriptorSet,
+    per_frame_descriptor_data: PerFrameDescriptorData,
 }
 
 pub struct VulkanContext {
@@ -113,6 +116,24 @@ pub struct VulkanContext {
     window: Rc<Window>,
     descriptor_set_layouts: Vec<vk::DescriptorSetLayout>,
     descriptor_pool: vk::DescriptorPool,
+    graphics_pipeline_layout: vk::PipelineLayout,
+
+    camera: Camera,
+}
+
+pub struct Camera {
+    position: Vec3,
+    orientation: Quat,
+    fov: f32,
+}
+impl Camera {
+    fn new(position: Vec3, orientation: Quat, fov: f32) -> Self {
+        Self {
+            position,
+            orientation,
+            fov,
+        }
+    }
 }
 
 fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> ash::Instance {
@@ -247,8 +268,50 @@ fn create_swapchain(
     Ok((swapchain, swapchain_images, image_views, image_extent))
 }
 
+fn setup_per_frame_descriptor(
+    device: &ash::Device,
+    allocator: &vk_mem::Allocator,
+    descriptor_set: vk::DescriptorSet,
+) -> PerFrameDescriptorData {
+    let camera_uniform_buffer_info = vk::BufferCreateInfo::default()
+        .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
+        .size(mem::size_of::<CameraUniform>() as u64);
+
+    let camera_uniform_alloc_info = vk_mem::AllocationCreateInfo {
+        flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE
+            | vk_mem::AllocationCreateFlags::MAPPED,
+        usage: vk_mem::MemoryUsage::AutoPreferHost,
+
+        ..Default::default()
+    };
+
+    let camera_uniform_buffer = unsafe {
+        allocator
+            .create_buffer(&camera_uniform_buffer_info, &camera_uniform_alloc_info)
+            .unwrap()
+    };
+
+    let buff_info = [vk::DescriptorBufferInfo::default()
+        .offset(0)
+        .range(mem::size_of::<CameraUniform>() as u64)
+        .buffer(camera_uniform_buffer.0)];
+
+    let descriptor_write = [vk::WriteDescriptorSet::default()
+        .dst_set(descriptor_set)
+        .dst_binding(0)
+        .dst_array_element(0)
+        .descriptor_count(1)
+        .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+        .buffer_info(&buff_info)];
+
+    unsafe { device.update_descriptor_sets(&descriptor_write, &[]) };
+
+    camera_uniform_buffer
+}
+
 fn create_render_frames(
     device: &ash::Device,
+    allocator: &vk_mem::Allocator,
     descriptor_pool: vk::DescriptorPool,
     descriptor_set_layout: &[vk::DescriptorSetLayout],
     queue_family_index: u32,
@@ -300,6 +363,9 @@ fn create_render_frames(
                     .unwrap()
             };
 
+            let per_frame_descriptor_data =
+                setup_per_frame_descriptor(device, allocator, descriptor_sets[0]);
+
             RenderFrame {
                 command_pool,
                 command_buffer,
@@ -307,6 +373,7 @@ fn create_render_frames(
                 in_flight_fence,
                 per_frame_set: descriptor_sets[0],
                 per_material_set: descriptor_sets[1],
+                per_frame_descriptor_data,
             }
         })
         .collect();
@@ -342,12 +409,7 @@ fn create_shader_module(device: &ash::Device, data: &[u8]) -> vk::ShaderModule {
     unsafe { device.create_shader_module(&create_info, None).unwrap() }
 }
 
-fn create_vertex_buffer(
-    allocator: &vk_mem::Allocator,
-    instance: &ash::Instance,
-    device: &ash::Device,
-    physical_device: vk::PhysicalDevice,
-) -> (vk::Buffer, vk_mem::Allocation) {
+fn create_vertex_buffer(allocator: &vk_mem::Allocator) -> (vk::Buffer, vk_mem::Allocation) {
     let buffer_info = vk::BufferCreateInfo::default()
         .size((mem::size_of::<Vertex2d>() * VERTICES.len()) as u64)
         .usage(vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
@@ -452,6 +514,7 @@ impl VulkanContext {
 
         let render_frames = create_render_frames(
             &device,
+            &allocator,
             descriptor_pool,
             &descriptor_set_layouts,
             graphics_queue_family_index,
@@ -486,10 +549,10 @@ impl VulkanContext {
 
         let submit_semaphores = create_submit_semaphores(&device, swapchain_images.len());
 
-        let graphics_pipeline =
+        let (graphics_pipeline, graphics_pipeline_layout) =
             Self::create_graphics_pipeline(&device, surface_format, &descriptor_set_layouts);
 
-        let vertex_buffer = create_vertex_buffer(&allocator, &instance, &device, physical_device);
+        let vertex_buffer = create_vertex_buffer(&allocator);
         let alloc_info = allocator.get_allocation_info(&vertex_buffer.1);
 
         unsafe {
@@ -501,8 +564,9 @@ impl VulkanContext {
         };
 
         let current_frame: usize = 0;
-
         let should_recreate_swapchain = false;
+
+        let camera = Camera::new(vec3(0.0, 0.0, -5.0), Quat::IDENTITY, 90.0);
 
         Self {
             window,
@@ -523,10 +587,12 @@ impl VulkanContext {
             submit_semaphores,
             current_frame,
             graphics_pipeline,
+            graphics_pipeline_layout,
             allocator,
             vertex_buffer,
             descriptor_set_layouts,
             descriptor_pool,
+            camera,
         }
     }
 
@@ -564,6 +630,32 @@ impl VulkanContext {
         unsafe { self.device.cmd_pipeline_barrier2(command_buffer, &dep_info) };
     }
 
+    pub fn update_per_frame_descriptors(&mut self) {
+        let current_frame = &self.render_frames[self.current_frame % MAX_FRAMES];
+        let camera_buffer_allocation = current_frame.per_frame_descriptor_data.1;
+
+        let alloc_info = self
+            .allocator
+            .get_allocation_info(&camera_buffer_allocation);
+
+        let camera = &self.camera;
+        let aspect_ratio = self.swapchain_extent.width as f32 / self.swapchain_extent.height as f32;
+
+        let mut camera_ubo = CameraUniform::new(
+            camera.position,
+            camera.orientation,
+            camera.fov,
+            aspect_ratio,
+        );
+
+        unsafe { std::ptr::copy_nonoverlapping(&mut camera_ubo, alloc_info.mapped_data.cast(), 1) };
+    }
+
+    pub fn update(&mut self) {
+        self.camera.orientation *=
+            Quat::from_euler(glam::EulerRot::XYZ, 0.0, f32::to_radians(10.0), 0.0);
+    }
+
     pub fn draw(&mut self) {
         if self.should_recreate_swapchain {
             self.recreate_swapchain_resources();
@@ -571,10 +663,21 @@ impl VulkanContext {
         }
 
         let swapchain_fn = ash::khr::swapchain::Device::new(&self.instance, &self.device);
-        let current_frame = &self.render_frames[self.current_frame % MAX_FRAMES];
-        let command_buffer = current_frame.command_buffer;
-        let swapchain_semaphore = current_frame.swapchain_semaphore;
-        let in_flight_fence = current_frame.in_flight_fence;
+
+        // put this in a scope so &RenderFrame gets dropped and we can use it again (fuck sake)
+        let (command_buffer, swapchain_semaphore, in_flight_fence, per_frame_descriptor_set) = {
+            let current_frame = &self.render_frames[self.current_frame % MAX_FRAMES];
+            let command_buffer = current_frame.command_buffer;
+            let swapchain_semaphore = current_frame.swapchain_semaphore;
+            let in_flight_fence = current_frame.in_flight_fence;
+            let per_frame_descriptor_set = current_frame.per_frame_set;
+            (
+                command_buffer,
+                swapchain_semaphore,
+                in_flight_fence,
+                per_frame_descriptor_set,
+            )
+        };
 
         unsafe {
             self.device
@@ -599,16 +702,15 @@ impl VulkanContext {
 
             self.device.reset_fences(&[in_flight_fence]).unwrap();
 
+            self.update_per_frame_descriptors();
+
             let submit_semaphore = self.submit_semaphores[image_index as usize];
 
             let swapchain_image = self.swapchain_images[image_index as usize];
             let swapchain_image_view = self.swapchain_image_views[image_index as usize];
 
             self.device
-                .reset_command_buffer(
-                    current_frame.command_buffer,
-                    vk::CommandBufferResetFlags::empty(),
-                )
+                .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())
                 .unwrap();
 
             let command_buffer_being_info = vk::CommandBufferBeginInfo::default()
@@ -669,6 +771,17 @@ impl VulkanContext {
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.graphics_pipeline,
+            );
+
+            let descriptor_sets = [per_frame_descriptor_set];
+
+            self.device.cmd_bind_descriptor_sets(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.graphics_pipeline_layout,
+                0,
+                &descriptor_sets,
+                &[],
             );
 
             self.device
@@ -794,11 +907,11 @@ impl VulkanContext {
         device: &ash::Device,
         surface_format: vk::SurfaceFormatKHR,
         descriptor_set_layouts: &[vk::DescriptorSetLayout],
-    ) -> vk::Pipeline {
+    ) -> (vk::Pipeline, vk::PipelineLayout) {
         let pipeline_layout_info =
             vk::PipelineLayoutCreateInfo::default().set_layouts(descriptor_set_layouts);
 
-        let pipeline_layout = unsafe {
+        let graphics_pipeline_layout = unsafe {
             device
                 .create_pipeline_layout(&pipeline_layout_info, None)
                 .unwrap()
@@ -895,12 +1008,12 @@ impl VulkanContext {
             .rasterization_state(&rasterization_info)
             .multisample_state(&multisample_info)
             .color_blend_state(&color_blender_state_info)
-            .layout(pipeline_layout)
+            .layout(graphics_pipeline_layout)
             .depth_stencil_state(&depth_stencil_state_info)
             .subpass(0)
             .push_next(&mut rendering_create_info)];
 
-        unsafe {
+        let graphics_pipeline = unsafe {
             device
                 .create_graphics_pipelines(
                     vk::PipelineCache::null(),
@@ -908,7 +1021,9 @@ impl VulkanContext {
                     None,
                 )
                 .unwrap()[0]
-        }
+        };
+
+        (graphics_pipeline, graphics_pipeline_layout)
     }
 
     fn create_descriptor_pool(device: &ash::Device, set_count: u32) -> vk::DescriptorPool {
@@ -937,6 +1052,7 @@ impl VulkanContext {
     fn create_descriptor_layouts(device: &ash::Device) -> Vec<vk::DescriptorSetLayout> {
         let per_frame_bindings = [vk::DescriptorSetLayoutBinding::default()
             .binding(0)
+            .descriptor_count(1)
             .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
             .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)];
 
@@ -945,6 +1061,7 @@ impl VulkanContext {
 
         let per_material_bindings = [vk::DescriptorSetLayoutBinding::default()
             .binding(0)
+            .descriptor_count(1)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)];
 
@@ -976,8 +1093,16 @@ impl Drop for VulkanContext {
     fn drop(&mut self) {
         unsafe {
             let _ = self.device.device_wait_idle();
+
             self.allocator
-                .destroy_buffer(self.vertex_buffer.0, &mut self.vertex_buffer.1)
+                .destroy_buffer(self.vertex_buffer.0, &mut self.vertex_buffer.1);
+
+            for render_frame in self.render_frames.iter_mut() {
+                self.allocator.destroy_buffer(
+                    render_frame.per_frame_descriptor_data.0,
+                    &mut render_frame.per_frame_descriptor_data.1,
+                );
+            }
         };
     }
 }

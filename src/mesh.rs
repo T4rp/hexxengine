@@ -1,7 +1,7 @@
 use std::mem;
 
 use ash::vk;
-use glam::{Mat4, Vec2, Vec3};
+use glam::{Mat4, Quat, Vec2, Vec3};
 
 #[derive(Clone, Copy)]
 #[repr(C)]
@@ -80,6 +80,15 @@ impl MeshVertex {
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub struct CameraUniform {
-    proj: Mat4,
-    view: Mat4,
+    pub proj: Mat4,
+    pub view: Mat4,
+}
+
+impl CameraUniform {
+    pub fn new(position: Vec3, orientation: Quat, fov: f32, aspect_ratio: f32) -> Self {
+        let proj = Mat4::perspective_infinite_reverse_rh(fov.to_radians(), aspect_ratio, 0.0);
+        let view = Mat4::from_rotation_translation(orientation, position);
+
+        Self { proj, view }
+    }
 }

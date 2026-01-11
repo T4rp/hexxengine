@@ -61,6 +61,7 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::RedrawRequested => {
+                self.vk_ctx.as_mut().unwrap().update();
                 self.vk_ctx.as_mut().unwrap().draw();
                 self.window.as_ref().unwrap().request_redraw();
             }
