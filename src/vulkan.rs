@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::io::Cursor;
 use std::rc::Rc;
+use std::time::SystemTime;
 use std::{ffi, fs, mem};
 
 use ash::Entry;
@@ -119,6 +120,7 @@ pub struct VulkanContext {
     graphics_pipeline_layout: vk::PipelineLayout,
 
     camera: Camera,
+    last_frame_time: SystemTime,
 }
 
 pub struct Camera {
@@ -568,6 +570,8 @@ impl VulkanContext {
 
         let camera = Camera::new(vec3(0.0, 0.0, -5.0), Quat::IDENTITY, 90.0);
 
+        let last_frame_time = SystemTime::now();
+
         Self {
             window,
             entry,
@@ -593,6 +597,7 @@ impl VulkanContext {
             descriptor_set_layouts,
             descriptor_pool,
             camera,
+            last_frame_time,
         }
     }
 
@@ -652,8 +657,10 @@ impl VulkanContext {
     }
 
     pub fn update(&mut self) {
+        let dt = self.last_frame_time.elapsed().unwrap().as_secs_f32();
+        self.last_frame_time = SystemTime::now();
         self.camera.orientation *=
-            Quat::from_euler(glam::EulerRot::XYZ, 0.0, f32::to_radians(10.0), 0.0);
+            Quat::from_euler(glam::EulerRot::XYZ, 0.0, f32::to_radians(100.0) * dt, 0.0);
     }
 
     pub fn draw(&mut self) {
