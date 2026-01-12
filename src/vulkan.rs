@@ -92,6 +92,8 @@ pub struct RenderFrame {
     per_frame_set: vk::DescriptorSet,
     per_material_set: vk::DescriptorSet,
     per_frame_descriptor_data: PerFrameDescriptorData,
+    depth_image_view: vk::ImageView,
+    depth_image: (vk::Image, vk_mem::Allocation),
 }
 
 pub struct VulkanContext {
@@ -112,7 +114,7 @@ pub struct VulkanContext {
     swapchain_extent: vk::Extent2D,
     allocator: vk_mem::Allocator,
     vertex_buffer: (vk::Buffer, vk_mem::Allocation),
-    should_recreate_swapchain: bool,
+    should_resize: bool,
     physical_device: vk::PhysicalDevice,
     window: Rc<Window>,
     descriptor_set_layouts: Vec<vk::DescriptorSetLayout>,
@@ -311,11 +313,68 @@ fn setup_per_frame_descriptor(
     camera_uniform_buffer
 }
 
+fn create_depth_resources(
+    device: &ash::Device,
+    allocator: &vk_mem::Allocator,
+    window_extent: vk::Extent2D,
+) -> ((vk::Image, vk_mem::Allocation), vk::ImageView) {
+    let image_info = vk::ImageCreateInfo::default()
+        .image_type(vk::ImageType::TYPE_2D)
+        .extent(vk::Extent3D {
+            width: window_extent.width,
+            height: window_extent.height,
+            depth: 1,
+        })
+        .mip_levels(1)
+        .array_layers(1)
+        .format(vk::Format::D32_SFLOAT)
+        .tiling(vk::ImageTiling::OPTIMAL)
+        .initial_layout(vk::ImageLayout::UNDEFINED)
+        .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT)
+        .sharing_mode(vk::SharingMode::EXCLUSIVE)
+        .samples(vk::SampleCountFlags::TYPE_1);
+
+    let image_alloc_info = vk_mem::AllocationCreateInfo {
+        usage: vk_mem::MemoryUsage::AutoPreferDevice,
+        ..Default::default()
+    };
+
+    let depth_image = unsafe {
+        allocator
+            .create_image(&image_info, &image_alloc_info)
+            .unwrap()
+    };
+
+    let image_view_info = vk::ImageViewCreateInfo::default()
+        .image(depth_image.0)
+        .view_type(vk::ImageViewType::TYPE_2D)
+        .format(vk::Format::D32_SFLOAT)
+        .components(
+            vk::ComponentMapping::default()
+                .r(vk::ComponentSwizzle::IDENTITY)
+                .g(vk::ComponentSwizzle::IDENTITY)
+                .b(vk::ComponentSwizzle::IDENTITY),
+        )
+        .subresource_range(
+            vk::ImageSubresourceRange::default()
+                .aspect_mask(vk::ImageAspectFlags::DEPTH)
+                .base_mip_level(0)
+                .level_count(1)
+                .base_array_layer(0)
+                .layer_count(1),
+        );
+
+    let depth_image_view = unsafe { device.create_image_view(&image_view_info, None).unwrap() };
+
+    (depth_image, depth_image_view)
+}
+
 fn create_render_frames(
     device: &ash::Device,
     allocator: &vk_mem::Allocator,
     descriptor_pool: vk::DescriptorPool,
     descriptor_set_layout: &[vk::DescriptorSetLayout],
+    window_extent: vk::Extent2D,
     queue_family_index: u32,
 ) -> Vec<RenderFrame> {
     let frames: Vec<RenderFrame> = (0..MAX_FRAMES)
@@ -368,6 +427,9 @@ fn create_render_frames(
             let per_frame_descriptor_data =
                 setup_per_frame_descriptor(device, allocator, descriptor_sets[0]);
 
+            let (depth_image, depth_image_view) =
+                create_depth_resources(device, allocator, window_extent);
+
             RenderFrame {
                 command_pool,
                 command_buffer,
@@ -376,6 +438,8 @@ fn create_render_frames(
                 per_frame_set: descriptor_sets[0],
                 per_material_set: descriptor_sets[1],
                 per_frame_descriptor_data,
+                depth_image,
+                depth_image_view,
             }
         })
         .collect();
@@ -514,14 +578,6 @@ impl VulkanContext {
         let descriptor_pool = Self::create_descriptor_pool(&device, 3);
         let descriptor_set_layouts = Self::create_descriptor_layouts(&device);
 
-        let render_frames = create_render_frames(
-            &device,
-            &allocator,
-            descriptor_pool,
-            &descriptor_set_layouts,
-            graphics_queue_family_index,
-        );
-
         let all_surface_formats = unsafe {
             surface_fn
                 .get_physical_device_surface_formats(physical_device, surface)
@@ -548,6 +604,15 @@ impl VulkanContext {
                 None,
             )
             .unwrap();
+
+        let render_frames = create_render_frames(
+            &device,
+            &allocator,
+            descriptor_pool,
+            &descriptor_set_layouts,
+            swapchain_extent,
+            graphics_queue_family_index,
+        );
 
         let submit_semaphores = create_submit_semaphores(&device, swapchain_images.len());
 
@@ -586,7 +651,7 @@ impl VulkanContext {
             swapchain_images,
             swapchain_image_views,
             swapchain_extent,
-            should_recreate_swapchain,
+            should_resize: should_recreate_swapchain,
             render_frames,
             submit_semaphores,
             current_frame,
@@ -607,13 +672,8 @@ impl VulkanContext {
         image: vk::Image,
         current_layout: vk::ImageLayout,
         new_layout: vk::ImageLayout,
+        aspect_mask: vk::ImageAspectFlags,
     ) {
-        let aspect_mask = if current_layout == vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL {
-            vk::ImageAspectFlags::DEPTH
-        } else {
-            vk::ImageAspectFlags::COLOR
-        };
-
         let image_barriers = &[vk::ImageMemoryBarrier2::default()
             .src_stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)
             .src_access_mask(vk::AccessFlags2::MEMORY_WRITE)
@@ -664,25 +724,38 @@ impl VulkanContext {
     }
 
     pub fn draw(&mut self) {
-        if self.should_recreate_swapchain {
-            self.recreate_swapchain_resources();
+        if self.should_resize {
+            self.handle_resize();
             return;
         }
 
         let swapchain_fn = ash::khr::swapchain::Device::new(&self.instance, &self.device);
 
         // put this in a scope so &RenderFrame gets dropped and we can use it again (fuck sake)
-        let (command_buffer, swapchain_semaphore, in_flight_fence, per_frame_descriptor_set) = {
+        // TODO: find a better way ffs
+        let (
+            command_buffer,
+            swapchain_semaphore,
+            in_flight_fence,
+            per_frame_descriptor_set,
+            depth_image,
+            depth_image_view,
+        ) = {
             let current_frame = &self.render_frames[self.current_frame % MAX_FRAMES];
             let command_buffer = current_frame.command_buffer;
             let swapchain_semaphore = current_frame.swapchain_semaphore;
             let in_flight_fence = current_frame.in_flight_fence;
             let per_frame_descriptor_set = current_frame.per_frame_set;
+            let depth_image = current_frame.depth_image.0;
+            let depth_image_view = current_frame.depth_image_view;
+
             (
                 command_buffer,
                 swapchain_semaphore,
                 in_flight_fence,
                 per_frame_descriptor_set,
+                depth_image,
+                depth_image_view,
             )
         };
 
@@ -703,7 +776,7 @@ impl VulkanContext {
             };
 
             if should_recreate {
-                self.should_recreate_swapchain = true;
+                self.should_resize = true;
                 return;
             }
 
@@ -732,6 +805,15 @@ impl VulkanContext {
                 swapchain_image,
                 vk::ImageLayout::UNDEFINED,
                 vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                vk::ImageAspectFlags::COLOR,
+            );
+
+            self.transition_image(
+                command_buffer,
+                depth_image,
+                vk::ImageLayout::UNDEFINED,
+                vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                vk::ImageAspectFlags::DEPTH,
             );
 
             let rendering_attachment = &[vk::RenderingAttachmentInfo::default()
@@ -745,6 +827,18 @@ impl VulkanContext {
                     },
                 })];
 
+            let depth_attachment = vk::RenderingAttachmentInfo::default()
+                .image_view(depth_image_view)
+                .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                .load_op(vk::AttachmentLoadOp::CLEAR)
+                .store_op(vk::AttachmentStoreOp::STORE)
+                .clear_value(vk::ClearValue {
+                    depth_stencil: vk::ClearDepthStencilValue {
+                        depth: 0.0,
+                        stencil: 0,
+                    },
+                });
+
             let render_area = vk::Rect2D {
                 offset: vk::Offset2D { x: 0, y: 0 },
                 extent: self.swapchain_extent,
@@ -752,6 +846,7 @@ impl VulkanContext {
 
             let rendering_info = vk::RenderingInfo::default()
                 .color_attachments(rendering_attachment)
+                .depth_attachment(&depth_attachment)
                 .render_area(render_area)
                 .layer_count(1);
 
@@ -803,6 +898,7 @@ impl VulkanContext {
                 swapchain_image,
                 vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 vk::ImageLayout::PRESENT_SRC_KHR,
+                vk::ImageAspectFlags::COLOR,
             );
 
             self.device.end_command_buffer(command_buffer).unwrap();
@@ -849,14 +945,14 @@ impl VulkanContext {
                 };
 
             if should_recreate {
-                self.should_recreate_swapchain = true;
+                self.should_resize = true;
             }
         }
 
         self.current_frame = self.current_frame + 1;
     }
 
-    pub fn recreate_swapchain_resources(&mut self) {
+    pub fn handle_resize(&mut self) {
         unsafe { self.device.device_wait_idle().unwrap() };
 
         let swapchain_fn = ash::khr::swapchain::Device::new(&self.instance, &self.device);
@@ -900,14 +996,26 @@ impl VulkanContext {
                     .unwrap()
             };
 
+            unsafe {
+                self.allocator
+                    .destroy_image(frame.depth_image.0, &mut frame.depth_image.1);
+
+                self.device.destroy_image_view(frame.depth_image_view, None);
+            };
+
+            let (depth_image, depth_image_view) =
+                create_depth_resources(&self.device, &self.allocator, swapchain_extent);
+
             frame.swapchain_semaphore = new_semaphore;
+            frame.depth_image = depth_image;
+            frame.depth_image_view = depth_image_view;
         }
 
         self.swapchain = swapchain;
         self.swapchain_images = swapchain_images;
         self.swapchain_image_views = swapchain_image_views;
         self.swapchain_extent = swapchain_extent;
-        self.should_recreate_swapchain = false;
+        self.should_resize = false;
     }
 
     fn create_graphics_pipeline(
@@ -991,15 +1099,9 @@ impl VulkanContext {
             .attachments(color_blend_attachment_states);
 
         let depth_stencil_state_info = vk::PipelineDepthStencilStateCreateInfo::default()
-            .depth_test_enable(false)
-            .depth_write_enable(false)
-            .depth_compare_op(vk::CompareOp::NEVER)
-            .depth_bounds_test_enable(false)
-            .stencil_test_enable(false)
-            .front(vk::StencilOpState::default())
-            .back(vk::StencilOpState::default())
-            .min_depth_bounds(0.0)
-            .max_depth_bounds(1.0);
+            .depth_test_enable(true)
+            .depth_write_enable(true)
+            .depth_compare_op(vk::CompareOp::GREATER);
 
         let color_attachment_formats = [surface_format.format];
         let mut rendering_create_info = vk::PipelineRenderingCreateInfo::default()
@@ -1109,6 +1211,9 @@ impl Drop for VulkanContext {
                     render_frame.per_frame_descriptor_data.0,
                     &mut render_frame.per_frame_descriptor_data.1,
                 );
+
+                self.allocator
+                    .destroy_image(render_frame.depth_image.0, &mut render_frame.depth_image.1);
             }
         };
     }
