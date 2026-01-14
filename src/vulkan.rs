@@ -632,7 +632,7 @@ impl VulkanContext {
         };
 
         let current_frame: usize = 0;
-        let should_recreate_swapchain = false;
+        let should_resize = false;
 
         let camera = Camera::new(vec3(0.0, 0.0, -5.0), Quat::IDENTITY, 90.0);
 
@@ -652,7 +652,7 @@ impl VulkanContext {
             swapchain_images,
             swapchain_image_views,
             swapchain_extent,
-            should_resize: should_recreate_swapchain,
+            should_resize,
             render_frames,
             submit_semaphores,
             current_frame,
