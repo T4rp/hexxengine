@@ -732,33 +732,14 @@ impl VulkanContext {
 
         let swapchain_fn = ash::khr::swapchain::Device::new(&self.instance, &self.device);
 
-        // put this in a scope so &RenderFrame gets dropped and we can use it again (fuck sake)
-        // TODO: find a better way ffs
-        let (
-            command_buffer,
-            swapchain_semaphore,
-            in_flight_fence,
-            per_frame_descriptor_set,
-            depth_image,
-            depth_image_view,
-        ) = {
-            let current_frame = &self.render_frames[self.current_frame % MAX_FRAMES];
-            let command_buffer = current_frame.command_buffer;
-            let swapchain_semaphore = current_frame.swapchain_semaphore;
-            let in_flight_fence = current_frame.in_flight_fence;
-            let per_frame_descriptor_set = current_frame.per_frame_set;
-            let depth_image = current_frame.depth_image.0;
-            let depth_image_view = current_frame.depth_image_view;
-
-            (
-                command_buffer,
-                swapchain_semaphore,
-                in_flight_fence,
-                per_frame_descriptor_set,
-                depth_image,
-                depth_image_view,
-            )
-        };
+        let current_frame = &mut self.render_frames[self.current_frame % MAX_FRAMES];
+        let command_pool = current_frame.command_pool;
+        let command_buffer = current_frame.command_buffer;
+        let swapchain_semaphore = current_frame.swapchain_semaphore;
+        let in_flight_fence = current_frame.in_flight_fence;
+        let per_frame_descriptor_set = current_frame.per_frame_set;
+        let depth_image = current_frame.depth_image.0;
+        let depth_image_view = current_frame.depth_image_view;
 
         unsafe {
             self.device
