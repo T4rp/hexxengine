@@ -260,9 +260,9 @@ fn create_swapchain(
                 .subresource_range(vk::ImageSubresourceRange {
                     aspect_mask: vk::ImageAspectFlags::COLOR,
                     base_mip_level: 0,
-                    level_count: 1,
+                    level_count: vk::REMAINING_MIP_LEVELS,
                     base_array_layer: 0,
-                    layer_count: 1,
+                    layer_count: vk::REMAINING_ARRAY_LAYERS,
                 });
 
             unsafe { device.create_image_view(&image_create_info, None).unwrap() }
@@ -336,6 +336,7 @@ fn create_depth_resources(
 
     let image_alloc_info = vk_mem::AllocationCreateInfo {
         usage: vk_mem::MemoryUsage::AutoPreferDevice,
+        preferred_flags: vk::MemoryPropertyFlags::LAZILY_ALLOCATED,
         ..Default::default()
     };
 
