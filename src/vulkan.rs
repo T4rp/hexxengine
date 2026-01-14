@@ -22,6 +22,11 @@ const MAX_FRAMES: usize = 2;
 
 const VERTICES: &[Vertex2d] = &[
     Vertex2d {
+        pos: vec2(-1.0, -1.0),
+        uv: vec2(-1.0, 1.0),
+        color: vec3(1.0, 0.0, 0.0),
+    },
+    Vertex2d {
         pos: vec2(-1.0, 1.0),
         uv: vec2(-1.0, 1.0),
         color: vec3(0.0, 1.0, 0.0),
@@ -29,14 +34,16 @@ const VERTICES: &[Vertex2d] = &[
     Vertex2d {
         pos: vec2(1.0, 1.0),
         uv: vec2(-1.0, 1.0),
-        color: vec3(1.0, 0.0, 0.0),
-    },
-    Vertex2d {
-        pos: vec2(0.0, -1.0),
-        uv: vec2(-1.0, 1.0),
         color: vec3(0.0, 0.0, 1.0),
     },
+    Vertex2d {
+        pos: vec2(1.0, -1.0),
+        uv: vec2(-1.0, 1.0),
+        color: vec3(1.0, 1.0, 1.0),
+    },
 ];
+
+const INDICES: &[u16] = &[0, 1, 2, 2, 3, 0];
 
 const DESCRIPTOR_RATIOS: &[(vk::DescriptorType, u32)] = &[
     (vk::DescriptorType::COMBINED_IMAGE_SAMPLER, 1),
@@ -124,6 +131,7 @@ pub struct VulkanContext {
     camera: Camera,
     last_frame_time: SystemTime,
     command_pool: vk::CommandPool,
+    index_buffer: (vk::Buffer, vk_mem::Allocation),
 }
 
 pub struct Camera {
@@ -560,10 +568,19 @@ fn create_shader_module(device: &ash::Device, data: &[u8]) -> vk::ShaderModule {
     unsafe { device.create_shader_module(&create_info, None).unwrap() }
 }
 
-fn create_vertex_buffer(allocator: &vk_mem::Allocator) -> (vk::Buffer, vk_mem::Allocation) {
-    let buffer_info = vk::BufferCreateInfo::default()
+fn create_mesh_buffers(
+    allocator: &vk_mem::Allocator,
+) -> (
+    (vk::Buffer, vk_mem::Allocation),
+    (vk::Buffer, vk_mem::Allocation),
+) {
+    let vertex_buffer_info = vk::BufferCreateInfo::default()
         .size((mem::size_of::<Vertex2d>() * VERTICES.len()) as u64)
         .usage(vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
+
+    let index_buffer_info = vk::BufferCreateInfo::default()
+        .size((mem::size_of::<u16>() * INDICES.len()) as u64)
+        .usage(vk::BufferUsageFlags::INDEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
 
     let alloc_info = vk_mem::AllocationCreateInfo {
         usage: vk_mem::MemoryUsage::AutoPreferHost,
@@ -572,7 +589,19 @@ fn create_vertex_buffer(allocator: &vk_mem::Allocator) -> (vk::Buffer, vk_mem::A
         ..Default::default()
     };
 
-    unsafe { allocator.create_buffer(&buffer_info, &alloc_info).unwrap() }
+    let vertex_buffer = unsafe {
+        allocator
+            .create_buffer(&vertex_buffer_info, &alloc_info)
+            .unwrap()
+    };
+
+    let index_buffer = unsafe {
+        allocator
+            .create_buffer(&index_buffer_info, &alloc_info)
+            .unwrap()
+    };
+
+    (vertex_buffer, index_buffer)
 }
 
 impl VulkanContext {
@@ -707,16 +736,23 @@ impl VulkanContext {
         let (graphics_pipeline, graphics_pipeline_layout) =
             Self::create_graphics_pipeline(&device, surface_format, &descriptor_set_layouts);
 
-        let vertex_buffer = create_vertex_buffer(&allocator);
-        let alloc_info = allocator.get_allocation_info(&vertex_buffer.1);
+        let (vertex_buffer, index_buffer) = create_mesh_buffers(&allocator);
+        let vertex_alloc_info = allocator.get_allocation_info(&vertex_buffer.1);
+        let index_alloc_info = allocator.get_allocation_info(&index_buffer.1);
 
         unsafe {
             std::ptr::copy_nonoverlapping(
                 VERTICES.as_ptr(),
-                alloc_info.mapped_data.cast(),
+                vertex_alloc_info.mapped_data.cast(),
                 VERTICES.len(),
-            )
-        };
+            );
+
+            std::ptr::copy_nonoverlapping(
+                INDICES.as_ptr(),
+                index_alloc_info.mapped_data.cast(),
+                INDICES.len(),
+            );
+        }
 
         let current_frame: usize = 0;
         let should_resize = false;
@@ -748,6 +784,7 @@ impl VulkanContext {
             graphics_pipeline_layout,
             allocator,
             vertex_buffer,
+            index_buffer,
             descriptor_set_layouts,
             descriptor_pool,
             camera,
@@ -922,7 +959,17 @@ impl VulkanContext {
             self.device
                 .cmd_bind_vertex_buffers(command_buffer, 0, &[self.vertex_buffer.0], &[0]);
 
-            self.device.cmd_draw(command_buffer, 3, 1, 0, 0);
+            self.device.cmd_bind_index_buffer(
+                command_buffer,
+                self.index_buffer.0,
+                0,
+                vk::IndexType::UINT16,
+            );
+
+            // self.device.cmd_draw(command_buffer, 3, 1, 0, 0);
+
+            self.device
+                .cmd_draw_indexed(command_buffer, INDICES.len() as u32, 1, 0, 0, 0);
 
             self.device.cmd_end_rendering(command_buffer);
 
