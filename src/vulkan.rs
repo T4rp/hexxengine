@@ -289,7 +289,7 @@ fn transition_image(
         .old_layout(current_layout)
         .new_layout(new_layout)
         .subresource_range(vk::ImageSubresourceRange {
-            aspect_mask: aspect_mask,
+            aspect_mask,
             base_mip_level: 0,
             level_count: vk::REMAINING_MIP_LEVELS,
             base_array_layer: 0,
@@ -798,7 +798,6 @@ impl VulkanContext {
         let swapchain_semaphore = current_frame.swapchain_semaphore;
         let in_flight_fence = current_frame.in_flight_fence;
         let per_frame_descriptor_set = current_frame.per_frame_set;
-        let depth_image = current_frame.depth_image.0;
         let depth_image_view = current_frame.depth_image_view;
 
         unsafe {
