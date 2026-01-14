@@ -83,12 +83,6 @@ unsafe extern "system" fn debug_messager_callback(
     }
 }
 
-pub struct MeshBuffers {
-    vertex_buffer: vk::Buffer,
-    index_buffer: vk::Buffer,
-    index_count: u32,
-}
-
 type PerFrameDescriptorData = (vk::Buffer, vk_mem::Allocation);
 
 pub struct RenderFrame {
@@ -120,7 +114,7 @@ pub struct VulkanContext {
     surface_format: vk::SurfaceFormatKHR,
     swapchain_extent: vk::Extent2D,
     allocator: vk_mem::Allocator,
-    vertex_buffer: (vk::Buffer, vk_mem::Allocation),
+    mesh_buffer: MeshBuffer,
     should_resize: bool,
     physical_device: vk::PhysicalDevice,
     window: Rc<Window>,
@@ -131,7 +125,6 @@ pub struct VulkanContext {
     camera: Camera,
     last_frame_time: SystemTime,
     command_pool: vk::CommandPool,
-    index_buffer: (vk::Buffer, vk_mem::Allocation),
 }
 
 pub struct Camera {
@@ -145,6 +138,70 @@ impl Camera {
             position,
             orientation,
             fov,
+        }
+    }
+}
+
+pub struct MeshBuffer {
+    vertex_buffer: (vk::Buffer, vk_mem::Allocation),
+    index_buffer: (vk::Buffer, vk_mem::Allocation),
+    index_count: u32,
+}
+
+impl MeshBuffer {
+    fn allocate_mesh(
+        allocator: &vk_mem::Allocator,
+        vertices: &[Vertex2d],
+        indicies: &[u16],
+    ) -> Self {
+        let vertex_buffer_info = vk::BufferCreateInfo::default()
+            .size((mem::size_of::<Vertex2d>() * VERTICES.len()) as u64)
+            .usage(vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
+
+        let index_buffer_info = vk::BufferCreateInfo::default()
+            .size((mem::size_of::<u16>() * INDICES.len()) as u64)
+            .usage(vk::BufferUsageFlags::INDEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
+
+        let alloc_info = vk_mem::AllocationCreateInfo {
+            usage: vk_mem::MemoryUsage::AutoPreferHost,
+            flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE
+                | vk_mem::AllocationCreateFlags::MAPPED,
+            ..Default::default()
+        };
+
+        let vertex_buffer = unsafe {
+            allocator
+                .create_buffer(&vertex_buffer_info, &alloc_info)
+                .unwrap()
+        };
+
+        let index_buffer = unsafe {
+            allocator
+                .create_buffer(&index_buffer_info, &alloc_info)
+                .unwrap()
+        };
+
+        let vertex_alloc_info = allocator.get_allocation_info(&vertex_buffer.1);
+        let index_alloc_info = allocator.get_allocation_info(&index_buffer.1);
+
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                vertices.as_ptr(),
+                vertex_alloc_info.mapped_data.cast(),
+                vertices.len(),
+            );
+
+            std::ptr::copy_nonoverlapping(
+                indicies.as_ptr(),
+                index_alloc_info.mapped_data.cast(),
+                indicies.len(),
+            );
+        }
+
+        Self {
+            vertex_buffer,
+            index_buffer,
+            index_count: indicies.len() as u32,
         }
     }
 }
@@ -568,42 +625,6 @@ fn create_shader_module(device: &ash::Device, data: &[u8]) -> vk::ShaderModule {
     unsafe { device.create_shader_module(&create_info, None).unwrap() }
 }
 
-fn create_mesh_buffers(
-    allocator: &vk_mem::Allocator,
-) -> (
-    (vk::Buffer, vk_mem::Allocation),
-    (vk::Buffer, vk_mem::Allocation),
-) {
-    let vertex_buffer_info = vk::BufferCreateInfo::default()
-        .size((mem::size_of::<Vertex2d>() * VERTICES.len()) as u64)
-        .usage(vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
-
-    let index_buffer_info = vk::BufferCreateInfo::default()
-        .size((mem::size_of::<u16>() * INDICES.len()) as u64)
-        .usage(vk::BufferUsageFlags::INDEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
-
-    let alloc_info = vk_mem::AllocationCreateInfo {
-        usage: vk_mem::MemoryUsage::AutoPreferHost,
-        flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE
-            | vk_mem::AllocationCreateFlags::MAPPED,
-        ..Default::default()
-    };
-
-    let vertex_buffer = unsafe {
-        allocator
-            .create_buffer(&vertex_buffer_info, &alloc_info)
-            .unwrap()
-    };
-
-    let index_buffer = unsafe {
-        allocator
-            .create_buffer(&index_buffer_info, &alloc_info)
-            .unwrap()
-    };
-
-    (vertex_buffer, index_buffer)
-}
-
 impl VulkanContext {
     pub fn new(window: Rc<Window>) -> Self {
         let raw_window_handle = window.window_handle().unwrap().as_raw();
@@ -736,23 +757,7 @@ impl VulkanContext {
         let (graphics_pipeline, graphics_pipeline_layout) =
             Self::create_graphics_pipeline(&device, surface_format, &descriptor_set_layouts);
 
-        let (vertex_buffer, index_buffer) = create_mesh_buffers(&allocator);
-        let vertex_alloc_info = allocator.get_allocation_info(&vertex_buffer.1);
-        let index_alloc_info = allocator.get_allocation_info(&index_buffer.1);
-
-        unsafe {
-            std::ptr::copy_nonoverlapping(
-                VERTICES.as_ptr(),
-                vertex_alloc_info.mapped_data.cast(),
-                VERTICES.len(),
-            );
-
-            std::ptr::copy_nonoverlapping(
-                INDICES.as_ptr(),
-                index_alloc_info.mapped_data.cast(),
-                INDICES.len(),
-            );
-        }
+        let mesh_buffer = MeshBuffer::allocate_mesh(&allocator, VERTICES, INDICES);
 
         let current_frame: usize = 0;
         let should_resize = false;
@@ -783,8 +788,7 @@ impl VulkanContext {
             graphics_pipeline,
             graphics_pipeline_layout,
             allocator,
-            vertex_buffer,
-            index_buffer,
+            mesh_buffer,
             descriptor_set_layouts,
             descriptor_pool,
             camera,
@@ -956,12 +960,16 @@ impl VulkanContext {
                 &[],
             );
 
-            self.device
-                .cmd_bind_vertex_buffers(command_buffer, 0, &[self.vertex_buffer.0], &[0]);
+            self.device.cmd_bind_vertex_buffers(
+                command_buffer,
+                0,
+                &[self.mesh_buffer.vertex_buffer.0],
+                &[0],
+            );
 
             self.device.cmd_bind_index_buffer(
                 command_buffer,
-                self.index_buffer.0,
+                self.mesh_buffer.index_buffer.0,
                 0,
                 vk::IndexType::UINT16,
             );
@@ -1289,8 +1297,15 @@ impl Drop for VulkanContext {
         unsafe {
             let _ = self.device.device_wait_idle();
 
-            self.allocator
-                .destroy_buffer(self.vertex_buffer.0, &mut self.vertex_buffer.1);
+            self.allocator.destroy_buffer(
+                self.mesh_buffer.vertex_buffer.0,
+                &mut self.mesh_buffer.vertex_buffer.1,
+            );
+
+            self.allocator.destroy_buffer(
+                self.mesh_buffer.index_buffer.0,
+                &mut self.mesh_buffer.index_buffer.1,
+            );
 
             for render_frame in self.render_frames.iter_mut() {
                 self.allocator.destroy_buffer(
