@@ -428,20 +428,19 @@ fn create_depth_resources(
         .image(depth_image.0)
         .view_type(vk::ImageViewType::TYPE_2D)
         .format(vk::Format::D32_SFLOAT)
-        .components(
-            vk::ComponentMapping::default()
-                .r(vk::ComponentSwizzle::IDENTITY)
-                .g(vk::ComponentSwizzle::IDENTITY)
-                .b(vk::ComponentSwizzle::IDENTITY),
-        )
-        .subresource_range(
-            vk::ImageSubresourceRange::default()
-                .aspect_mask(vk::ImageAspectFlags::DEPTH)
-                .base_mip_level(0)
-                .level_count(1)
-                .base_array_layer(0)
-                .layer_count(1),
-        );
+        .components(vk::ComponentMapping {
+            r: vk::ComponentSwizzle::IDENTITY,
+            g: vk::ComponentSwizzle::IDENTITY,
+            b: vk::ComponentSwizzle::IDENTITY,
+            a: vk::ComponentSwizzle::IDENTITY,
+        })
+        .subresource_range(vk::ImageSubresourceRange {
+            aspect_mask: vk::ImageAspectFlags::DEPTH,
+            base_mip_level: 0,
+            level_count: vk::REMAINING_MIP_LEVELS,
+            base_array_layer: 0,
+            layer_count: vk::REMAINING_ARRAY_LAYERS,
+        });
 
     let depth_image_view = unsafe { device.create_image_view(&image_view_info, None).unwrap() };
 
