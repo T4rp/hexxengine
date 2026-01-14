@@ -772,7 +772,7 @@ impl VulkanContext {
             let swapchain_image_view = self.swapchain_image_views[image_index as usize];
 
             self.device
-                .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())
+                .reset_command_pool(command_pool, vk::CommandPoolResetFlags::empty())
                 .unwrap();
 
             let command_buffer_being_info = vk::CommandBufferBeginInfo::default()
