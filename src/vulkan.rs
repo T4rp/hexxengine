@@ -123,6 +123,7 @@ pub struct VulkanContext {
 
     camera: Camera,
     last_frame_time: SystemTime,
+    command_pool: vk::CommandPool,
 }
 
 pub struct Camera {
@@ -272,6 +273,35 @@ fn create_swapchain(
     Ok((swapchain, swapchain_images, image_views, image_extent))
 }
 
+fn transition_image(
+    device: &ash::Device,
+    command_buffer: vk::CommandBuffer,
+    image: vk::Image,
+    current_layout: vk::ImageLayout,
+    new_layout: vk::ImageLayout,
+    aspect_mask: vk::ImageAspectFlags,
+) {
+    let image_barriers = &[vk::ImageMemoryBarrier2::default()
+        .src_stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)
+        .src_access_mask(vk::AccessFlags2::MEMORY_WRITE)
+        .dst_stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)
+        .dst_access_mask(vk::AccessFlags2::MEMORY_WRITE | vk::AccessFlags2::MEMORY_READ)
+        .old_layout(current_layout)
+        .new_layout(new_layout)
+        .subresource_range(vk::ImageSubresourceRange {
+            aspect_mask: aspect_mask,
+            base_mip_level: 0,
+            level_count: vk::REMAINING_MIP_LEVELS,
+            base_array_layer: 0,
+            layer_count: vk::REMAINING_ARRAY_LAYERS,
+        })
+        .image(image)];
+
+    let dep_info = vk::DependencyInfo::default().image_memory_barriers(image_barriers);
+
+    unsafe { device.cmd_pipeline_barrier2(command_buffer, &dep_info) };
+}
+
 fn setup_per_frame_descriptor(
     device: &ash::Device,
     allocator: &vk_mem::Allocator,
@@ -316,6 +346,8 @@ fn setup_per_frame_descriptor(
 fn create_depth_resources(
     device: &ash::Device,
     allocator: &vk_mem::Allocator,
+    queue: vk::Queue,
+    command_pool: vk::CommandPool,
     window_extent: vk::Extent2D,
 ) -> ((vk::Image, vk_mem::Allocation), vk::ImageView) {
     let image_info = vk::ImageCreateInfo::default()
@@ -346,6 +378,52 @@ fn create_depth_resources(
             .unwrap()
     };
 
+    let command_buffers = unsafe {
+        device
+            .allocate_command_buffers(
+                &vk::CommandBufferAllocateInfo::default()
+                    .command_pool(command_pool)
+                    .command_buffer_count(1)
+                    .level(vk::CommandBufferLevel::PRIMARY),
+            )
+            .unwrap()
+    };
+
+    unsafe {
+        device
+            .begin_command_buffer(
+                command_buffers[0],
+                &vk::CommandBufferBeginInfo::default()
+                    .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
+            )
+            .unwrap()
+    };
+
+    transition_image(
+        device,
+        command_buffers[0],
+        depth_image.0,
+        vk::ImageLayout::UNDEFINED,
+        vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        vk::ImageAspectFlags::DEPTH,
+    );
+
+    unsafe {
+        device.end_command_buffer(command_buffers[0]).unwrap();
+
+        device
+            .queue_submit(
+                queue,
+                &[vk::SubmitInfo::default().command_buffers(&command_buffers)],
+                vk::Fence::null(),
+            )
+            .unwrap();
+
+        device.queue_wait_idle(queue).unwrap();
+
+        device.free_command_buffers(command_pool, &command_buffers);
+    }
+
     let image_view_info = vk::ImageViewCreateInfo::default()
         .image(depth_image.0)
         .view_type(vk::ImageViewType::TYPE_2D)
@@ -370,9 +448,24 @@ fn create_depth_resources(
     (depth_image, depth_image_view)
 }
 
+fn create_command_pool(device: &ash::Device, queue_family_index: u32) -> vk::CommandPool {
+    let command_pool_create_info = vk::CommandPoolCreateInfo::default()
+        .queue_family_index(queue_family_index)
+        .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
+
+    let command_pool = unsafe {
+        device
+            .create_command_pool(&command_pool_create_info, None)
+            .unwrap()
+    };
+
+    command_pool
+}
+
 fn create_render_frames(
     device: &ash::Device,
     allocator: &vk_mem::Allocator,
+    queue: vk::Queue,
     descriptor_pool: vk::DescriptorPool,
     descriptor_set_layout: &[vk::DescriptorSetLayout],
     window_extent: vk::Extent2D,
@@ -380,15 +473,7 @@ fn create_render_frames(
 ) -> Vec<RenderFrame> {
     let frames: Vec<RenderFrame> = (0..MAX_FRAMES)
         .map(|_i| {
-            let command_pool_create_info = vk::CommandPoolCreateInfo::default()
-                .queue_family_index(queue_family_index)
-                .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
-
-            let command_pool = unsafe {
-                device
-                    .create_command_pool(&command_pool_create_info, None)
-                    .unwrap()
-            };
+            let command_pool = create_command_pool(device, queue_family_index);
 
             let command_buffer_alloc_info = vk::CommandBufferAllocateInfo::default()
                 .command_pool(command_pool)
@@ -429,7 +514,7 @@ fn create_render_frames(
                 setup_per_frame_descriptor(device, allocator, descriptor_sets[0]);
 
             let (depth_image, depth_image_view) =
-                create_depth_resources(device, allocator, window_extent);
+                create_depth_resources(device, allocator, queue, command_pool, window_extent);
 
             RenderFrame {
                 command_pool,
@@ -606,9 +691,12 @@ impl VulkanContext {
             )
             .unwrap();
 
+        let command_pool = create_command_pool(&device, graphics_queue_family_index);
+
         let render_frames = create_render_frames(
             &device,
             &allocator,
+            graphics_queue,
             descriptor_pool,
             &descriptor_set_layouts,
             swapchain_extent,
@@ -653,6 +741,7 @@ impl VulkanContext {
             swapchain_image_views,
             swapchain_extent,
             should_resize,
+            command_pool,
             render_frames,
             submit_semaphores,
             current_frame,
@@ -665,35 +754,6 @@ impl VulkanContext {
             camera,
             last_frame_time,
         }
-    }
-
-    fn transition_image(
-        &mut self,
-        command_buffer: vk::CommandBuffer,
-        image: vk::Image,
-        current_layout: vk::ImageLayout,
-        new_layout: vk::ImageLayout,
-        aspect_mask: vk::ImageAspectFlags,
-    ) {
-        let image_barriers = &[vk::ImageMemoryBarrier2::default()
-            .src_stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)
-            .src_access_mask(vk::AccessFlags2::MEMORY_WRITE)
-            .dst_stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)
-            .dst_access_mask(vk::AccessFlags2::MEMORY_WRITE | vk::AccessFlags2::MEMORY_READ)
-            .old_layout(current_layout)
-            .new_layout(new_layout)
-            .subresource_range(vk::ImageSubresourceRange {
-                aspect_mask: aspect_mask,
-                base_mip_level: 0,
-                level_count: vk::REMAINING_MIP_LEVELS,
-                base_array_layer: 0,
-                layer_count: vk::REMAINING_ARRAY_LAYERS,
-            })
-            .image(image)];
-
-        let dep_info = vk::DependencyInfo::default().image_memory_barriers(image_barriers);
-
-        unsafe { self.device.cmd_pipeline_barrier2(command_buffer, &dep_info) };
     }
 
     pub fn update_per_frame_descriptors(&mut self) {
@@ -782,20 +842,13 @@ impl VulkanContext {
                 .begin_command_buffer(command_buffer, &command_buffer_being_info)
                 .unwrap();
 
-            self.transition_image(
+            transition_image(
+                &self.device,
                 command_buffer,
                 swapchain_image,
                 vk::ImageLayout::UNDEFINED,
                 vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 vk::ImageAspectFlags::COLOR,
-            );
-
-            self.transition_image(
-                command_buffer,
-                depth_image,
-                vk::ImageLayout::UNDEFINED,
-                vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                vk::ImageAspectFlags::DEPTH,
             );
 
             let rendering_attachment = &[vk::RenderingAttachmentInfo::default()
@@ -875,7 +928,8 @@ impl VulkanContext {
 
             self.device.cmd_end_rendering(command_buffer);
 
-            self.transition_image(
+            transition_image(
+                &self.device,
                 command_buffer,
                 swapchain_image,
                 vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
@@ -985,8 +1039,13 @@ impl VulkanContext {
                 self.device.destroy_image_view(frame.depth_image_view, None);
             };
 
-            let (depth_image, depth_image_view) =
-                create_depth_resources(&self.device, &self.allocator, swapchain_extent);
+            let (depth_image, depth_image_view) = create_depth_resources(
+                &self.device,
+                &self.allocator,
+                self.graphics_queue,
+                self.command_pool,
+                swapchain_extent,
+            );
 
             frame.swapchain_semaphore = new_semaphore;
             frame.depth_image = depth_image;
