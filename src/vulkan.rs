@@ -5,11 +5,7 @@ use std::time::SystemTime;
 use std::{ffi, fs, mem};
 
 use ash::Entry;
-use ash::vk::ApplicationInfo;
-use ash::vk::{
-    self, DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT,
-    DebugUtilsMessengerCallbackDataEXT, DebugUtilsMessengerCreateInfoEXT,
-};
+use ash::vk::{self, ApplicationInfo};
 use glam::{Quat, Vec3, vec2, vec3};
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
@@ -51,9 +47,9 @@ const DESCRIPTOR_RATIOS: &[(vk::DescriptorType, u32)] = &[
 ];
 
 unsafe extern "system" fn debug_messager_callback(
-    message_severity: DebugUtilsMessageSeverityFlagsEXT,
-    message_type: DebugUtilsMessageTypeFlagsEXT,
-    callback_data: *const DebugUtilsMessengerCallbackDataEXT,
+    message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
+    message_type: vk::DebugUtilsMessageTypeFlagsEXT,
+    callback_data: *const vk::DebugUtilsMessengerCallbackDataEXT,
     _userdata: *mut std::os::raw::c_void,
 ) -> vk::Bool32 {
     unsafe {
@@ -251,7 +247,7 @@ fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> 
     let instance = unsafe { entry.create_instance(&create_info, None).unwrap() };
     let debug_utils_fn = ash::ext::debug_utils::Instance::new(&entry, &instance);
 
-    let messager_create_info = DebugUtilsMessengerCreateInfoEXT::default()
+    let messager_create_info = vk::DebugUtilsMessengerCreateInfoEXT::default()
         .message_severity(
             vk::DebugUtilsMessageSeverityFlagsEXT::ERROR
                 | vk::DebugUtilsMessageSeverityFlagsEXT::WARNING
