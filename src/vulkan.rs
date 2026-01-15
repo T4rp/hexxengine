@@ -206,6 +206,20 @@ impl MeshBuffer {
     }
 }
 
+fn destroy_allocated_buffer(
+    allocator: &vk_mem::Allocator,
+    mut buffer: (vk::Buffer, vk_mem::Allocation),
+) {
+    unsafe { allocator.destroy_buffer(buffer.0, &mut buffer.1) };
+}
+
+fn destroy_allocated_image(
+    allocator: &vk_mem::Allocator,
+    mut image: (vk::Image, vk_mem::Allocation),
+) {
+    unsafe { allocator.destroy_image(image.0, &mut image.1) };
+}
+
 fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> ash::Instance {
     let mut extensions = vec![ash::ext::debug_utils::NAME.as_ptr()];
     let mut validation_layers = vec![];
@@ -1086,9 +1100,7 @@ impl VulkanContext {
             };
 
             unsafe {
-                self.allocator
-                    .destroy_image(frame.depth_image.0, &mut frame.depth_image.1);
-
+                destroy_allocated_image(&self.allocator, frame.depth_image);
                 self.device.destroy_image_view(frame.depth_image_view, None);
             };
 
@@ -1297,24 +1309,12 @@ impl Drop for VulkanContext {
         unsafe {
             let _ = self.device.device_wait_idle();
 
-            self.allocator.destroy_buffer(
-                self.mesh_buffer.vertex_buffer.0,
-                &mut self.mesh_buffer.vertex_buffer.1,
-            );
-
-            self.allocator.destroy_buffer(
-                self.mesh_buffer.index_buffer.0,
-                &mut self.mesh_buffer.index_buffer.1,
-            );
+            destroy_allocated_buffer(&self.allocator, self.mesh_buffer.vertex_buffer);
+            destroy_allocated_buffer(&self.allocator, self.mesh_buffer.index_buffer);
 
             for render_frame in self.render_frames.iter_mut() {
-                self.allocator.destroy_buffer(
-                    render_frame.per_frame_descriptor_data.0,
-                    &mut render_frame.per_frame_descriptor_data.1,
-                );
-
-                self.allocator
-                    .destroy_image(render_frame.depth_image.0, &mut render_frame.depth_image.1);
+                destroy_allocated_buffer(&self.allocator, render_frame.per_frame_descriptor_data);
+                destroy_allocated_image(&self.allocator, render_frame.depth_image);
             }
         };
     }
