@@ -87,16 +87,20 @@ struct PerFrameDescriptorData {
     camera_buffer: (vk::Buffer, vk_mem::Allocation),
 }
 
-pub struct RenderFrame {
+struct RenderFrame {
     command_pool: vk::CommandPool,
     command_buffer: vk::CommandBuffer,
     swapchain_semaphore: vk::Semaphore,
     in_flight_fence: vk::Fence,
     per_frame_set: vk::DescriptorSet,
-    per_material_set: vk::DescriptorSet,
     per_frame_descriptor_data: PerFrameDescriptorData,
     depth_image_view: vk::ImageView,
     depth_image: (vk::Image, vk_mem::Allocation),
+}
+
+struct DescriptorSetLayouts {
+    per_frame_layout: vk::DescriptorSetLayout,
+    per_material_layout: vk::DescriptorSetLayout,
 }
 
 pub struct VulkanContext {
@@ -120,7 +124,7 @@ pub struct VulkanContext {
     should_resize: bool,
     physical_device: vk::PhysicalDevice,
     window: Rc<Window>,
-    descriptor_set_layouts: Vec<vk::DescriptorSetLayout>,
+    descriptor_set_layouts: DescriptorSetLayouts,
     descriptor_pool: vk::DescriptorPool,
     graphics_pipeline_layout: vk::PipelineLayout,
 
@@ -548,7 +552,7 @@ fn create_render_frames(
     allocator: &vk_mem::Allocator,
     queue: vk::Queue,
     descriptor_pool: vk::DescriptorPool,
-    descriptor_set_layout: &[vk::DescriptorSetLayout],
+    per_frame_layout: vk::DescriptorSetLayout,
     window_extent: vk::Extent2D,
     queue_family_index: u32,
 ) -> Vec<RenderFrame> {
@@ -581,9 +585,10 @@ fn create_render_frames(
 
             let in_flight_fence = unsafe { device.create_fence(&fence_create_info, None).unwrap() };
 
+            let layouts = [per_frame_layout];
             let descriptor_set_alloc_info = vk::DescriptorSetAllocateInfo::default()
                 .descriptor_pool(descriptor_pool)
-                .set_layouts(descriptor_set_layout);
+                .set_layouts(&layouts);
 
             let descriptor_sets = unsafe {
                 device
@@ -603,7 +608,6 @@ fn create_render_frames(
                 swapchain_semaphore,
                 in_flight_fence,
                 per_frame_set: descriptor_sets[0],
-                per_material_set: descriptor_sets[1],
                 per_frame_descriptor_data,
                 depth_image,
                 depth_image_view,
@@ -764,7 +768,7 @@ impl VulkanContext {
             &allocator,
             graphics_queue,
             descriptor_pool,
-            &descriptor_set_layouts,
+            descriptor_set_layouts.per_frame_layout,
             swapchain_extent,
             graphics_queue_family_index,
         );
@@ -1130,10 +1134,14 @@ impl VulkanContext {
     fn create_graphics_pipeline(
         device: &ash::Device,
         surface_format: vk::SurfaceFormatKHR,
-        descriptor_set_layouts: &[vk::DescriptorSetLayout],
+        descriptor_set_layouts: &DescriptorSetLayouts,
     ) -> (vk::Pipeline, vk::PipelineLayout) {
-        let pipeline_layout_info =
-            vk::PipelineLayoutCreateInfo::default().set_layouts(descriptor_set_layouts);
+        let layouts = &[
+            descriptor_set_layouts.per_frame_layout,
+            descriptor_set_layouts.per_material_layout,
+        ];
+
+        let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default().set_layouts(layouts);
 
         let graphics_pipeline_layout = unsafe {
             device
@@ -1267,7 +1275,7 @@ impl VulkanContext {
         descriptor_pool
     }
 
-    fn create_descriptor_layouts(device: &ash::Device) -> Vec<vk::DescriptorSetLayout> {
+    fn create_descriptor_layouts(device: &ash::Device) -> DescriptorSetLayouts {
         let per_frame_bindings = [vk::DescriptorSetLayoutBinding::default()
             .binding(0)
             .descriptor_count(1)
@@ -1286,8 +1294,6 @@ impl VulkanContext {
         let per_material_layout_info =
             vk::DescriptorSetLayoutCreateInfo::default().bindings(&per_material_bindings);
 
-        let mut descriptor_layouts = Vec::new();
-
         let per_frame_layout = unsafe {
             device
                 .create_descriptor_set_layout(&per_frame_layout_info, None)
@@ -1300,10 +1306,10 @@ impl VulkanContext {
                 .unwrap()
         };
 
-        descriptor_layouts.push(per_frame_layout);
-        descriptor_layouts.push(per_material_layout);
-
-        descriptor_layouts
+        DescriptorSetLayouts {
+            per_frame_layout,
+            per_material_layout,
+        }
     }
 }
 
