@@ -2,16 +2,18 @@ use std::borrow::Cow;
 use std::io::Cursor;
 use std::rc::Rc;
 use std::time::SystemTime;
-use std::{ffi, fs, mem};
+use std::{ffi, fs, hint, mem, ptr};
 
 use ash::Entry;
 use ash::vk::{self, ApplicationInfo};
 use glam::{Quat, Vec3, vec2, vec3};
+use image::DynamicImage;
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
 
 use crate::mesh::{CameraUniform, Vertex2d};
+use crate::vulkan;
 
 const USE_VALIDATION_LAYERS: bool = true;
 const MAX_FRAMES: usize = 2;
@@ -127,6 +129,7 @@ pub struct VulkanContext {
     camera: Camera,
     last_frame_time: SystemTime,
     command_pool: vk::CommandPool,
+    white_texture: ((vk::Image, vk_mem::Allocation), vk::ImageView),
 }
 
 pub struct Camera {
@@ -426,6 +429,165 @@ fn create_shader_module(device: &ash::Device, data: &[u8]) -> vk::ShaderModule {
     unsafe { device.create_shader_module(&create_info, None).unwrap() }
 }
 
+fn create_texture_with_data(
+    device: &ash::Device,
+    allocator: &vk_mem::Allocator,
+    queue: vk::Queue,
+    command_pool: vk::CommandPool,
+    width: u32,
+    height: u32,
+    data: &[u8],
+) -> ((vk::Image, vk_mem::Allocation), vk::ImageView) {
+    let image_extent = vk::Extent3D {
+        width: width,
+        height: height,
+        depth: 1,
+    };
+
+    let format = vk::Format::R8G8B8A8_UNORM;
+
+    let image_info = vk::ImageCreateInfo::default()
+        .image_type(vk::ImageType::TYPE_2D)
+        .extent(image_extent)
+        .mip_levels(1)
+        .array_layers(1)
+        .format(format)
+        .tiling(vk::ImageTiling::OPTIMAL)
+        .initial_layout(vk::ImageLayout::UNDEFINED)
+        .usage(
+            vk::ImageUsageFlags::SAMPLED
+                | vk::ImageUsageFlags::TRANSFER_DST
+                | vk::ImageUsageFlags::TRANSFER_SRC,
+        )
+        .sharing_mode(vk::SharingMode::EXCLUSIVE)
+        .samples(vk::SampleCountFlags::TYPE_1)
+        .flags(vk::ImageCreateFlags::empty());
+
+    let image_alloc_create_info = vk_mem::AllocationCreateInfo {
+        usage: vk_mem::MemoryUsage::AutoPreferDevice,
+        ..Default::default()
+    };
+
+    let image = unsafe {
+        allocator
+            .create_image(&image_info, &image_alloc_create_info)
+            .unwrap()
+    };
+
+    let image_view_info = vk::ImageViewCreateInfo::default()
+        .image(image.0)
+        .subresource_range(vk::ImageSubresourceRange {
+            aspect_mask: vk::ImageAspectFlags::COLOR,
+            base_mip_level: 0,
+            level_count: 1,
+            base_array_layer: 0,
+            layer_count: 1,
+        })
+        .view_type(vk::ImageViewType::TYPE_2D)
+        .format(format);
+
+    let image_view = unsafe { device.create_image_view(&image_view_info, None).unwrap() };
+
+    let buffer_info = vk::BufferCreateInfo::default()
+        .usage(vk::BufferUsageFlags::TRANSFER_SRC)
+        .size(width as u64 * height as u64 * 4);
+
+    let create_info = vk_mem::AllocationCreateInfo {
+        usage: vk_mem::MemoryUsage::Auto,
+        flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE
+            | vk_mem::AllocationCreateFlags::MAPPED,
+        ..Default::default()
+    };
+
+    let mut staging_buffer =
+        unsafe { allocator.create_buffer(&buffer_info, &create_info).unwrap() };
+    let alloc_info = allocator.get_allocation_info(&staging_buffer.1);
+
+    unsafe { ptr::copy_nonoverlapping(data.as_ptr(), alloc_info.mapped_data.cast(), data.len()) };
+
+    let command_buffer_info = vk::CommandBufferAllocateInfo::default()
+        .command_pool(command_pool)
+        .level(vk::CommandBufferLevel::PRIMARY)
+        .command_buffer_count(1);
+
+    let command_buffers = unsafe {
+        device
+            .allocate_command_buffers(&command_buffer_info)
+            .unwrap()
+    };
+
+    let command_buffer = command_buffers[0];
+
+    let being_info =
+        vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+
+    unsafe {
+        device
+            .begin_command_buffer(command_buffer, &being_info)
+            .unwrap()
+    };
+
+    transition_image(
+        device,
+        command_buffer,
+        image.0,
+        vk::ImageLayout::UNDEFINED,
+        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        vk::ImageAspectFlags::COLOR,
+    );
+
+    let copy_regions = &[vk::BufferImageCopy {
+        buffer_offset: 0,
+        buffer_row_length: 0,
+        buffer_image_height: 0,
+        image_subresource: vk::ImageSubresourceLayers {
+            aspect_mask: vk::ImageAspectFlags::COLOR,
+            mip_level: 0,
+            base_array_layer: 0,
+            layer_count: 1,
+        },
+        image_offset: vk::Offset3D::default(),
+        image_extent,
+    }];
+
+    unsafe {
+        device.cmd_copy_buffer_to_image(
+            command_buffer,
+            staging_buffer.0,
+            image.0,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            copy_regions,
+        )
+    };
+
+    transition_image(
+        device,
+        command_buffer,
+        image.0,
+        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        vk::ImageAspectFlags::COLOR,
+    );
+
+    unsafe { device.end_command_buffer(command_buffer).unwrap() };
+
+    unsafe {
+        device
+            .queue_submit(
+                queue,
+                &[vk::SubmitInfo::default().command_buffers(&command_buffers)],
+                vk::Fence::null(),
+            )
+            .unwrap();
+
+        device.queue_wait_idle(queue).unwrap();
+
+        allocator.destroy_buffer(staging_buffer.0, &mut staging_buffer.1);
+    }
+
+    (image, image_view)
+}
+
 impl VulkanContext {
     pub fn new(window: Rc<Window>) -> Self {
         let raw_window_handle = window.window_handle().unwrap().as_raw();
@@ -567,6 +729,16 @@ impl VulkanContext {
 
         let last_frame_time = SystemTime::now();
 
+        let white_texture = create_texture_with_data(
+            &device,
+            &allocator,
+            graphics_queue,
+            command_pool,
+            1,
+            1,
+            &[255, 255, 255, 255],
+        );
+
         Self {
             window,
             entry,
@@ -594,6 +766,7 @@ impl VulkanContext {
             descriptor_pool,
             camera,
             last_frame_time,
+            white_texture,
         }
     }
 
@@ -1322,6 +1495,7 @@ impl Drop for VulkanContext {
 
             destroy_allocated_buffer(&self.allocator, self.mesh_buffer.vertex_buffer);
             destroy_allocated_buffer(&self.allocator, self.mesh_buffer.index_buffer);
+            destroy_allocated_image(&self.allocator, self.white_texture.0);
 
             for render_frame in self.render_frames.iter_mut() {
                 destroy_allocated_buffer(
