@@ -83,7 +83,9 @@ unsafe extern "system" fn debug_messager_callback(
     }
 }
 
-type PerFrameDescriptorData = (vk::Buffer, vk_mem::Allocation);
+struct PerFrameDescriptorData {
+    camera_buffer: (vk::Buffer, vk_mem::Allocation),
+}
 
 pub struct RenderFrame {
     command_pool: vk::CommandPool,
@@ -132,6 +134,7 @@ pub struct Camera {
     orientation: Quat,
     fov: f32,
 }
+
 impl Camera {
     fn new(position: Vec3, orientation: Quat, fov: f32) -> Self {
         Self {
@@ -398,7 +401,7 @@ fn setup_per_frame_descriptor(
         ..Default::default()
     };
 
-    let camera_uniform_buffer = unsafe {
+    let camera_buffer = unsafe {
         allocator
             .create_buffer(&camera_uniform_buffer_info, &camera_uniform_alloc_info)
             .unwrap()
@@ -407,7 +410,7 @@ fn setup_per_frame_descriptor(
     let buff_info = [vk::DescriptorBufferInfo::default()
         .offset(0)
         .range(mem::size_of::<CameraUniform>() as u64)
-        .buffer(camera_uniform_buffer.0)];
+        .buffer(camera_buffer.0)];
 
     let descriptor_write = [vk::WriteDescriptorSet::default()
         .dst_set(descriptor_set)
@@ -419,7 +422,7 @@ fn setup_per_frame_descriptor(
 
     unsafe { device.update_descriptor_sets(&descriptor_write, &[]) };
 
-    camera_uniform_buffer
+    PerFrameDescriptorData { camera_buffer }
 }
 
 fn create_depth_resources(
@@ -812,7 +815,7 @@ impl VulkanContext {
 
     pub fn update_per_frame_descriptors(&mut self) {
         let current_frame = &self.render_frames[self.current_frame % MAX_FRAMES];
-        let camera_buffer_allocation = current_frame.per_frame_descriptor_data.1;
+        let camera_buffer_allocation = current_frame.per_frame_descriptor_data.camera_buffer.1;
 
         let alloc_info = self
             .allocator
@@ -1313,7 +1316,11 @@ impl Drop for VulkanContext {
             destroy_allocated_buffer(&self.allocator, self.mesh_buffer.index_buffer);
 
             for render_frame in self.render_frames.iter_mut() {
-                destroy_allocated_buffer(&self.allocator, render_frame.per_frame_descriptor_data);
+                destroy_allocated_buffer(
+                    &self.allocator,
+                    render_frame.per_frame_descriptor_data.camera_buffer,
+                );
+
                 destroy_allocated_image(&self.allocator, render_frame.depth_image);
             }
         };
