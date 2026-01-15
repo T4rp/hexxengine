@@ -778,7 +778,7 @@ impl VulkanContext {
             // self.device.cmd_draw(command_buffer, 3, 1, 0, 0);
 
             self.device
-                .cmd_draw_indexed(command_buffer, INDICES.len() as u32, 1, 0, 0, 0);
+                .cmd_draw_indexed(command_buffer, self.mesh_buffer.index_count, 1, 0, 0, 0);
 
             self.device.cmd_end_rendering(command_buffer);
 
