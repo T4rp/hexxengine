@@ -87,7 +87,7 @@ pub struct CameraUniform {
 impl CameraUniform {
     pub fn new(position: Vec3, orientation: Quat, fov: f32, aspect_ratio: f32) -> Self {
         let proj = Mat4::perspective_infinite_reverse_rh(fov.to_radians(), aspect_ratio, 1.0);
-        let view = Mat4::from_rotation_translation(orientation, position);
+        let view = Mat4::from_rotation_translation(orientation, position).inverse();
 
         Self { proj, view }
     }

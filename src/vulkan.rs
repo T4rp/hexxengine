@@ -720,7 +720,7 @@ impl VulkanContext {
         let current_frame: usize = 0;
         let should_resize = false;
 
-        let camera = Camera::new(vec3(0.0, 0.0, -5.0), Quat::IDENTITY, 90.0);
+        let camera = Camera::new(vec3(0.0, 0.0, 5.0), Quat::IDENTITY, 90.0);
 
         let last_frame_time = SystemTime::now();
 
