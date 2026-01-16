@@ -5,7 +5,9 @@ layout (location = 1) in vec2 inUv;
 
 layout (location = 0) out vec4 outFragColor;
 
+layout (set = 1, binding = 0) uniform sampler2D text;
+
 void main() 
 {
-	outFragColor = vec4(inColor,1.0f);
+	outFragColor = texture(text, inUv);
 }

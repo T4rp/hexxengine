@@ -21,22 +21,22 @@ const MAX_FRAMES: usize = 2;
 const VERTICES: &[Vertex2d] = &[
     Vertex2d {
         pos: vec2(-1.0, -1.0),
-        uv: vec2(-1.0, 1.0),
+        uv: vec2(0.0, 0.0),
         color: vec3(1.0, 0.0, 0.0),
     },
     Vertex2d {
         pos: vec2(-1.0, 1.0),
-        uv: vec2(-1.0, 1.0),
+        uv: vec2(0.0, 1.0),
         color: vec3(0.0, 1.0, 0.0),
     },
     Vertex2d {
         pos: vec2(1.0, 1.0),
-        uv: vec2(-1.0, 1.0),
+        uv: vec2(1.0, 1.0),
         color: vec3(0.0, 0.0, 1.0),
     },
     Vertex2d {
         pos: vec2(1.0, -1.0),
-        uv: vec2(-1.0, 1.0),
+        uv: vec2(0.0, 1.0),
         color: vec3(1.0, 1.0, 1.0),
     },
 ];
@@ -130,6 +130,7 @@ pub struct VulkanContext {
     last_frame_time: SystemTime,
     command_pool: vk::CommandPool,
     white_texture: ((vk::Image, vk_mem::Allocation), vk::ImageView),
+    texture_descriptor: vk::DescriptorSet,
 }
 
 pub struct Camera {
@@ -444,7 +445,7 @@ fn create_texture_with_data(
         depth: 1,
     };
 
-    let format = vk::Format::R8G8B8A8_UNORM;
+    let format = vk::Format::R8G8B8A8_SRGB;
 
     let image_info = vk::ImageCreateInfo::default()
         .image_type(vk::ImageType::TYPE_2D)
@@ -734,9 +735,18 @@ impl VulkanContext {
             &allocator,
             graphics_queue,
             command_pool,
-            1,
-            1,
-            &[255, 255, 255, 255],
+            2,
+            2,
+            &[
+                255, 0, 255, 255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 0, 255, 255,
+            ],
+        );
+
+        let texture_descriptor = Self::create_texture_descriptor(
+            &device,
+            &descriptor_set_layouts,
+            descriptor_pool,
+            white_texture.1,
         );
 
         Self {
@@ -767,6 +777,7 @@ impl VulkanContext {
             camera,
             last_frame_time,
             white_texture,
+            texture_descriptor,
         }
     }
 
@@ -923,7 +934,7 @@ impl VulkanContext {
                 self.graphics_pipeline,
             );
 
-            let descriptor_sets = [per_frame_descriptor_set];
+            let descriptor_sets = [per_frame_descriptor_set, self.texture_descriptor];
 
             self.device.cmd_bind_descriptor_sets(
                 command_buffer,
@@ -1082,6 +1093,50 @@ impl VulkanContext {
         self.swapchain_image_views = swapchain_image_views;
         self.swapchain_extent = swapchain_extent;
         self.should_resize = false;
+    }
+
+    fn create_texture_descriptor(
+        device: &ash::Device,
+        descriptor_set_layouts: &DescriptorSetLayouts,
+        descriptor_pool: vk::DescriptorPool,
+        image_view: vk::ImageView,
+    ) -> vk::DescriptorSet {
+        let layouts = &[descriptor_set_layouts.per_material_layout];
+
+        let descriptor_alloc_info = vk::DescriptorSetAllocateInfo::default()
+            .descriptor_pool(descriptor_pool)
+            .set_layouts(layouts);
+
+        let descriptor_sets = unsafe {
+            device
+                .allocate_descriptor_sets(&descriptor_alloc_info)
+                .unwrap()
+        };
+
+        let material_descriptor_set = descriptor_sets[0];
+
+        let sampler_info = vk::SamplerCreateInfo::default()
+            .mag_filter(vk::Filter::NEAREST)
+            .min_filter(vk::Filter::NEAREST);
+
+        let sampler = unsafe { device.create_sampler(&sampler_info, None).unwrap() };
+
+        let descriptor_image_info = &[vk::DescriptorImageInfo::default()
+            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+            .image_view(image_view)
+            .sampler(sampler)];
+
+        let descriptor_writes = &[vk::WriteDescriptorSet::default()
+            .image_info(descriptor_image_info)
+            .descriptor_count(1)
+            .dst_binding(0)
+            .dst_array_element(0)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .dst_set(material_descriptor_set)];
+
+        unsafe { device.update_descriptor_sets(descriptor_writes, &[]) };
+
+        descriptor_sets[0]
     }
 
     fn create_graphics_pipeline(
