@@ -6,40 +6,69 @@ use std::{ffi, fs, mem, ptr};
 
 use ash::Entry;
 use ash::vk::{self, ApplicationInfo};
-use glam::{Quat, Vec3, vec2, vec3};
+use glam::{Mat4, Quat, Vec3, vec2, vec3};
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
 
-use crate::mesh::{CameraUniform, Vertex2d};
+use crate::mesh::{CameraUniform, InstanceVertex, MeshVertex, Vertex2d};
 
 const USE_VALIDATION_LAYERS: bool = true;
 const MAX_FRAMES: usize = 2;
 
-const VERTICES: &[Vertex2d] = &[
-    Vertex2d {
-        pos: vec2(-1.0, -1.0),
-        uv: vec2(0.0, 0.0),
-        color: vec3(1.0, 0.0, 0.0),
-    },
-    Vertex2d {
-        pos: vec2(-1.0, 1.0),
-        uv: vec2(0.0, 1.0),
-        color: vec3(0.0, 1.0, 0.0),
-    },
-    Vertex2d {
-        pos: vec2(1.0, 1.0),
-        uv: vec2(1.0, 1.0),
-        color: vec3(0.0, 0.0, 1.0),
-    },
-    Vertex2d {
-        pos: vec2(1.0, -1.0),
-        uv: vec2(0.0, 1.0),
-        color: vec3(1.0, 1.0, 1.0),
-    },
+#[rustfmt::skip]
+pub const VERTICES: &[MeshVertex] = &[
+    // Front face
+    MeshVertex { pos: vec3(-1.0,-1.0, 1.0), norm: vec3(0.0,0.0,1.0), uv: vec2(0.0,0.0) },
+    MeshVertex { pos: vec3( 1.0,-1.0, 1.0), norm: vec3(0.0,0.0,1.0), uv: vec2(1.0,0.0) },
+    MeshVertex { pos: vec3( 1.0, 1.0, 1.0), norm: vec3(0.0,0.0,1.0), uv: vec2(1.0,1.0) },
+    MeshVertex { pos: vec3(-1.0, 1.0, 1.0), norm: vec3(0.0,0.0,1.0), uv: vec2(0.0,1.0) },
+
+    // Back face
+    MeshVertex { pos: vec3( 1.0,-1.0,-1.0), norm: vec3(0.0,0.0,-1.0), uv: vec2(0.0,0.0) },
+    MeshVertex { pos: vec3(-1.0,-1.0,-1.0), norm: vec3(0.0,0.0,-1.0), uv: vec2(1.0,0.0) },
+    MeshVertex { pos: vec3(-1.0, 1.0,-1.0), norm: vec3(0.0,0.0,-1.0), uv: vec2(1.0,1.0) },
+    MeshVertex { pos: vec3( 1.0, 1.0,-1.0), norm: vec3(0.0,0.0,-1.0), uv: vec2(0.0,1.0) },
+
+    // Left face
+    MeshVertex { pos: vec3(-1.0,-1.0,-1.0), norm: vec3(-1.0,0.0,0.0), uv: vec2(0.0,0.0) },
+    MeshVertex { pos: vec3(-1.0,-1.0, 1.0), norm: vec3(-1.0,0.0,0.0), uv: vec2(1.0,0.0) },
+    MeshVertex { pos: vec3(-1.0, 1.0, 1.0), norm: vec3(-1.0,0.0,0.0), uv: vec2(1.0,1.0) },
+    MeshVertex { pos: vec3(-1.0, 1.0,-1.0), norm: vec3(-1.0,0.0,0.0), uv: vec2(0.0,1.0) },
+
+    // Right face
+    MeshVertex { pos: vec3( 1.0,-1.0, 1.0), norm: vec3(1.0,0.0,0.0), uv: vec2(0.0,0.0) },
+    MeshVertex { pos: vec3( 1.0,-1.0,-1.0), norm: vec3(1.0,0.0,0.0), uv: vec2(1.0,0.0) },
+    MeshVertex { pos: vec3( 1.0, 1.0,-1.0), norm: vec3(1.0,0.0,0.0), uv: vec2(1.0,1.0) },
+    MeshVertex { pos: vec3( 1.0, 1.0, 1.0), norm: vec3(1.0,0.0,0.0), uv: vec2(0.0,1.0) },
+
+    // Top face
+    MeshVertex { pos: vec3(-1.0, 1.0, 1.0), norm: vec3(0.0,1.0,0.0), uv: vec2(0.0,0.0) },
+    MeshVertex { pos: vec3( 1.0, 1.0, 1.0), norm: vec3(0.0,1.0,0.0), uv: vec2(1.0,0.0) },
+    MeshVertex { pos: vec3( 1.0, 1.0,-1.0), norm: vec3(0.0,1.0,0.0), uv: vec2(1.0,1.0) },
+    MeshVertex { pos: vec3(-1.0, 1.0,-1.0), norm: vec3(0.0,1.0,0.0), uv: vec2(0.0,1.0) },
+
+    // Bottom face
+    MeshVertex { pos: vec3(-1.0,-1.0,-1.0), norm: vec3(0.0,-1.0,0.0), uv: vec2(0.0,0.0) },
+    MeshVertex { pos: vec3( 1.0,-1.0,-1.0), norm: vec3(0.0,-1.0,0.0), uv: vec2(1.0,0.0) },
+    MeshVertex { pos: vec3( 1.0,-1.0, 1.0), norm: vec3(0.0,-1.0,0.0), uv: vec2(1.0,1.0) },
+    MeshVertex { pos: vec3(-1.0,-1.0, 1.0), norm: vec3(0.0,-1.0,0.0), uv: vec2(0.0,1.0) },
 ];
 
-const INDICES: &[u16] = &[0, 1, 2, 2, 3, 0];
+#[rustfmt::skip]
+pub const INDICES: &[u16] = &[
+    0, 1, 2, 2, 3, 0,       // front
+    4, 5, 6, 6, 7, 4,       // back
+    8, 9,10,10,11, 8,       // left
+   12,13,14,14,15,12,       // right
+   16,17,18,18,19,16,       // top
+   20,21,22,22,23,20,       // bottom
+];
+
+pub const INSTANCES: &[InstanceVertex] = &[InstanceVertex {
+    model: Mat4::IDENTITY,
+    color: vec3(1.0, 0.0, 0.0),
+}];
 
 const DESCRIPTOR_RATIOS: &[(vk::DescriptorType, u32)] = &[
     (vk::DescriptorType::COMBINED_IMAGE_SAMPLER, 1),
@@ -429,11 +458,11 @@ struct MeshBuffer {
 impl MeshBuffer {
     fn allocate_mesh(
         allocator: &vk_mem::Allocator,
-        vertices: &[Vertex2d],
+        vertices: &[MeshVertex],
         indicies: &[u16],
     ) -> Self {
         let vertex_buffer_info = vk::BufferCreateInfo::default()
-            .size((mem::size_of::<Vertex2d>() * VERTICES.len()) as u64)
+            .size((mem::size_of::<MeshVertex>() * VERTICES.len()) as u64)
             .usage(vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
 
         let index_buffer_info = vk::BufferCreateInfo::default()
@@ -520,6 +549,7 @@ pub struct VulkanContext {
     last_frame_time: SystemTime,
     command_pool: vk::CommandPool,
     textures: Vec<Texture>,
+    instance_buffer: (vk::Buffer, vk_mem::Allocation),
 }
 
 pub struct Camera {
@@ -894,6 +924,40 @@ fn create_image_from_rgba(
     (image, image_view)
 }
 
+fn create_instance_buffer(
+    device: &ash::Device,
+    allocator: &vk_mem::Allocator,
+) -> (vk::Buffer, vk_mem::Allocation) {
+    let instance_buffer_info = vk::BufferCreateInfo::default()
+        .size((mem::size_of::<InstanceVertex>() * INSTANCES.len()) as u64)
+        .usage(vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
+
+    let alloc_info = vk_mem::AllocationCreateInfo {
+        usage: vk_mem::MemoryUsage::AutoPreferHost,
+        flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE
+            | vk_mem::AllocationCreateFlags::MAPPED,
+        ..Default::default()
+    };
+
+    let instance_buffer = unsafe {
+        allocator
+            .create_buffer(&instance_buffer_info, &alloc_info)
+            .unwrap()
+    };
+
+    let alloc_info = allocator.get_allocation_info(&instance_buffer.1);
+
+    unsafe {
+        std::ptr::copy_nonoverlapping(
+            INSTANCES.as_ptr(),
+            alloc_info.mapped_data.cast(),
+            INSTANCES.len(),
+        );
+    }
+
+    instance_buffer
+}
+
 impl VulkanContext {
     pub fn new(window: Rc<Window>) -> Self {
         let raw_window_handle = window.window_handle().unwrap().as_raw();
@@ -1027,6 +1091,7 @@ impl VulkanContext {
             Self::create_graphics_pipeline(&device, surface_format, &descriptor_set_layouts);
 
         let mesh_buffer = MeshBuffer::allocate_mesh(&allocator, VERTICES, INDICES);
+        let instance_buffer = create_instance_buffer(&device, &allocator);
 
         let current_frame: usize = 0;
         let should_resize = false;
@@ -1082,6 +1147,7 @@ impl VulkanContext {
             graphics_pipeline_layout,
             allocator,
             mesh_buffer,
+            instance_buffer,
             descriptor_set_layouts,
             descriptor_pool,
             camera,
@@ -1257,8 +1323,8 @@ impl VulkanContext {
             self.device.cmd_bind_vertex_buffers(
                 command_buffer,
                 0,
-                &[self.mesh_buffer.vertex_buffer.0],
-                &[0],
+                &[self.mesh_buffer.vertex_buffer.0, self.instance_buffer.0],
+                &[0, 0],
             );
 
             self.device.cmd_bind_index_buffer(
@@ -1429,12 +1495,24 @@ impl VulkanContext {
 
         let shader_stages = &[vert_stage_info, frag_stage_info];
 
-        let vertex_attribute_descriptions = Vertex2d::get_attribute_descriptions();
-        let vertex_binding_descriptions = Vertex2d::get_binding_descriptions();
+        let vertex_attribute_descriptions = MeshVertex::get_attribute_descriptions();
+        let vertex_binding_description = MeshVertex::get_binding_description();
+
+        let instance_attribute_descriptions = InstanceVertex::get_attribute_descriptions();
+        let instance_binding_description = InstanceVertex::get_binding_description();
+
+        let attribute_descriptions: Vec<vk::VertexInputAttributeDescription> =
+            vertex_attribute_descriptions
+                .iter()
+                .chain(instance_attribute_descriptions.iter())
+                .cloned()
+                .collect();
+
+        let binding_descriptions = [vertex_binding_description, instance_binding_description];
 
         let vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default()
-            .vertex_attribute_descriptions(&vertex_attribute_descriptions)
-            .vertex_binding_descriptions(&vertex_binding_descriptions);
+            .vertex_attribute_descriptions(&attribute_descriptions)
+            .vertex_binding_descriptions(&binding_descriptions);
 
         let input_assembly_state_info = vk::PipelineInputAssemblyStateCreateInfo::default()
             .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
@@ -1595,6 +1673,8 @@ impl Drop for VulkanContext {
             let _ = self.device.device_wait_idle();
 
             self.mesh_buffer.destroy(&self.allocator);
+            self.allocator
+                .destroy_buffer(self.instance_buffer.0, &mut self.instance_buffer.1);
 
             for texture in self.textures.iter_mut() {
                 texture.destroy(&self.device, &self.allocator);
