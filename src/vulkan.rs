@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::io::Cursor;
 use std::rc::Rc;
 use std::time::SystemTime;
-use std::{ffi, fs, hint, mem, ptr};
+use std::{ffi, fs, mem, ptr};
 
 use ash::Entry;
 use ash::vk::{self, ApplicationInfo};
@@ -48,6 +48,20 @@ const DESCRIPTOR_RATIOS: &[(vk::DescriptorType, u32)] = &[
     (vk::DescriptorType::UNIFORM_BUFFER, 1),
 ];
 
+fn destroy_allocated_buffer(
+    allocator: &vk_mem::Allocator,
+    mut buffer: (vk::Buffer, vk_mem::Allocation),
+) {
+    unsafe { allocator.destroy_buffer(buffer.0, &mut buffer.1) };
+}
+
+fn destroy_allocated_image(
+    allocator: &vk_mem::Allocator,
+    mut image: (vk::Image, vk_mem::Allocation),
+) {
+    unsafe { allocator.destroy_image(image.0, &mut image.1) };
+}
+
 unsafe extern "system" fn debug_messager_callback(
     message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
     message_type: vk::DebugUtilsMessageTypeFlagsEXT,
@@ -83,6 +97,57 @@ unsafe extern "system" fn debug_messager_callback(
 
 struct PerFrameDescriptorData {
     camera_buffer: (vk::Buffer, vk_mem::Allocation),
+    descriptor_set: vk::DescriptorSet,
+}
+
+impl PerFrameDescriptorData {
+    fn new(
+        device: &ash::Device,
+        allocator: &vk_mem::Allocator,
+        descriptor_set: vk::DescriptorSet,
+    ) -> Self {
+        let camera_uniform_buffer_info = vk::BufferCreateInfo::default()
+            .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
+            .size(mem::size_of::<CameraUniform>() as u64);
+
+        let camera_uniform_alloc_info = vk_mem::AllocationCreateInfo {
+            flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE
+                | vk_mem::AllocationCreateFlags::MAPPED,
+            usage: vk_mem::MemoryUsage::AutoPreferHost,
+
+            ..Default::default()
+        };
+
+        let camera_buffer = unsafe {
+            allocator
+                .create_buffer(&camera_uniform_buffer_info, &camera_uniform_alloc_info)
+                .unwrap()
+        };
+
+        let buff_info = [vk::DescriptorBufferInfo::default()
+            .offset(0)
+            .range(mem::size_of::<CameraUniform>() as u64)
+            .buffer(camera_buffer.0)];
+
+        let descriptor_write = [vk::WriteDescriptorSet::default()
+            .dst_set(descriptor_set)
+            .dst_binding(0)
+            .dst_array_element(0)
+            .descriptor_count(1)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .buffer_info(&buff_info)];
+
+        unsafe { device.update_descriptor_sets(&descriptor_write, &[]) };
+
+        PerFrameDescriptorData {
+            camera_buffer,
+            descriptor_set,
+        }
+    }
+
+    fn destroy(&mut self, allocator: &vk_mem::Allocator) {
+        unsafe { allocator.destroy_buffer(self.camera_buffer.0, &mut self.camera_buffer.1) };
+    }
 }
 
 struct RenderFrame {
@@ -96,60 +161,282 @@ struct RenderFrame {
     depth_image: (vk::Image, vk_mem::Allocation),
 }
 
+impl RenderFrame {
+    fn new(
+        device: &ash::Device,
+        allocator: &vk_mem::Allocator,
+        queue: vk::Queue,
+        descriptor_pool: vk::DescriptorPool,
+        per_frame_layout: vk::DescriptorSetLayout,
+        window_extent: vk::Extent2D,
+        queue_family_index: u32,
+    ) -> Self {
+        let command_pool = create_command_pool(device, queue_family_index);
+
+        let command_buffer_alloc_info = vk::CommandBufferAllocateInfo::default()
+            .command_pool(command_pool)
+            .level(vk::CommandBufferLevel::PRIMARY)
+            .command_buffer_count(1);
+
+        let command_buffer = unsafe {
+            device
+                .allocate_command_buffers(&command_buffer_alloc_info)
+                .unwrap()[0]
+        };
+
+        let semaphore_create_info =
+            vk::SemaphoreCreateInfo::default().flags(vk::SemaphoreCreateFlags::empty());
+
+        let fence_create_info =
+            vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
+
+        let swapchain_semaphore = unsafe {
+            device
+                .create_semaphore(&semaphore_create_info, None)
+                .unwrap()
+        };
+
+        let in_flight_fence = unsafe { device.create_fence(&fence_create_info, None).unwrap() };
+
+        let layouts = [per_frame_layout];
+        let descriptor_set_alloc_info = vk::DescriptorSetAllocateInfo::default()
+            .descriptor_pool(descriptor_pool)
+            .set_layouts(&layouts);
+
+        let descriptor_sets = unsafe {
+            device
+                .allocate_descriptor_sets(&descriptor_set_alloc_info)
+                .unwrap()
+        };
+
+        let per_frame_descriptor_data =
+            PerFrameDescriptorData::new(device, allocator, descriptor_sets[0]);
+
+        let (depth_image, depth_image_view) =
+            Self::create_depth_resources(device, allocator, queue, command_pool, window_extent);
+
+        RenderFrame {
+            command_pool,
+            command_buffer,
+            swapchain_semaphore,
+            in_flight_fence,
+            per_frame_set: descriptor_sets[0],
+            per_frame_descriptor_data,
+            depth_image,
+            depth_image_view,
+        }
+    }
+
+    fn handle_resize(
+        &mut self,
+        device: &ash::Device,
+        allocator: &vk_mem::Allocator,
+        command_pool: vk::CommandPool,
+        queue: vk::Queue,
+        window_extent: vk::Extent2D,
+    ) {
+        unsafe {
+            device.destroy_semaphore(self.swapchain_semaphore, None);
+        };
+
+        let semaphore_create_info =
+            vk::SemaphoreCreateInfo::default().flags(vk::SemaphoreCreateFlags::empty());
+
+        let new_semaphore = unsafe {
+            device
+                .create_semaphore(&semaphore_create_info, None)
+                .unwrap()
+        };
+
+        unsafe {
+            destroy_allocated_image(&allocator, self.depth_image);
+            device.destroy_image_view(self.depth_image_view, None);
+        };
+
+        let (depth_image, depth_image_view) =
+            Self::create_depth_resources(device, allocator, queue, command_pool, window_extent);
+
+        self.swapchain_semaphore = new_semaphore;
+        self.depth_image = depth_image;
+        self.depth_image_view = depth_image_view;
+    }
+
+    fn create_depth_resources(
+        device: &ash::Device,
+        allocator: &vk_mem::Allocator,
+        queue: vk::Queue,
+        command_pool: vk::CommandPool,
+        window_extent: vk::Extent2D,
+    ) -> ((vk::Image, vk_mem::Allocation), vk::ImageView) {
+        let image_info = vk::ImageCreateInfo::default()
+            .image_type(vk::ImageType::TYPE_2D)
+            .extent(vk::Extent3D {
+                width: window_extent.width,
+                height: window_extent.height,
+                depth: 1,
+            })
+            .mip_levels(1)
+            .array_layers(1)
+            .format(vk::Format::D32_SFLOAT)
+            .tiling(vk::ImageTiling::OPTIMAL)
+            .initial_layout(vk::ImageLayout::UNDEFINED)
+            .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .samples(vk::SampleCountFlags::TYPE_1);
+
+        let image_alloc_info = vk_mem::AllocationCreateInfo {
+            usage: vk_mem::MemoryUsage::AutoPreferDevice,
+            preferred_flags: vk::MemoryPropertyFlags::LAZILY_ALLOCATED,
+            ..Default::default()
+        };
+
+        let depth_image = unsafe {
+            allocator
+                .create_image(&image_info, &image_alloc_info)
+                .unwrap()
+        };
+
+        let command_buffers = unsafe {
+            device
+                .allocate_command_buffers(
+                    &vk::CommandBufferAllocateInfo::default()
+                        .command_pool(command_pool)
+                        .command_buffer_count(1)
+                        .level(vk::CommandBufferLevel::PRIMARY),
+                )
+                .unwrap()
+        };
+
+        unsafe {
+            device
+                .begin_command_buffer(
+                    command_buffers[0],
+                    &vk::CommandBufferBeginInfo::default()
+                        .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
+                )
+                .unwrap()
+        };
+
+        transition_image(
+            device,
+            command_buffers[0],
+            depth_image.0,
+            vk::ImageLayout::UNDEFINED,
+            vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            vk::ImageAspectFlags::DEPTH,
+        );
+
+        unsafe {
+            device.end_command_buffer(command_buffers[0]).unwrap();
+
+            device
+                .queue_submit(
+                    queue,
+                    &[vk::SubmitInfo::default().command_buffers(&command_buffers)],
+                    vk::Fence::null(),
+                )
+                .unwrap();
+
+            device.queue_wait_idle(queue).unwrap();
+
+            device.free_command_buffers(command_pool, &command_buffers);
+        }
+
+        let image_view_info = vk::ImageViewCreateInfo::default()
+            .image(depth_image.0)
+            .view_type(vk::ImageViewType::TYPE_2D)
+            .format(vk::Format::D32_SFLOAT)
+            .subresource_range(vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::DEPTH,
+                base_mip_level: 0,
+                level_count: vk::REMAINING_MIP_LEVELS,
+                base_array_layer: 0,
+                layer_count: vk::REMAINING_ARRAY_LAYERS,
+            });
+
+        let depth_image_view = unsafe { device.create_image_view(&image_view_info, None).unwrap() };
+
+        (depth_image, depth_image_view)
+    }
+
+    fn destroy(&mut self, allocator: &vk_mem::Allocator) {
+        self.per_frame_descriptor_data.destroy(allocator);
+        unsafe { allocator.destroy_image(self.depth_image.0, &mut self.depth_image.1) };
+    }
+}
+
 struct DescriptorSetLayouts {
     per_frame_layout: vk::DescriptorSetLayout,
     per_material_layout: vk::DescriptorSetLayout,
 }
 
-pub struct VulkanContext {
-    entry: Entry,
-    instance: ash::Instance,
-    surface: vk::SurfaceKHR,
-    device: ash::Device,
-    swapchain: vk::SwapchainKHR,
-    swapchain_images: Vec<vk::Image>,
-    swapchain_image_views: Vec<vk::ImageView>,
-    graphics_queue: vk::Queue,
-    graphics_queue_family_index: u32,
-    render_frames: Vec<RenderFrame>,
-    submit_semaphores: Vec<vk::Semaphore>,
-    current_frame: usize,
-    graphics_pipeline: vk::Pipeline,
-    surface_format: vk::SurfaceFormatKHR,
-    swapchain_extent: vk::Extent2D,
-    allocator: vk_mem::Allocator,
-    mesh_buffer: MeshBuffer,
-    should_resize: bool,
-    physical_device: vk::PhysicalDevice,
-    window: Rc<Window>,
-    descriptor_set_layouts: DescriptorSetLayouts,
-    descriptor_pool: vk::DescriptorPool,
-    graphics_pipeline_layout: vk::PipelineLayout,
-
-    camera: Camera,
-    last_frame_time: SystemTime,
-    command_pool: vk::CommandPool,
-    white_texture: ((vk::Image, vk_mem::Allocation), vk::ImageView),
-    texture_descriptor: vk::DescriptorSet,
+struct Texture {
+    image: (vk::Image, vk_mem::Allocation),
+    image_view: vk::ImageView,
+    sampler: vk::Sampler,
+    descriptor_set: vk::DescriptorSet,
 }
 
-pub struct Camera {
-    position: Vec3,
-    orientation: Quat,
-    fov: f32,
-}
+impl Texture {
+    fn create_texture(
+        device: &ash::Device,
+        descriptor_set_layouts: &DescriptorSetLayouts,
+        descriptor_pool: vk::DescriptorPool,
+        image: (vk::Image, vk_mem::Allocation),
+        image_view: vk::ImageView,
+    ) -> Self {
+        let layouts = &[descriptor_set_layouts.per_material_layout];
 
-impl Camera {
-    fn new(position: Vec3, orientation: Quat, fov: f32) -> Self {
+        let descriptor_alloc_info = vk::DescriptorSetAllocateInfo::default()
+            .descriptor_pool(descriptor_pool)
+            .set_layouts(layouts);
+
+        let descriptor_sets = unsafe {
+            device
+                .allocate_descriptor_sets(&descriptor_alloc_info)
+                .unwrap()
+        };
+
+        let descriptor_set = descriptor_sets[0];
+
+        let sampler_info = vk::SamplerCreateInfo::default()
+            .mag_filter(vk::Filter::NEAREST)
+            .min_filter(vk::Filter::NEAREST);
+
+        let sampler = unsafe { device.create_sampler(&sampler_info, None).unwrap() };
+
+        let descriptor_image_info = &[vk::DescriptorImageInfo::default()
+            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+            .image_view(image_view)
+            .sampler(sampler)];
+
+        let descriptor_writes = &[vk::WriteDescriptorSet::default()
+            .image_info(descriptor_image_info)
+            .descriptor_count(1)
+            .dst_binding(0)
+            .dst_array_element(0)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .dst_set(descriptor_set)];
+
+        unsafe { device.update_descriptor_sets(descriptor_writes, &[]) };
+
         Self {
-            position,
-            orientation,
-            fov,
+            image,
+            image_view,
+            sampler,
+            descriptor_set,
         }
+    }
+
+    fn destroy(&mut self, device: &ash::Device, allocator: &vk_mem::Allocator) {
+        unsafe {
+            allocator.destroy_image(self.image.0, &mut self.image.1);
+            device.destroy_image_view(self.image_view, None);
+        };
     }
 }
 
-pub struct MeshBuffer {
+struct MeshBuffer {
     vertex_buffer: (vk::Buffer, vk_mem::Allocation),
     index_buffer: (vk::Buffer, vk_mem::Allocation),
     index_count: u32,
@@ -211,20 +498,60 @@ impl MeshBuffer {
             index_count: indicies.len() as u32,
         }
     }
+
+    fn destroy(&mut self, allocator: &vk_mem::Allocator) {
+        unsafe {
+            allocator.destroy_buffer(self.vertex_buffer.0, &mut self.vertex_buffer.1);
+            allocator.destroy_buffer(self.index_buffer.0, &mut self.index_buffer.1);
+        }
+    }
 }
 
-fn destroy_allocated_buffer(
-    allocator: &vk_mem::Allocator,
-    mut buffer: (vk::Buffer, vk_mem::Allocation),
-) {
-    unsafe { allocator.destroy_buffer(buffer.0, &mut buffer.1) };
+pub struct VulkanContext {
+    entry: Entry,
+    instance: ash::Instance,
+    surface: vk::SurfaceKHR,
+    device: ash::Device,
+    swapchain: vk::SwapchainKHR,
+    swapchain_images: Vec<vk::Image>,
+    swapchain_image_views: Vec<vk::ImageView>,
+    graphics_queue: vk::Queue,
+    graphics_queue_family_index: u32,
+    render_frames: Vec<RenderFrame>,
+    submit_semaphores: Vec<vk::Semaphore>,
+    current_frame: usize,
+    graphics_pipeline: vk::Pipeline,
+    surface_format: vk::SurfaceFormatKHR,
+    swapchain_extent: vk::Extent2D,
+    allocator: vk_mem::Allocator,
+    mesh_buffer: MeshBuffer,
+    should_resize: bool,
+    physical_device: vk::PhysicalDevice,
+    window: Rc<Window>,
+    descriptor_set_layouts: DescriptorSetLayouts,
+    descriptor_pool: vk::DescriptorPool,
+    graphics_pipeline_layout: vk::PipelineLayout,
+
+    camera: Camera,
+    last_frame_time: SystemTime,
+    command_pool: vk::CommandPool,
+    textures: Vec<Texture>,
 }
 
-fn destroy_allocated_image(
-    allocator: &vk_mem::Allocator,
-    mut image: (vk::Image, vk_mem::Allocation),
-) {
-    unsafe { allocator.destroy_image(image.0, &mut image.1) };
+pub struct Camera {
+    position: Vec3,
+    orientation: Quat,
+    fov: f32,
+}
+
+impl Camera {
+    fn new(position: Vec3, orientation: Quat, fov: f32) -> Self {
+        Self {
+            position,
+            orientation,
+            fov,
+        }
+    }
 }
 
 fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> ash::Instance {
@@ -424,7 +751,7 @@ fn create_shader_module(device: &ash::Device, data: &[u8]) -> vk::ShaderModule {
     unsafe { device.create_shader_module(&create_info, None).unwrap() }
 }
 
-fn create_texture_with_data(
+fn create_image_from_rgba(
     device: &ash::Device,
     allocator: &vk_mem::Allocator,
     queue: vk::Queue,
@@ -724,7 +1051,7 @@ impl VulkanContext {
 
         let last_frame_time = SystemTime::now();
 
-        let white_texture = create_texture_with_data(
+        let white_image = create_image_from_rgba(
             &device,
             &allocator,
             graphics_queue,
@@ -736,12 +1063,17 @@ impl VulkanContext {
             ],
         );
 
-        let texture_descriptor = Self::create_texture_descriptor(
+        let mut textures = Vec::new();
+
+        let fallback_texture = Texture::create_texture(
             &device,
             &descriptor_set_layouts,
             descriptor_pool,
-            white_texture.1,
+            white_image.0,
+            white_image.1,
         );
+
+        textures.push(fallback_texture);
 
         Self {
             window,
@@ -770,8 +1102,7 @@ impl VulkanContext {
             descriptor_pool,
             camera,
             last_frame_time,
-            white_texture,
-            texture_descriptor,
+            textures,
         }
     }
 
@@ -928,7 +1259,7 @@ impl VulkanContext {
                 self.graphics_pipeline,
             );
 
-            let descriptor_sets = [per_frame_descriptor_set, self.texture_descriptor];
+            let descriptor_sets = [per_frame_descriptor_set, self.textures[0].descriptor_set];
 
             self.device.cmd_bind_descriptor_sets(
                 command_buffer,
@@ -1049,88 +1380,21 @@ impl VulkanContext {
 
         unsafe { swapchain_fn.destroy_swapchain(self.swapchain, None) };
 
-        let semaphore_create_info =
-            vk::SemaphoreCreateInfo::default().flags(vk::SemaphoreCreateFlags::empty());
-
-        for frame in self.render_frames.iter_mut() {
-            unsafe {
-                self.device
-                    .destroy_semaphore(frame.swapchain_semaphore, None);
-            };
-
-            let new_semaphore = unsafe {
-                self.device
-                    .create_semaphore(&semaphore_create_info, None)
-                    .unwrap()
-            };
-
-            unsafe {
-                destroy_allocated_image(&self.allocator, frame.depth_image);
-                self.device.destroy_image_view(frame.depth_image_view, None);
-            };
-
-            let (depth_image, depth_image_view) = Self::create_depth_resources(
-                &self.device,
-                &self.allocator,
-                self.graphics_queue,
-                self.command_pool,
-                swapchain_extent,
-            );
-
-            frame.swapchain_semaphore = new_semaphore;
-            frame.depth_image = depth_image;
-            frame.depth_image_view = depth_image_view;
-        }
-
         self.swapchain = swapchain;
         self.swapchain_images = swapchain_images;
         self.swapchain_image_views = swapchain_image_views;
         self.swapchain_extent = swapchain_extent;
         self.should_resize = false;
-    }
 
-    fn create_texture_descriptor(
-        device: &ash::Device,
-        descriptor_set_layouts: &DescriptorSetLayouts,
-        descriptor_pool: vk::DescriptorPool,
-        image_view: vk::ImageView,
-    ) -> vk::DescriptorSet {
-        let layouts = &[descriptor_set_layouts.per_material_layout];
-
-        let descriptor_alloc_info = vk::DescriptorSetAllocateInfo::default()
-            .descriptor_pool(descriptor_pool)
-            .set_layouts(layouts);
-
-        let descriptor_sets = unsafe {
-            device
-                .allocate_descriptor_sets(&descriptor_alloc_info)
-                .unwrap()
-        };
-
-        let material_descriptor_set = descriptor_sets[0];
-
-        let sampler_info = vk::SamplerCreateInfo::default()
-            .mag_filter(vk::Filter::NEAREST)
-            .min_filter(vk::Filter::NEAREST);
-
-        let sampler = unsafe { device.create_sampler(&sampler_info, None).unwrap() };
-
-        let descriptor_image_info = &[vk::DescriptorImageInfo::default()
-            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-            .image_view(image_view)
-            .sampler(sampler)];
-
-        let descriptor_writes = &[vk::WriteDescriptorSet::default()
-            .image_info(descriptor_image_info)
-            .descriptor_count(1)
-            .dst_binding(0)
-            .dst_array_element(0)
-            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .dst_set(material_descriptor_set)];
-
-        unsafe { device.update_descriptor_sets(descriptor_writes, &[]) };
-
-        descriptor_sets[0]
+        for frame in self.render_frames.iter_mut() {
+            frame.handle_resize(
+                &self.device,
+                &self.allocator,
+                self.command_pool,
+                self.graphics_queue,
+                swapchain_extent,
+            );
+        }
     }
 
     fn create_graphics_pipeline(
@@ -1314,145 +1578,6 @@ impl VulkanContext {
         }
     }
 
-    fn setup_per_frame_descriptor(
-        device: &ash::Device,
-        allocator: &vk_mem::Allocator,
-        descriptor_set: vk::DescriptorSet,
-    ) -> PerFrameDescriptorData {
-        let camera_uniform_buffer_info = vk::BufferCreateInfo::default()
-            .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
-            .size(mem::size_of::<CameraUniform>() as u64);
-
-        let camera_uniform_alloc_info = vk_mem::AllocationCreateInfo {
-            flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE
-                | vk_mem::AllocationCreateFlags::MAPPED,
-            usage: vk_mem::MemoryUsage::AutoPreferHost,
-
-            ..Default::default()
-        };
-
-        let camera_buffer = unsafe {
-            allocator
-                .create_buffer(&camera_uniform_buffer_info, &camera_uniform_alloc_info)
-                .unwrap()
-        };
-
-        let buff_info = [vk::DescriptorBufferInfo::default()
-            .offset(0)
-            .range(mem::size_of::<CameraUniform>() as u64)
-            .buffer(camera_buffer.0)];
-
-        let descriptor_write = [vk::WriteDescriptorSet::default()
-            .dst_set(descriptor_set)
-            .dst_binding(0)
-            .dst_array_element(0)
-            .descriptor_count(1)
-            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-            .buffer_info(&buff_info)];
-
-        unsafe { device.update_descriptor_sets(&descriptor_write, &[]) };
-
-        PerFrameDescriptorData { camera_buffer }
-    }
-
-    fn create_depth_resources(
-        device: &ash::Device,
-        allocator: &vk_mem::Allocator,
-        queue: vk::Queue,
-        command_pool: vk::CommandPool,
-        window_extent: vk::Extent2D,
-    ) -> ((vk::Image, vk_mem::Allocation), vk::ImageView) {
-        let image_info = vk::ImageCreateInfo::default()
-            .image_type(vk::ImageType::TYPE_2D)
-            .extent(vk::Extent3D {
-                width: window_extent.width,
-                height: window_extent.height,
-                depth: 1,
-            })
-            .mip_levels(1)
-            .array_layers(1)
-            .format(vk::Format::D32_SFLOAT)
-            .tiling(vk::ImageTiling::OPTIMAL)
-            .initial_layout(vk::ImageLayout::UNDEFINED)
-            .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT)
-            .sharing_mode(vk::SharingMode::EXCLUSIVE)
-            .samples(vk::SampleCountFlags::TYPE_1);
-
-        let image_alloc_info = vk_mem::AllocationCreateInfo {
-            usage: vk_mem::MemoryUsage::AutoPreferDevice,
-            preferred_flags: vk::MemoryPropertyFlags::LAZILY_ALLOCATED,
-            ..Default::default()
-        };
-
-        let depth_image = unsafe {
-            allocator
-                .create_image(&image_info, &image_alloc_info)
-                .unwrap()
-        };
-
-        let command_buffers = unsafe {
-            device
-                .allocate_command_buffers(
-                    &vk::CommandBufferAllocateInfo::default()
-                        .command_pool(command_pool)
-                        .command_buffer_count(1)
-                        .level(vk::CommandBufferLevel::PRIMARY),
-                )
-                .unwrap()
-        };
-
-        unsafe {
-            device
-                .begin_command_buffer(
-                    command_buffers[0],
-                    &vk::CommandBufferBeginInfo::default()
-                        .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
-                )
-                .unwrap()
-        };
-
-        transition_image(
-            device,
-            command_buffers[0],
-            depth_image.0,
-            vk::ImageLayout::UNDEFINED,
-            vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-            vk::ImageAspectFlags::DEPTH,
-        );
-
-        unsafe {
-            device.end_command_buffer(command_buffers[0]).unwrap();
-
-            device
-                .queue_submit(
-                    queue,
-                    &[vk::SubmitInfo::default().command_buffers(&command_buffers)],
-                    vk::Fence::null(),
-                )
-                .unwrap();
-
-            device.queue_wait_idle(queue).unwrap();
-
-            device.free_command_buffers(command_pool, &command_buffers);
-        }
-
-        let image_view_info = vk::ImageViewCreateInfo::default()
-            .image(depth_image.0)
-            .view_type(vk::ImageViewType::TYPE_2D)
-            .format(vk::Format::D32_SFLOAT)
-            .subresource_range(vk::ImageSubresourceRange {
-                aspect_mask: vk::ImageAspectFlags::DEPTH,
-                base_mip_level: 0,
-                level_count: vk::REMAINING_MIP_LEVELS,
-                base_array_layer: 0,
-                layer_count: vk::REMAINING_ARRAY_LAYERS,
-            });
-
-        let depth_image_view = unsafe { device.create_image_view(&image_view_info, None).unwrap() };
-
-        (depth_image, depth_image_view)
-    }
-
     fn create_render_frames(
         device: &ash::Device,
         allocator: &vk_mem::Allocator,
@@ -1464,66 +1589,15 @@ impl VulkanContext {
     ) -> Vec<RenderFrame> {
         let frames: Vec<RenderFrame> = (0..MAX_FRAMES)
             .map(|_i| {
-                let command_pool = create_command_pool(device, queue_family_index);
-
-                let command_buffer_alloc_info = vk::CommandBufferAllocateInfo::default()
-                    .command_pool(command_pool)
-                    .level(vk::CommandBufferLevel::PRIMARY)
-                    .command_buffer_count(1);
-
-                let command_buffer = unsafe {
-                    device
-                        .allocate_command_buffers(&command_buffer_alloc_info)
-                        .unwrap()[0]
-                };
-
-                let semaphore_create_info =
-                    vk::SemaphoreCreateInfo::default().flags(vk::SemaphoreCreateFlags::empty());
-
-                let fence_create_info =
-                    vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
-
-                let swapchain_semaphore = unsafe {
-                    device
-                        .create_semaphore(&semaphore_create_info, None)
-                        .unwrap()
-                };
-
-                let in_flight_fence =
-                    unsafe { device.create_fence(&fence_create_info, None).unwrap() };
-
-                let layouts = [per_frame_layout];
-                let descriptor_set_alloc_info = vk::DescriptorSetAllocateInfo::default()
-                    .descriptor_pool(descriptor_pool)
-                    .set_layouts(&layouts);
-
-                let descriptor_sets = unsafe {
-                    device
-                        .allocate_descriptor_sets(&descriptor_set_alloc_info)
-                        .unwrap()
-                };
-
-                let per_frame_descriptor_data =
-                    Self::setup_per_frame_descriptor(device, allocator, descriptor_sets[0]);
-
-                let (depth_image, depth_image_view) = Self::create_depth_resources(
+                RenderFrame::new(
                     device,
                     allocator,
                     queue,
-                    command_pool,
+                    descriptor_pool,
+                    per_frame_layout,
                     window_extent,
-                );
-
-                RenderFrame {
-                    command_pool,
-                    command_buffer,
-                    swapchain_semaphore,
-                    in_flight_fence,
-                    per_frame_set: descriptor_sets[0],
-                    per_frame_descriptor_data,
-                    depth_image,
-                    depth_image_view,
-                }
+                    queue_family_index,
+                )
             })
             .collect();
 
@@ -1536,17 +1610,14 @@ impl Drop for VulkanContext {
         unsafe {
             let _ = self.device.device_wait_idle();
 
-            destroy_allocated_buffer(&self.allocator, self.mesh_buffer.vertex_buffer);
-            destroy_allocated_buffer(&self.allocator, self.mesh_buffer.index_buffer);
-            destroy_allocated_image(&self.allocator, self.white_texture.0);
+            self.mesh_buffer.destroy(&self.allocator);
+
+            for texture in self.textures.iter_mut() {
+                texture.destroy(&self.device, &self.allocator);
+            }
 
             for render_frame in self.render_frames.iter_mut() {
-                destroy_allocated_buffer(
-                    &self.allocator,
-                    render_frame.per_frame_descriptor_data.camera_buffer,
-                );
-
-                destroy_allocated_image(&self.allocator, render_frame.depth_image);
+                render_frame.destroy(&self.allocator);
             }
         };
     }
