@@ -7,13 +7,11 @@ use std::{ffi, fs, mem, ptr};
 use ash::Entry;
 use ash::vk::{self, ApplicationInfo};
 use glam::{Quat, Vec3, vec2, vec3};
-use image::DynamicImage;
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
 
 use crate::mesh::{CameraUniform, Vertex2d};
-use crate::vulkan;
 
 const USE_VALIDATION_LAYERS: bool = true;
 const MAX_FRAMES: usize = 2;
@@ -47,20 +45,6 @@ const DESCRIPTOR_RATIOS: &[(vk::DescriptorType, u32)] = &[
     (vk::DescriptorType::COMBINED_IMAGE_SAMPLER, 1),
     (vk::DescriptorType::UNIFORM_BUFFER, 1),
 ];
-
-fn destroy_allocated_buffer(
-    allocator: &vk_mem::Allocator,
-    mut buffer: (vk::Buffer, vk_mem::Allocation),
-) {
-    unsafe { allocator.destroy_buffer(buffer.0, &mut buffer.1) };
-}
-
-fn destroy_allocated_image(
-    allocator: &vk_mem::Allocator,
-    mut image: (vk::Image, vk_mem::Allocation),
-) {
-    unsafe { allocator.destroy_image(image.0, &mut image.1) };
-}
 
 unsafe extern "system" fn debug_messager_callback(
     message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
@@ -249,7 +233,7 @@ impl RenderFrame {
         };
 
         unsafe {
-            destroy_allocated_image(&allocator, self.depth_image);
+            allocator.destroy_image(self.depth_image.0, &mut self.depth_image.1);
             device.destroy_image_view(self.depth_image_view, None);
         };
 
@@ -515,10 +499,10 @@ pub struct VulkanContext {
     swapchain: vk::SwapchainKHR,
     swapchain_images: Vec<vk::Image>,
     swapchain_image_views: Vec<vk::ImageView>,
+    submit_semaphores: Vec<vk::Semaphore>,
     graphics_queue: vk::Queue,
     graphics_queue_family_index: u32,
     render_frames: Vec<RenderFrame>,
-    submit_semaphores: Vec<vk::Semaphore>,
     current_frame: usize,
     graphics_pipeline: vk::Pipeline,
     surface_format: vk::SurfaceFormatKHR,
