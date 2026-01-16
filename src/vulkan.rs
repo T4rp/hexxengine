@@ -6,7 +6,7 @@ use std::{ffi, fs, mem, ptr};
 
 use ash::Entry;
 use ash::vk::{self, ApplicationInfo};
-use glam::{Mat4, Quat, Vec3, vec2, vec3};
+use glam::{Mat4, Quat, Vec3, Vec4, mat4, vec2, vec3, vec4};
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
@@ -65,10 +65,35 @@ pub const INDICES: &[u16] = &[
    20,21,22,22,23,20,       // bottom
 ];
 
-pub const INSTANCES: &[InstanceVertex] = &[InstanceVertex {
-    model: Mat4::IDENTITY,
-    color: vec3(1.0, 0.0, 0.0),
-}];
+pub const INSTANCES: &[InstanceVertex] = &[
+    InstanceVertex {
+        model: mat4(
+            vec4(1.0, 0.0, 0.0, 0.0),
+            vec4(0.0, 1.0, 0.0, 0.0),
+            vec4(0.0, 0.0, 1.0, 0.0),
+            vec4(-2.5, 0.0, 0.0, 1.0),
+        ),
+        color: vec3(1.0, 0.0, 0.0),
+    },
+    InstanceVertex {
+        model: mat4(
+            vec4(1.0, 0.0, 0.0, 0.0),
+            vec4(0.0, 1.0, 0.0, 0.0),
+            vec4(0.0, 0.0, 1.0, 0.0),
+            vec4(0.0, 0.0, 0.0, 1.0),
+        ),
+        color: vec3(0.0, 1.0, 0.0),
+    },
+    InstanceVertex {
+        model: mat4(
+            vec4(1.0, 0.0, 0.0, 0.0),
+            vec4(0.0, 1.0, 0.0, 0.0),
+            vec4(0.0, 0.0, 1.0, 0.0),
+            vec4(2.5, 0.0, 0.0, 1.0),
+        ),
+        color: vec3(0.0, 0.0, 1.0),
+    },
+];
 
 const DESCRIPTOR_RATIOS: &[(vk::DescriptorType, u32)] = &[
     (vk::DescriptorType::COMBINED_IMAGE_SAMPLER, 1),
@@ -1100,7 +1125,7 @@ impl VulkanContext {
 
         let last_frame_time = SystemTime::now();
 
-        let white_image = create_image_from_rgba(
+        let fallback_image = create_image_from_rgba(
             &device,
             &allocator,
             graphics_queue,
@@ -1112,9 +1137,27 @@ impl VulkanContext {
             ],
         );
 
+        let white_image = create_image_from_rgba(
+            &device,
+            &allocator,
+            graphics_queue,
+            command_pool,
+            1,
+            1,
+            &[255, 255, 255, 255],
+        );
+
         let mut textures = Vec::new();
 
         let fallback_texture = Texture::create_texture(
+            &device,
+            &descriptor_set_layouts,
+            descriptor_pool,
+            fallback_image.0,
+            fallback_image.1,
+        );
+
+        let white_texture = Texture::create_texture(
             &device,
             &descriptor_set_layouts,
             descriptor_pool,
@@ -1123,6 +1166,7 @@ impl VulkanContext {
         );
 
         textures.push(fallback_texture);
+        textures.push(white_texture);
 
         Self {
             window,
@@ -1309,7 +1353,7 @@ impl VulkanContext {
                 self.graphics_pipeline,
             );
 
-            let descriptor_sets = [per_frame_descriptor_set, self.textures[0].descriptor_set];
+            let descriptor_sets = [per_frame_descriptor_set, self.textures[1].descriptor_set];
 
             self.device.cmd_bind_descriptor_sets(
                 command_buffer,
@@ -1336,8 +1380,14 @@ impl VulkanContext {
 
             // self.device.cmd_draw(command_buffer, 3, 1, 0, 0);
 
-            self.device
-                .cmd_draw_indexed(command_buffer, self.mesh_buffer.index_count, 1, 0, 0, 0);
+            self.device.cmd_draw_indexed(
+                command_buffer,
+                self.mesh_buffer.index_count,
+                INSTANCES.len() as u32,
+                0,
+                0,
+                0,
+            );
 
             self.device.cmd_end_rendering(command_buffer);
 

@@ -9,5 +9,5 @@ layout (set = 1, binding = 0) uniform sampler2D text;
 
 void main() 
 {
-	outFragColor = texture(text, inUv);
+	outFragColor = texture(text, inUv) * vec4(inColor, 1.0);
 }
