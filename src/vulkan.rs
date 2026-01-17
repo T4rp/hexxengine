@@ -7,6 +7,8 @@ use std::{ffi, fs, mem, ptr};
 use ash::vk::{self, ApplicationInfo};
 use ash::{Entry, Instance};
 use glam::{EulerRot, Mat4, Quat, Vec3, Vec4, mat4, vec2, vec3, vec4};
+use rand::rngs::SmallRng;
+use rand::{Rng, SeedableRng};
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
@@ -545,6 +547,8 @@ pub struct VulkanContext {
     command_pool: vk::CommandPool,
     textures: Vec<Texture>,
     instance_buffer: (vk::Buffer, vk_mem::Allocation),
+    rng: SmallRng,
+    instances: Vec<InstanceVertex>,
 }
 
 pub struct Camera {
@@ -1081,7 +1085,7 @@ impl VulkanContext {
         let current_frame: usize = 0;
         let should_resize = false;
 
-        let camera = Camera::new(vec3(0.0, 0.0, 5.0), Quat::IDENTITY, 90.0);
+        let camera = Camera::new(vec3(0.0, 0.0, 5.0), Quat::IDENTITY, 70.0);
 
         let last_frame_time = SystemTime::now();
 
@@ -1128,6 +1132,29 @@ impl VulkanContext {
         textures.push(fallback_texture);
         textures.push(white_texture);
 
+        let mut rng = SmallRng::from_os_rng();
+
+        let mut instances = Vec::new();
+
+        for _ in 0..1000 {
+            let instance = InstanceVertex::new(
+                vec3(
+                    rng.random_range(-20.0..20.0),
+                    rng.random_range(-20.0..20.0),
+                    rng.random_range(-20.0..20.0),
+                ),
+                Quat::from_euler(
+                    EulerRot::XYZ,
+                    rng.random::<f32>() * std::f32::consts::PI * 2.0,
+                    rng.random::<f32>() * std::f32::consts::PI * 2.0,
+                    rng.random::<f32>() * std::f32::consts::PI * 2.0,
+                ),
+                vec3(rng.random(), rng.random(), rng.random()),
+            );
+
+            instances.push(instance);
+        }
+
         Self {
             window,
             entry,
@@ -1157,6 +1184,8 @@ impl VulkanContext {
             camera,
             last_frame_time,
             textures,
+            rng,
+            instances,
         }
     }
 
@@ -1181,14 +1210,14 @@ impl VulkanContext {
         unsafe { std::ptr::copy_nonoverlapping(&mut camera_ubo, alloc_info.mapped_data.cast(), 1) };
     }
 
-    fn update_instance_buffer(&mut self, instances: &[InstanceVertex]) {
+    fn update_instance_buffer(&mut self) {
         let alloc_info = self.allocator.get_allocation_info(&self.instance_buffer.1);
 
         unsafe {
             std::ptr::copy_nonoverlapping(
-                instances.as_ptr(),
+                self.instances.as_ptr(),
                 alloc_info.mapped_data.cast(),
-                instances.len(),
+                self.instances.len(),
             );
         }
     }
@@ -1216,24 +1245,6 @@ impl VulkanContext {
         let per_frame_descriptor_set = current_frame.per_frame_set;
         let depth_image_view = current_frame.depth_image_view;
 
-        let instances = [
-            InstanceVertex::new(
-                vec3(-2.5, 0.0, 0.0),
-                Quat::from_euler(EulerRot::XYZ, f32::to_radians(45.0), 0.0, 0.0),
-                vec3(1.0, 0.0, 0.0),
-            ),
-            InstanceVertex::new(
-                vec3(0.0, 0.0, 0.0),
-                Quat::from_euler(EulerRot::XYZ, 0.0, f32::to_radians(45.0), 0.0),
-                vec3(0.0, 1.0, 0.0),
-            ),
-            InstanceVertex::new(
-                vec3(2.5, 0.0, 0.0),
-                Quat::from_euler(EulerRot::XYZ, 0.0, 0.0, f32::to_radians(45.0)),
-                vec3(0.0, 0.0, 1.0),
-            ),
-        ];
-
         unsafe {
             self.device
                 .wait_for_fences(&[in_flight_fence], true, 1000000000)
@@ -1258,7 +1269,7 @@ impl VulkanContext {
             self.device.reset_fences(&[in_flight_fence]).unwrap();
 
             self.update_per_frame_descriptors();
-            self.update_instance_buffer(&instances);
+            self.update_instance_buffer();
 
             let submit_semaphore = self.submit_semaphores[image_index as usize];
 
@@ -1374,7 +1385,7 @@ impl VulkanContext {
             self.device.cmd_draw_indexed(
                 command_buffer,
                 self.mesh_buffer.index_count,
-                instances.len() as u32,
+                self.instances.len() as u32,
                 0,
                 0,
                 0,

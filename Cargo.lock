@@ -674,6 +674,7 @@ dependencies = [
  "ash-window",
  "glam",
  "image",
+ "rand",
  "vk-mem",
  "winit",
 ]
