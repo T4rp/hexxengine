@@ -9,6 +9,8 @@ layout(location = 7) in vec3 inColor;
 
 layout (location = 0) out vec3 outColor;
 layout (location = 1) out vec2 outUv;
+layout (location = 2) out vec3 outNorm;
+layout (location = 3) out vec3 outPos;
 
 layout(binding = 0) uniform CameraUniform {
     mat4 proj;
@@ -19,4 +21,6 @@ void main() {
 	gl_Position = cameraUbo.proj * cameraUbo.view * inModel * vec4(inPos, 1.0f);
 	outColor = inColor;
 	outUv = inUv;
+    outNorm = mat3(transpose(inverse(inModel))) * inNorm;
+    outPos = vec3(inModel * vec4(inPos, 1.0));
 }

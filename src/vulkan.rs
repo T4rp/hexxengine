@@ -18,41 +18,41 @@ const MAX_FRAMES: usize = 2;
 
 #[rustfmt::skip]
 pub const VERTICES: &[MeshVertex] = &[
-    // Front face
-    MeshVertex { pos: vec3(-1.0,-1.0, 1.0), norm: vec3(0.0,0.0,1.0), uv: vec2(0.0,0.0) },
-    MeshVertex { pos: vec3( 1.0,-1.0, 1.0), norm: vec3(0.0,0.0,1.0), uv: vec2(1.0,0.0) },
-    MeshVertex { pos: vec3( 1.0, 1.0, 1.0), norm: vec3(0.0,0.0,1.0), uv: vec2(1.0,1.0) },
-    MeshVertex { pos: vec3(-1.0, 1.0, 1.0), norm: vec3(0.0,0.0,1.0), uv: vec2(0.0,1.0) },
+    // Front face (+Z)
+    MeshVertex { pos: vec3(-0.5,-0.5, 0.5), norm: vec3(0.0,0.0, 1.0), uv: vec2(0.0,0.0) },
+    MeshVertex { pos: vec3( 0.5,-0.5, 0.5), norm: vec3(0.0,0.0, 1.0), uv: vec2(1.0,0.0) },
+    MeshVertex { pos: vec3( 0.5, 0.5, 0.5), norm: vec3(0.0,0.0, 1.0), uv: vec2(1.0,1.0) },
+    MeshVertex { pos: vec3(-0.5, 0.5, 0.5), norm: vec3(0.0,0.0, 1.0), uv: vec2(0.0,1.0) },
 
-    // Back face
-    MeshVertex { pos: vec3( 1.0,-1.0,-1.0), norm: vec3(0.0,0.0,-1.0), uv: vec2(0.0,0.0) },
-    MeshVertex { pos: vec3(-1.0,-1.0,-1.0), norm: vec3(0.0,0.0,-1.0), uv: vec2(1.0,0.0) },
-    MeshVertex { pos: vec3(-1.0, 1.0,-1.0), norm: vec3(0.0,0.0,-1.0), uv: vec2(1.0,1.0) },
-    MeshVertex { pos: vec3( 1.0, 1.0,-1.0), norm: vec3(0.0,0.0,-1.0), uv: vec2(0.0,1.0) },
+    // Back face (-Z)
+    MeshVertex { pos: vec3( 0.5,-0.5,-0.5), norm: vec3(0.0,0.0,-1.0), uv: vec2(0.0,0.0) },
+    MeshVertex { pos: vec3(-0.5,-0.5,-0.5), norm: vec3(0.0,0.0,-1.0), uv: vec2(1.0,0.0) },
+    MeshVertex { pos: vec3(-0.5, 0.5,-0.5), norm: vec3(0.0,0.0,-1.0), uv: vec2(1.0,1.0) },
+    MeshVertex { pos: vec3( 0.5, 0.5,-0.5), norm: vec3(0.0,0.0,-1.0), uv: vec2(0.0,1.0) },
 
-    // Left face
-    MeshVertex { pos: vec3(-1.0,-1.0,-1.0), norm: vec3(-1.0,0.0,0.0), uv: vec2(0.0,0.0) },
-    MeshVertex { pos: vec3(-1.0,-1.0, 1.0), norm: vec3(-1.0,0.0,0.0), uv: vec2(1.0,0.0) },
-    MeshVertex { pos: vec3(-1.0, 1.0, 1.0), norm: vec3(-1.0,0.0,0.0), uv: vec2(1.0,1.0) },
-    MeshVertex { pos: vec3(-1.0, 1.0,-1.0), norm: vec3(-1.0,0.0,0.0), uv: vec2(0.0,1.0) },
+    // Left face (-X)
+    MeshVertex { pos: vec3(-0.5,-0.5,-0.5), norm: vec3(-1.0,0.0,0.0), uv: vec2(0.0,0.0) },
+    MeshVertex { pos: vec3(-0.5,-0.5, 0.5), norm: vec3(-1.0,0.0,0.0), uv: vec2(1.0,0.0) },
+    MeshVertex { pos: vec3(-0.5, 0.5, 0.5), norm: vec3(-1.0,0.0,0.0), uv: vec2(1.0,1.0) },
+    MeshVertex { pos: vec3(-0.5, 0.5,-0.5), norm: vec3(-1.0,0.0,0.0), uv: vec2(0.0,1.0) },
 
-    // Right face
-    MeshVertex { pos: vec3( 1.0,-1.0, 1.0), norm: vec3(1.0,0.0,0.0), uv: vec2(0.0,0.0) },
-    MeshVertex { pos: vec3( 1.0,-1.0,-1.0), norm: vec3(1.0,0.0,0.0), uv: vec2(1.0,0.0) },
-    MeshVertex { pos: vec3( 1.0, 1.0,-1.0), norm: vec3(1.0,0.0,0.0), uv: vec2(1.0,1.0) },
-    MeshVertex { pos: vec3( 1.0, 1.0, 1.0), norm: vec3(1.0,0.0,0.0), uv: vec2(0.0,1.0) },
+    // Right face (+X)
+    MeshVertex { pos: vec3( 0.5,-0.5, 0.5), norm: vec3( 1.0,0.0,0.0), uv: vec2(0.0,0.0) },
+    MeshVertex { pos: vec3( 0.5,-0.5,-0.5), norm: vec3( 1.0,0.0,0.0), uv: vec2(1.0,0.0) },
+    MeshVertex { pos: vec3( 0.5, 0.5,-0.5), norm: vec3( 1.0,0.0,0.0), uv: vec2(1.0,1.0) },
+    MeshVertex { pos: vec3( 0.5, 0.5, 0.5), norm: vec3( 1.0,0.0,0.0), uv: vec2(0.0,1.0) },
 
-    // Top face
-    MeshVertex { pos: vec3(-1.0, 1.0, 1.0), norm: vec3(0.0,1.0,0.0), uv: vec2(0.0,0.0) },
-    MeshVertex { pos: vec3( 1.0, 1.0, 1.0), norm: vec3(0.0,1.0,0.0), uv: vec2(1.0,0.0) },
-    MeshVertex { pos: vec3( 1.0, 1.0,-1.0), norm: vec3(0.0,1.0,0.0), uv: vec2(1.0,1.0) },
-    MeshVertex { pos: vec3(-1.0, 1.0,-1.0), norm: vec3(0.0,1.0,0.0), uv: vec2(0.0,1.0) },
+    // Top face (+Y)
+    MeshVertex { pos: vec3(-0.5, 0.5, 0.5), norm: vec3(0.0,1.0,0.0), uv: vec2(0.0,0.0) },
+    MeshVertex { pos: vec3( 0.5, 0.5, 0.5), norm: vec3(0.0,1.0,0.0), uv: vec2(1.0,0.0) },
+    MeshVertex { pos: vec3( 0.5, 0.5,-0.5), norm: vec3(0.0,1.0,0.0), uv: vec2(1.0,1.0) },
+    MeshVertex { pos: vec3(-0.5, 0.5,-0.5), norm: vec3(0.0,1.0,0.0), uv: vec2(0.0,1.0) },
 
-    // Bottom face
-    MeshVertex { pos: vec3(-1.0,-1.0,-1.0), norm: vec3(0.0,-1.0,0.0), uv: vec2(0.0,0.0) },
-    MeshVertex { pos: vec3( 1.0,-1.0,-1.0), norm: vec3(0.0,-1.0,0.0), uv: vec2(1.0,0.0) },
-    MeshVertex { pos: vec3( 1.0,-1.0, 1.0), norm: vec3(0.0,-1.0,0.0), uv: vec2(1.0,1.0) },
-    MeshVertex { pos: vec3(-1.0,-1.0, 1.0), norm: vec3(0.0,-1.0,0.0), uv: vec2(0.0,1.0) },
+    // Bottom face (-Y)
+    MeshVertex { pos: vec3(-0.5,-0.5,-0.5), norm: vec3(0.0,-1.0,0.0), uv: vec2(0.0,0.0) },
+    MeshVertex { pos: vec3( 0.5,-0.5,-0.5), norm: vec3(0.0,-1.0,0.0), uv: vec2(1.0,0.0) },
+    MeshVertex { pos: vec3( 0.5,-0.5, 0.5), norm: vec3(0.0,-1.0,0.0), uv: vec2(1.0,1.0) },
+    MeshVertex { pos: vec3(-0.5,-0.5, 0.5), norm: vec3(0.0,-1.0,0.0), uv: vec2(0.0,1.0) },
 ];
 
 #[rustfmt::skip]
