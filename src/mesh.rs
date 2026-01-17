@@ -85,6 +85,11 @@ pub struct InstanceVertex {
 }
 
 impl InstanceVertex {
+    pub fn new(position: Vec3, rotation: Quat, color: Vec3) -> Self {
+        let model = Mat4::from_rotation_translation(rotation, position);
+        Self { model, color }
+    }
+
     pub fn get_attribute_descriptions() -> [vk::VertexInputAttributeDescription; 5] {
         [
             vk::VertexInputAttributeDescription::default()

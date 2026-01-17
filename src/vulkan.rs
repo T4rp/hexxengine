@@ -6,7 +6,7 @@ use std::{ffi, fs, mem, ptr};
 
 use ash::vk::{self, ApplicationInfo};
 use ash::{Entry, Instance};
-use glam::{Mat4, Quat, Vec3, Vec4, mat4, vec2, vec3, vec4};
+use glam::{EulerRot, Mat4, Quat, Vec3, Vec4, mat4, vec2, vec3, vec4};
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
@@ -1217,33 +1217,21 @@ impl VulkanContext {
         let depth_image_view = current_frame.depth_image_view;
 
         let instances = [
-            InstanceVertex {
-                model: mat4(
-                    vec4(1.0, 0.0, 0.0, 0.0),
-                    vec4(0.0, 1.0, 0.0, 0.0),
-                    vec4(0.0, 0.0, 1.0, 0.0),
-                    vec4(-2.5, 0.0, 0.0, 1.0),
-                ),
-                color: vec3(1.0, 0.0, 0.0),
-            },
-            InstanceVertex {
-                model: mat4(
-                    vec4(1.0, 0.0, 0.0, 0.0),
-                    vec4(0.0, 1.0, 0.0, 0.0),
-                    vec4(0.0, 0.0, 1.0, 0.0),
-                    vec4(0.0, 0.0, 0.0, 1.0),
-                ),
-                color: vec3(0.0, 1.0, 0.0),
-            },
-            InstanceVertex {
-                model: mat4(
-                    vec4(1.0, 0.0, 0.0, 0.0),
-                    vec4(0.0, 1.0, 0.0, 0.0),
-                    vec4(0.0, 0.0, 1.0, 0.0),
-                    vec4(2.5, 0.0, 0.0, 1.0),
-                ),
-                color: vec3(0.0, 0.0, 1.0),
-            },
+            InstanceVertex::new(
+                vec3(-2.5, 0.0, 0.0),
+                Quat::from_euler(EulerRot::XYZ, f32::to_radians(45.0), 0.0, 0.0),
+                vec3(1.0, 0.0, 0.0),
+            ),
+            InstanceVertex::new(
+                vec3(0.0, 0.0, 0.0),
+                Quat::from_euler(EulerRot::XYZ, 0.0, f32::to_radians(45.0), 0.0),
+                vec3(0.0, 1.0, 0.0),
+            ),
+            InstanceVertex::new(
+                vec3(2.5, 0.0, 0.0),
+                Quat::from_euler(EulerRot::XYZ, 0.0, 0.0, f32::to_radians(45.0)),
+                vec3(0.0, 0.0, 1.0),
+            ),
         ];
 
         unsafe {
