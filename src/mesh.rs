@@ -158,9 +158,15 @@ pub struct CameraUniform {
 }
 
 impl CameraUniform {
-    pub fn new(position: Vec3, orientation: Quat, fov: f32, aspect_ratio: f32) -> Self {
-        let mut proj = Mat4::perspective_infinite_reverse_rh(fov.to_radians(), aspect_ratio, 1.0);
+    pub fn new(position: Vec3, orientation: Quat, horizontal_fov: f32, aspect_ratio: f32) -> Self {
+        let vertical_fov = 2.0
+            * (horizontal_fov.to_radians() * 0.5)
+                .tan()
+                .atan2(aspect_ratio);
+
+        let mut proj = Mat4::perspective_infinite_reverse_rh(vertical_fov, aspect_ratio, 1.0);
         proj.y_axis *= vec4(1.0, -1.0, 1.0, 1.0);
+
         let view = Mat4::from_rotation_translation(orientation, position).inverse();
 
         Self { proj, view }
