@@ -1,7 +1,7 @@
 use std::mem;
 
 use ash::vk;
-use glam::{Mat4, Quat, Vec2, Vec3, vec4};
+use glam::{Mat3, Mat4, Quat, Vec2, Vec3, vec4};
 
 #[derive(Clone, Copy)]
 #[repr(C)]
@@ -81,16 +81,23 @@ impl MeshVertex {
 #[repr(C)]
 pub struct InstanceVertex {
     pub model: Mat4,
+    pub model_normal: Mat3,
     pub color: Vec3,
 }
 
 impl InstanceVertex {
     pub fn new(position: Vec3, rotation: Quat, color: Vec3) -> Self {
         let model = Mat4::from_rotation_translation(rotation, position);
-        Self { model, color }
+        let model_normal = Mat3::from_mat4(model.inverse().transpose());
+
+        Self {
+            model,
+            model_normal,
+            color,
+        }
     }
 
-    pub fn get_attribute_descriptions() -> [vk::VertexInputAttributeDescription; 5] {
+    pub fn get_attribute_descriptions() -> [vk::VertexInputAttributeDescription; 8] {
         [
             vk::VertexInputAttributeDescription::default()
                 .binding(1)
@@ -115,6 +122,21 @@ impl InstanceVertex {
             vk::VertexInputAttributeDescription::default()
                 .binding(1)
                 .location(7)
+                .format(vk::Format::R32G32B32_SFLOAT)
+                .offset(mem::offset_of!(InstanceVertex, model_normal.x_axis) as u32),
+            vk::VertexInputAttributeDescription::default()
+                .binding(1)
+                .location(8)
+                .format(vk::Format::R32G32B32_SFLOAT)
+                .offset(mem::offset_of!(InstanceVertex, model_normal.y_axis) as u32),
+            vk::VertexInputAttributeDescription::default()
+                .binding(1)
+                .location(9)
+                .format(vk::Format::R32G32B32_SFLOAT)
+                .offset(mem::offset_of!(InstanceVertex, model_normal.z_axis) as u32),
+            vk::VertexInputAttributeDescription::default()
+                .binding(1)
+                .location(10)
                 .format(vk::Format::R32G32B32_SFLOAT)
                 .offset(mem::offset_of!(InstanceVertex, color) as u32),
         ]

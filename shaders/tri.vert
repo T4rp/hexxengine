@@ -5,7 +5,8 @@ layout (location = 1) in vec3 inNorm;
 layout (location = 2) in vec2 inUv;
 
 layout(location = 3) in mat4 inModel;
-layout(location = 7) in vec3 inColor;
+layout(location = 7) in mat3 inModelNormal;
+layout(location = 10) in vec3 inColor;
 
 layout (location = 0) out vec3 outColor;
 layout (location = 1) out vec2 outUv;
@@ -21,6 +22,6 @@ void main() {
 	gl_Position = cameraUbo.proj * cameraUbo.view * inModel * vec4(inPos, 1.0f);
 	outColor = inColor;
 	outUv = inUv;
-    outNorm = mat3(transpose(inverse(inModel))) * inNorm;
+    outNorm = inModelNormal * inNorm;
     outPos = vec3(inModel * vec4(inPos, 1.0));
 }
