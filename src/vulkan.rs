@@ -4,8 +4,8 @@ use std::rc::Rc;
 use std::time::SystemTime;
 use std::{ffi, fs, mem, ptr};
 
-use ash::Entry;
 use ash::vk::{self, ApplicationInfo};
+use ash::{Entry, Instance};
 use glam::{Mat4, Quat, Vec3, Vec4, mat4, vec2, vec3, vec4};
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
@@ -63,36 +63,6 @@ pub const INDICES: &[u16] = &[
    12,13,14,14,15,12,       // right
    16,17,18,18,19,16,       // top
    20,21,22,22,23,20,       // bottom
-];
-
-pub const INSTANCES: &[InstanceVertex] = &[
-    InstanceVertex {
-        model: mat4(
-            vec4(1.0, 0.0, 0.0, 0.0),
-            vec4(0.0, 1.0, 0.0, 0.0),
-            vec4(0.0, 0.0, 1.0, 0.0),
-            vec4(-2.5, 0.0, 0.0, 1.0),
-        ),
-        color: vec3(1.0, 0.0, 0.0),
-    },
-    InstanceVertex {
-        model: mat4(
-            vec4(1.0, 0.0, 0.0, 0.0),
-            vec4(0.0, 1.0, 0.0, 0.0),
-            vec4(0.0, 0.0, 1.0, 0.0),
-            vec4(0.0, 0.0, 0.0, 1.0),
-        ),
-        color: vec3(0.0, 1.0, 0.0),
-    },
-    InstanceVertex {
-        model: mat4(
-            vec4(1.0, 0.0, 0.0, 0.0),
-            vec4(0.0, 1.0, 0.0, 0.0),
-            vec4(0.0, 0.0, 1.0, 0.0),
-            vec4(2.5, 0.0, 0.0, 1.0),
-        ),
-        color: vec3(0.0, 0.0, 1.0),
-    },
 ];
 
 const DESCRIPTOR_RATIOS: &[(vk::DescriptorType, u32)] = &[
@@ -954,7 +924,7 @@ fn create_instance_buffer(
     allocator: &vk_mem::Allocator,
 ) -> (vk::Buffer, vk_mem::Allocation) {
     let instance_buffer_info = vk::BufferCreateInfo::default()
-        .size((mem::size_of::<InstanceVertex>() * INSTANCES.len()) as u64)
+        .size((mem::size_of::<InstanceVertex>() * 1000) as u64)
         .usage(vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
 
     let alloc_info = vk_mem::AllocationCreateInfo {
@@ -969,16 +939,6 @@ fn create_instance_buffer(
             .create_buffer(&instance_buffer_info, &alloc_info)
             .unwrap()
     };
-
-    let alloc_info = allocator.get_allocation_info(&instance_buffer.1);
-
-    unsafe {
-        std::ptr::copy_nonoverlapping(
-            INSTANCES.as_ptr(),
-            alloc_info.mapped_data.cast(),
-            INSTANCES.len(),
-        );
-    }
 
     instance_buffer
 }
@@ -1221,6 +1181,18 @@ impl VulkanContext {
         unsafe { std::ptr::copy_nonoverlapping(&mut camera_ubo, alloc_info.mapped_data.cast(), 1) };
     }
 
+    fn update_instance_buffer(&mut self, instances: &[InstanceVertex]) {
+        let alloc_info = self.allocator.get_allocation_info(&self.instance_buffer.1);
+
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                instances.as_ptr(),
+                alloc_info.mapped_data.cast(),
+                instances.len(),
+            );
+        }
+    }
+
     pub fn update(&mut self) {
         let dt = self.last_frame_time.elapsed().unwrap().as_secs_f32();
         self.last_frame_time = SystemTime::now();
@@ -1243,6 +1215,36 @@ impl VulkanContext {
         let in_flight_fence = current_frame.in_flight_fence;
         let per_frame_descriptor_set = current_frame.per_frame_set;
         let depth_image_view = current_frame.depth_image_view;
+
+        let instances = [
+            InstanceVertex {
+                model: mat4(
+                    vec4(1.0, 0.0, 0.0, 0.0),
+                    vec4(0.0, 1.0, 0.0, 0.0),
+                    vec4(0.0, 0.0, 1.0, 0.0),
+                    vec4(-2.5, 0.0, 0.0, 1.0),
+                ),
+                color: vec3(1.0, 0.0, 0.0),
+            },
+            InstanceVertex {
+                model: mat4(
+                    vec4(1.0, 0.0, 0.0, 0.0),
+                    vec4(0.0, 1.0, 0.0, 0.0),
+                    vec4(0.0, 0.0, 1.0, 0.0),
+                    vec4(0.0, 0.0, 0.0, 1.0),
+                ),
+                color: vec3(0.0, 1.0, 0.0),
+            },
+            InstanceVertex {
+                model: mat4(
+                    vec4(1.0, 0.0, 0.0, 0.0),
+                    vec4(0.0, 1.0, 0.0, 0.0),
+                    vec4(0.0, 0.0, 1.0, 0.0),
+                    vec4(2.5, 0.0, 0.0, 1.0),
+                ),
+                color: vec3(0.0, 0.0, 1.0),
+            },
+        ];
 
         unsafe {
             self.device
@@ -1268,6 +1270,7 @@ impl VulkanContext {
             self.device.reset_fences(&[in_flight_fence]).unwrap();
 
             self.update_per_frame_descriptors();
+            self.update_instance_buffer(&instances);
 
             let submit_semaphore = self.submit_semaphores[image_index as usize];
 
@@ -1383,7 +1386,7 @@ impl VulkanContext {
             self.device.cmd_draw_indexed(
                 command_buffer,
                 self.mesh_buffer.index_count,
-                INSTANCES.len() as u32,
+                instances.len() as u32,
                 0,
                 0,
                 0,
