@@ -537,7 +537,6 @@ pub struct VulkanContext {
     mesh_buffer: MeshBuffer,
     should_resize: bool,
     physical_device: vk::PhysicalDevice,
-    window: Rc<Window>,
     descriptor_set_layouts: DescriptorSetLayouts,
     descriptor_pool: vk::DescriptorPool,
     graphics_pipeline_layout: vk::PipelineLayout,
@@ -621,7 +620,7 @@ fn create_swapchain(
     physical_device: vk::PhysicalDevice,
     surface: vk::SurfaceKHR,
     surface_format: vk::SurfaceFormatKHR,
-    window: &Window,
+    window_size: (u32, u32),
     old_swapchain: Option<vk::SwapchainKHR>,
 ) -> Result<
     (
@@ -646,10 +645,9 @@ fn create_swapchain(
     let image_extent = if surface_max_image_extent.width != u32::MAX {
         surface_max_image_extent
     } else {
-        let window_dimensions = window.inner_position().unwrap();
         vk::Extent2D {
-            width: window_dimensions.x as u32,
-            height: window_dimensions.y as u32,
+            width: window_size.0,
+            height: window_size.1,
         }
     };
 
@@ -948,7 +946,7 @@ fn create_instance_buffer(
 }
 
 impl VulkanContext {
-    pub fn new(window: Rc<Window>) -> Self {
+    pub fn new(window: &Window) -> Self {
         let raw_window_handle = window.window_handle().unwrap().as_raw();
         let raw_display_handle = window.display_handle().unwrap().as_raw();
 
@@ -1049,6 +1047,7 @@ impl VulkanContext {
             })
             .unwrap();
 
+        let window_size = window.inner_size();
         let (swapchain, swapchain_images, swapchain_image_views, swapchain_extent) =
             create_swapchain(
                 &entry,
@@ -1057,7 +1056,7 @@ impl VulkanContext {
                 physical_device,
                 surface,
                 surface_format,
-                &window,
+                (window_size.width, window_size.height),
                 None,
             )
             .unwrap();
@@ -1156,7 +1155,6 @@ impl VulkanContext {
         }
 
         Self {
-            window,
             entry,
             instance,
             surface,
@@ -1453,7 +1451,7 @@ impl VulkanContext {
         self.current_frame = self.current_frame + 1;
     }
 
-    pub fn handle_resize(&mut self) {
+    pub fn handle_resize(&mut self, window_size: (u32, u32)) {
         if !self.should_resize {
             return;
         }
@@ -1470,7 +1468,7 @@ impl VulkanContext {
                 self.physical_device,
                 self.surface,
                 self.surface_format,
-                &self.window,
+                window_size,
                 Some(self.swapchain),
             ) {
                 Ok(r) => r,

@@ -1,8 +1,6 @@
 mod mesh;
 mod vulkan;
 
-use std::rc::Rc;
-
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
@@ -14,7 +12,7 @@ use winit::{
 use vulkan::VulkanContext;
 
 struct App {
-    window: Option<Rc<Window>>,
+    window: Option<Window>,
     vk_ctx: Option<VulkanContext>,
 }
 
@@ -29,13 +27,11 @@ impl App {
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        let window = Rc::new(
-            event_loop
-                .create_window(WindowAttributes::default())
-                .unwrap(),
-        );
+        let window = event_loop
+            .create_window(WindowAttributes::default())
+            .unwrap();
 
-        let vk_ctx = VulkanContext::new(window.clone());
+        let vk_ctx = VulkanContext::new(&window);
 
         self.window = Some(window);
         self.vk_ctx = Some(vk_ctx);
@@ -60,8 +56,11 @@ impl ApplicationHandler for App {
                     event_loop.exit();
                 }
             }
-            WindowEvent::Resized(_size) => {
-                self.vk_ctx.as_mut().unwrap().handle_resize();
+            WindowEvent::Resized(size) => {
+                self.vk_ctx
+                    .as_mut()
+                    .unwrap()
+                    .handle_resize((size.width, size.height));
             }
             WindowEvent::RedrawRequested => {
                 self.vk_ctx.as_mut().unwrap().update();
