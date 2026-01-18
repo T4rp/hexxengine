@@ -2,7 +2,7 @@ mod mesh;
 mod scene;
 mod vulkan;
 
-use std::time::SystemTime;
+use std::time::Instant;
 
 use glam::{EulerRot, Quat, vec3};
 use rand::{Rng, SeedableRng, rngs::SmallRng};
@@ -16,22 +16,30 @@ use winit::{
 
 use vulkan::VulkanContext;
 
-use crate::scene::{Camera, MeshNode, RenderScene};
+use crate::scene::{Camera, Lighting, MeshNode, RenderScene};
 
 struct App {
     scene: RenderScene,
     window: Option<Window>,
     vk_ctx: Option<VulkanContext>,
-    last_frame_time: SystemTime,
+    last_frame: Instant,
+    start_time: Instant,
 }
 
 impl App {
     fn new() -> Self {
-        let last_frame_time = SystemTime::now();
+        let start_time = Instant::now();
+        let last_frame = start_time.clone();
 
         let mut scene = RenderScene {
             camera: Camera::new(vec3(0.0, 0.0, 5.0), Quat::IDENTITY, 70.0),
             meshes: Vec::new(),
+            lighting: Lighting {
+                sun_direction: vec3(0.0, -1.0, 0.0),
+                sun_color: vec3(1.0, 1.0, 1.0),
+                sun_power: 1.0,
+                ambient_color: vec3(0.2, 0.2, 0.2),
+            },
             are_meshes_dirty: true,
         };
 
@@ -60,17 +68,21 @@ impl App {
 
         Self {
             scene,
-            last_frame_time,
+            last_frame,
+            start_time,
             window: None,
             vk_ctx: None,
         }
     }
 
     pub fn update(&mut self) {
-        let dt = self.last_frame_time.elapsed().unwrap().as_secs_f32();
-        self.last_frame_time = SystemTime::now();
-        self.scene.camera.orientation *=
-            Quat::from_euler(glam::EulerRot::XYZ, 0.0, f32::to_radians(100.0) * dt, 0.0);
+        let now = Instant::now();
+        // let dt = (now - self.last_frame).as_secs_f32();
+        let elapsed = (now - self.start_time).as_secs_f32();
+
+        self.last_frame = now;
+
+        self.scene.lighting.sun_direction = vec3(elapsed.cos(), 0.0, elapsed.sin());
     }
 }
 

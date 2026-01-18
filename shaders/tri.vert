@@ -13,13 +13,16 @@ layout (location = 1) out vec2 outUv;
 layout (location = 2) out vec3 outNorm;
 layout (location = 3) out vec3 outPos;
 
-layout(binding = 0) uniform CameraUniform {
+layout(set = 0, binding = 0) uniform SceneUniform {
     mat4 proj;
     mat4 view;
-} cameraUbo;
+    vec4 sunDir;
+    vec4 sunCol;
+    vec4 ambientColor;
+} sceneUbo;
 
 void main() {
-	gl_Position = cameraUbo.proj * cameraUbo.view * inModel * vec4(inPos, 1.0f);
+	gl_Position = sceneUbo.proj * sceneUbo.view * inModel * vec4(inPos, 1.0f);
 	outColor = inColor;
 	outUv = inUv;
     outNorm = inModelNormal * inNorm;

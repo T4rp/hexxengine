@@ -27,6 +27,13 @@ impl Camera {
     }
 }
 
+pub struct Lighting {
+    pub sun_direction: Vec3,
+    pub sun_color: Vec3,
+    pub sun_power: f32,
+    pub ambient_color: Vec3,
+}
+
 pub struct MeshNode {
     pub position: Vec3,
     pub orientation: Quat,
@@ -38,5 +45,6 @@ pub struct MeshNode {
 pub struct RenderScene {
     pub camera: Camera,
     pub meshes: Vec<MeshNode>,
+    pub lighting: Lighting,
     pub are_meshes_dirty: bool,
 }

@@ -1,7 +1,7 @@
 use std::mem;
 
 use ash::vk;
-use glam::{Mat3, Mat4, Quat, Vec2, Vec3, vec4};
+use glam::{Mat3, Mat4, Quat, Vec2, Vec3, Vec4, vec4};
 
 #[derive(Clone, Copy)]
 #[repr(C)]
@@ -152,23 +152,10 @@ impl InstanceVertex {
 
 #[derive(Clone, Copy)]
 #[repr(C)]
-pub struct CameraUniform {
+pub struct SceneUniform {
     pub proj: Mat4,
     pub view: Mat4,
-}
-
-impl CameraUniform {
-    pub fn new(position: Vec3, orientation: Quat, horizontal_fov: f32, aspect_ratio: f32) -> Self {
-        let vertical_fov = 2.0
-            * (horizontal_fov.to_radians() * 0.5)
-                .tan()
-                .atan2(aspect_ratio);
-
-        let mut proj = Mat4::perspective_infinite_reverse_rh(vertical_fov, aspect_ratio, 1.0);
-        proj.y_axis *= vec4(1.0, -1.0, 1.0, 1.0);
-
-        let view = Mat4::from_rotation_translation(orientation, position).inverse();
-
-        Self { proj, view }
-    }
+    pub sun_direction: Vec4,
+    pub sun_color: Vec4,
+    pub ambient_color: Vec4,
 }

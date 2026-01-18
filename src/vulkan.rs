@@ -3,12 +3,12 @@ use std::io::Cursor;
 use std::{ffi, fs, mem, ptr};
 
 use ash::vk::{self};
-use glam::{vec2, vec3};
+use glam::{vec2, vec3, vec4};
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
 
-use crate::mesh::{CameraUniform, InstanceVertex, MeshVertex};
+use crate::mesh::{InstanceVertex, MeshVertex, SceneUniform};
 use crate::scene::{MeshNode, RenderScene};
 
 const USE_VALIDATION_LAYERS: bool = true;
@@ -114,7 +114,7 @@ impl PerFrameDescriptorData {
     ) -> Self {
         let camera_uniform_buffer_info = vk::BufferCreateInfo::default()
             .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
-            .size(mem::size_of::<CameraUniform>() as u64);
+            .size(mem::size_of::<SceneUniform>() as u64);
 
         let camera_uniform_alloc_info = vk_mem::AllocationCreateInfo {
             flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE
@@ -132,7 +132,7 @@ impl PerFrameDescriptorData {
 
         let buff_info = [vk::DescriptorBufferInfo::default()
             .offset(0)
-            .range(mem::size_of::<CameraUniform>() as u64)
+            .range(mem::size_of::<SceneUniform>() as u64)
             .buffer(camera_buffer.0)];
 
         let descriptor_write = [vk::WriteDescriptorSet::default()
@@ -1145,9 +1145,29 @@ impl VulkanContext {
 
         let (proj, view) = scene.camera.calc_perspective_matrices(aspect_ratio);
 
-        let mut camera_ubo = CameraUniform {
+        let lighting = &scene.lighting;
+
+        let mut camera_ubo = SceneUniform {
             proj: proj,
             view: view,
+            sun_direction: vec4(
+                lighting.sun_direction.x,
+                lighting.sun_direction.y,
+                lighting.sun_direction.z,
+                0.0,
+            ),
+            sun_color: vec4(
+                lighting.sun_color.x,
+                lighting.sun_color.y,
+                lighting.sun_color.z,
+                lighting.sun_power,
+            ),
+            ambient_color: vec4(
+                lighting.ambient_color.x,
+                lighting.ambient_color.y,
+                lighting.ambient_color.z,
+                0.0,
+            ),
         };
 
         unsafe { std::ptr::copy_nonoverlapping(&mut camera_ubo, alloc_info.mapped_data.cast(), 1) };

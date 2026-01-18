@@ -7,23 +7,25 @@ layout (location = 3) in vec3 inPos;
 
 layout (location = 0) out vec4 outFragColor;
 
-layout(set = 0, binding = 0) uniform CameraUniform {
+layout(set = 0, binding = 0) uniform SceneUniform {
     mat4 proj;
     mat4 view;
-} cameraUbo;
+    vec4 sunDir;
+    vec4 sunCol;
+    vec4 ambientCol;
+} sceneUbo;
 
 layout (set = 1, binding = 0) uniform sampler2D text;
 
-const vec3 lightPos = vec3(0.0, 5.0, -1.0);
-const vec3 lightColor = vec3(1.0, 1.0, 1.0);
-const float lightPower = 1.0;
-const vec3 ambientColor = vec3(0.2, 0.2, 0.2);
-const vec3 specColor = vec3(1.0, 1.0, 1.0);
-const float shininess = 1.0;
-
 void main() {
+	vec3 lightColor = vec3(sceneUbo.sunCol);
+	float lightPower = sceneUbo.sunCol.w;
+	vec3 ambientColor = vec3(sceneUbo.ambientCol);
+	vec3 specColor = lightColor;
+	float shininess = 1.0;
+
 	vec3 norm = normalize(inNorm);
-	vec3 lightDir = normalize(lightPos - inPos);
+	vec3 lightDir = vec3(sceneUbo.sunDir);
 	float distance = dot(lightDir, lightDir);
 	lightDir = normalize(lightDir);
 
