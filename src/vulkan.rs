@@ -14,6 +14,7 @@ use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHand
 use winit::window::Window;
 
 use crate::mesh::{CameraUniform, InstanceVertex, MeshVertex, Vertex2d};
+use crate::scene::{MeshNode, RenderScene};
 
 const USE_VALIDATION_LAYERS: bool = true;
 const MAX_FRAMES: usize = 2;
@@ -534,36 +535,16 @@ pub struct VulkanContext {
     surface_format: vk::SurfaceFormatKHR,
     swapchain_extent: vk::Extent2D,
     allocator: vk_mem::Allocator,
-    mesh_buffer: MeshBuffer,
+    mesh_buffers: Vec<MeshBuffer>,
     should_resize: bool,
     physical_device: vk::PhysicalDevice,
     descriptor_set_layouts: DescriptorSetLayouts,
     descriptor_pool: vk::DescriptorPool,
     graphics_pipeline_layout: vk::PipelineLayout,
 
-    camera: Camera,
-    last_frame_time: SystemTime,
     command_pool: vk::CommandPool,
     textures: Vec<Texture>,
     instance_buffer: (vk::Buffer, vk_mem::Allocation),
-    rng: SmallRng,
-    instances: Vec<InstanceVertex>,
-}
-
-pub struct Camera {
-    position: Vec3,
-    orientation: Quat,
-    fov: f32,
-}
-
-impl Camera {
-    fn new(position: Vec3, orientation: Quat, fov: f32) -> Self {
-        Self {
-            position,
-            orientation,
-            fov,
-        }
-    }
 }
 
 fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> ash::Instance {
@@ -921,10 +902,7 @@ fn create_image_from_rgba(
     (image, image_view)
 }
 
-fn create_instance_buffer(
-    device: &ash::Device,
-    allocator: &vk_mem::Allocator,
-) -> (vk::Buffer, vk_mem::Allocation) {
+fn create_instance_buffer(allocator: &vk_mem::Allocator) -> (vk::Buffer, vk_mem::Allocation) {
     let instance_buffer_info = vk::BufferCreateInfo::default()
         .size((mem::size_of::<InstanceVertex>() * 1000) as u64)
         .usage(vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
@@ -1078,15 +1056,10 @@ impl VulkanContext {
         let (graphics_pipeline, graphics_pipeline_layout) =
             Self::create_graphics_pipeline(&device, surface_format, &descriptor_set_layouts);
 
-        let mesh_buffer = MeshBuffer::allocate_mesh(&allocator, VERTICES, INDICES);
-        let instance_buffer = create_instance_buffer(&device, &allocator);
+        let instance_buffer = create_instance_buffer(&allocator);
 
         let current_frame: usize = 0;
         let should_resize = false;
-
-        let camera = Camera::new(vec3(0.0, 0.0, 5.0), Quat::IDENTITY, 70.0);
-
-        let last_frame_time = SystemTime::now();
 
         let fallback_image = create_image_from_rgba(
             &device,
@@ -1110,6 +1083,11 @@ impl VulkanContext {
             &[255, 255, 255, 255],
         );
 
+        let mut mesh_buffers = Vec::new();
+        let mesh_buffer = MeshBuffer::allocate_mesh(&allocator, VERTICES, INDICES);
+
+        mesh_buffers.push(mesh_buffer);
+
         let mut textures = Vec::new();
 
         let fallback_texture = Texture::create_texture(
@@ -1130,29 +1108,6 @@ impl VulkanContext {
 
         textures.push(fallback_texture);
         textures.push(white_texture);
-
-        let mut rng = SmallRng::from_os_rng();
-
-        let mut instances = Vec::new();
-
-        for _ in 0..1000 {
-            let instance = InstanceVertex::new(
-                vec3(
-                    rng.random_range(-20.0..20.0),
-                    rng.random_range(-20.0..20.0),
-                    rng.random_range(-20.0..20.0),
-                ),
-                Quat::from_euler(
-                    EulerRot::XYZ,
-                    rng.random::<f32>() * std::f32::consts::PI * 2.0,
-                    rng.random::<f32>() * std::f32::consts::PI * 2.0,
-                    rng.random::<f32>() * std::f32::consts::PI * 2.0,
-                ),
-                vec3(rng.random(), rng.random(), rng.random()),
-            );
-
-            instances.push(instance);
-        }
 
         Self {
             entry,
@@ -1175,19 +1130,15 @@ impl VulkanContext {
             graphics_pipeline,
             graphics_pipeline_layout,
             allocator,
-            mesh_buffer,
             instance_buffer,
             descriptor_set_layouts,
             descriptor_pool,
-            camera,
-            last_frame_time,
             textures,
-            rng,
-            instances,
+            mesh_buffers,
         }
     }
 
-    pub fn update_per_frame_descriptors(&mut self) {
+    fn update_per_frame_descriptors(&mut self, scene: &RenderScene) {
         let current_frame = &self.render_frames[self.current_frame % MAX_FRAMES];
         let camera_buffer_allocation = current_frame.per_frame_descriptor_data.camera_buffer.1;
 
@@ -1195,39 +1146,38 @@ impl VulkanContext {
             .allocator
             .get_allocation_info(&camera_buffer_allocation);
 
-        let camera = &self.camera;
         let aspect_ratio = self.swapchain_extent.width as f32 / self.swapchain_extent.height as f32;
 
-        let mut camera_ubo = CameraUniform::new(
-            camera.position,
-            camera.orientation,
-            camera.fov,
-            aspect_ratio,
-        );
+        let (proj, view) = scene.camera.calc_perspective_matrices(aspect_ratio);
+
+        let mut camera_ubo = CameraUniform {
+            proj: proj,
+            view: view,
+        };
 
         unsafe { std::ptr::copy_nonoverlapping(&mut camera_ubo, alloc_info.mapped_data.cast(), 1) };
     }
 
-    fn update_instance_buffer(&mut self) {
+    fn update_instance_buffer(&mut self, meshes: &[MeshNode]) {
+        let mut instances = Vec::new();
+
+        for mesh in meshes.iter() {
+            let instance = InstanceVertex::new(mesh.position, mesh.orientation, mesh.color);
+            instances.push(instance);
+        }
+
         let alloc_info = self.allocator.get_allocation_info(&self.instance_buffer.1);
 
         unsafe {
             std::ptr::copy_nonoverlapping(
-                self.instances.as_ptr(),
+                instances.as_ptr(),
                 alloc_info.mapped_data.cast(),
-                self.instances.len(),
+                instances.len(),
             );
         }
     }
 
-    pub fn update(&mut self) {
-        let dt = self.last_frame_time.elapsed().unwrap().as_secs_f32();
-        self.last_frame_time = SystemTime::now();
-        self.camera.orientation *=
-            Quat::from_euler(glam::EulerRot::XYZ, 0.0, f32::to_radians(100.0) * dt, 0.0);
-    }
-
-    pub fn draw(&mut self) {
+    pub fn draw(&mut self, scene: &RenderScene) {
         if self.should_resize {
             // self.handle_resize();
             return;
@@ -1266,8 +1216,11 @@ impl VulkanContext {
 
             self.device.reset_fences(&[in_flight_fence]).unwrap();
 
-            self.update_per_frame_descriptors();
-            self.update_instance_buffer();
+            self.update_per_frame_descriptors(scene);
+
+            if scene.are_meshes_dirty {
+                self.update_instance_buffer(&scene.meshes);
+            }
 
             let submit_semaphore = self.submit_semaphores[image_index as usize];
 
@@ -1367,23 +1320,21 @@ impl VulkanContext {
             self.device.cmd_bind_vertex_buffers(
                 command_buffer,
                 0,
-                &[self.mesh_buffer.vertex_buffer.0, self.instance_buffer.0],
+                &[self.mesh_buffers[0].vertex_buffer.0, self.instance_buffer.0],
                 &[0, 0],
             );
 
             self.device.cmd_bind_index_buffer(
                 command_buffer,
-                self.mesh_buffer.index_buffer.0,
+                self.mesh_buffers[0].index_buffer.0,
                 0,
                 vk::IndexType::UINT16,
             );
 
-            // self.device.cmd_draw(command_buffer, 3, 1, 0, 0);
-
             self.device.cmd_draw_indexed(
                 command_buffer,
-                self.mesh_buffer.index_count,
-                self.instances.len() as u32,
+                self.mesh_buffers[0].index_count,
+                scene.meshes.len() as u32,
                 0,
                 0,
                 0,
@@ -1726,9 +1677,12 @@ impl Drop for VulkanContext {
         unsafe {
             let _ = self.device.device_wait_idle();
 
-            self.mesh_buffer.destroy(&self.allocator);
             self.allocator
                 .destroy_buffer(self.instance_buffer.0, &mut self.instance_buffer.1);
+
+            for mesh_buffer in self.mesh_buffers.iter_mut() {
+                mesh_buffer.destroy(&self.allocator);
+            }
 
             for texture in self.textures.iter_mut() {
                 texture.destroy(&self.device, &self.allocator);
