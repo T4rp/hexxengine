@@ -1,19 +1,14 @@
 use std::borrow::Cow;
 use std::io::Cursor;
-use std::rc::Rc;
-use std::time::SystemTime;
 use std::{ffi, fs, mem, ptr};
 
-use ash::vk::{self, ApplicationInfo};
-use ash::{Entry, Instance};
-use glam::{EulerRot, Mat4, Quat, Vec3, Vec4, mat4, vec2, vec3, vec4};
-use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
+use ash::vk::{self};
+use glam::{vec2, vec3};
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
 
-use crate::mesh::{CameraUniform, InstanceVertex, MeshVertex, Vertex2d};
+use crate::mesh::{CameraUniform, InstanceVertex, MeshVertex};
 use crate::scene::{MeshNode, RenderScene};
 
 const USE_VALIDATION_LAYERS: bool = true;
@@ -519,7 +514,7 @@ impl MeshBuffer {
 }
 
 pub struct VulkanContext {
-    entry: Entry,
+    entry: ash::Entry,
     instance: ash::Instance,
     surface: vk::SurfaceKHR,
     device: ash::Device,
@@ -559,7 +554,7 @@ fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> 
 
     extensions.extend_from_slice(surface_extensions);
 
-    let appinfo = ApplicationInfo::default()
+    let appinfo = vk::ApplicationInfo::default()
         .application_name(c"HexxEngine")
         .api_version(ash::vk::API_VERSION_1_3);
 
@@ -928,7 +923,7 @@ impl VulkanContext {
         let raw_window_handle = window.window_handle().unwrap().as_raw();
         let raw_display_handle = window.display_handle().unwrap().as_raw();
 
-        let entry = unsafe { Entry::load().unwrap() };
+        let entry = unsafe { ash::Entry::load().unwrap() };
         let instance = create_instance(&entry, raw_display_handle);
         let surface_fn = ash::khr::surface::Instance::new(&entry, &instance);
 
