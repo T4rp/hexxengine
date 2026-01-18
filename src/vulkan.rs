@@ -1454,6 +1454,10 @@ impl VulkanContext {
     }
 
     pub fn handle_resize(&mut self) {
+        if !self.should_resize {
+            return;
+        }
+
         unsafe { self.device.device_wait_idle().unwrap() };
 
         let swapchain_fn = ash::khr::swapchain::Device::new(&self.instance, &self.device);
