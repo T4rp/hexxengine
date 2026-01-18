@@ -92,6 +92,8 @@ impl ApplicationHandler for App {
         _window_id: winit::window::WindowId,
         event: winit::event::WindowEvent,
     ) {
+        self.update();
+
         match event {
             WindowEvent::CloseRequested => {
                 event_loop.exit();
@@ -112,7 +114,6 @@ impl ApplicationHandler for App {
                     .handle_resize((size.width, size.height));
             }
             WindowEvent::RedrawRequested => {
-                self.update();
                 self.vk_ctx.as_mut().unwrap().draw(&self.scene);
                 self.window.as_ref().unwrap().request_redraw();
                 self.scene.are_meshes_dirty = false;
