@@ -1231,7 +1231,7 @@ impl VulkanContext {
 
     pub fn draw(&mut self) {
         if self.should_resize {
-            self.handle_resize();
+            // self.handle_resize();
             return;
         }
 

@@ -60,6 +60,9 @@ impl ApplicationHandler for App {
                     event_loop.exit();
                 }
             }
+            WindowEvent::Resized(_size) => {
+                self.vk_ctx.as_mut().unwrap().handle_resize();
+            }
             WindowEvent::RedrawRequested => {
                 self.vk_ctx.as_mut().unwrap().update();
                 self.vk_ctx.as_mut().unwrap().draw();
