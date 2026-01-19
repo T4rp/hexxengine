@@ -32,10 +32,7 @@ void main() {
 
 	float diffuse = max(dot(norm, lightDir), 0.0);
 
-	float specular = 0.0;
-	if (diffuse > 0.0) {
-		specular = pow(max(dot(halfDir, norm), 0.0), shine);
-	}
+	float specular = pow(max(dot(halfDir, norm), 0.0), shine);
 
 	vec3 diffuseColor = (texture(text, inUv) * vec4(inColor, 1.0)).xyz;
 
