@@ -14,17 +14,18 @@ layout (location = 2) out vec3 outNorm;
 layout (location = 3) out vec3 outPos;
 
 layout(set = 0, binding = 0) uniform SceneUniform {
-    mat4 proj;
-    mat4 view;
-    vec4 sunDir;
-    vec4 sunCol;
-    vec4 ambientColor;
+	mat4 proj;
+	mat4 view;
+	vec4 cameraPos;
+	vec4 sunDir;
+	vec4 sunCol;
+	vec4 ambientColor;
 } sceneUbo;
 
 void main() {
 	gl_Position = sceneUbo.proj * sceneUbo.view * inModel * vec4(inPos, 1.0f);
 	outColor = inColor;
 	outUv = inUv;
-    outNorm = inModelNormal * inNorm;
-    outPos = vec3(inModel * vec4(inPos, 1.0));
+	outNorm = inModelNormal * inNorm;
+	outPos = vec3(inModel * vec4(inPos, 1.0));
 }
