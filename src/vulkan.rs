@@ -4,8 +4,7 @@ use std::io::Cursor;
 use std::{ffi, fs, mem, ptr};
 
 use ash::vk::{self};
-use glam::{Vec2, Vec3, Vec4, vec2, vec3, vec4};
-use gltf::Gltf;
+use glam::{Vec2, Vec3, vec4};
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
@@ -15,55 +14,6 @@ use crate::scene::{MeshNode, RenderScene};
 
 const USE_VALIDATION_LAYERS: bool = true;
 const MAX_FRAMES: usize = 2;
-
-#[rustfmt::skip]
-pub const VERTICES: &[MeshVertex] = &[
-    // Front face (+Z)
-    MeshVertex { pos: vec3(-0.5,-0.5, 0.5), norm: vec3(0.0,0.0, 1.0), uv: vec2(0.0,0.0) },
-    MeshVertex { pos: vec3( 0.5,-0.5, 0.5), norm: vec3(0.0,0.0, 1.0), uv: vec2(1.0,0.0) },
-    MeshVertex { pos: vec3( 0.5, 0.5, 0.5), norm: vec3(0.0,0.0, 1.0), uv: vec2(1.0,1.0) },
-    MeshVertex { pos: vec3(-0.5, 0.5, 0.5), norm: vec3(0.0,0.0, 1.0), uv: vec2(0.0,1.0) },
-
-    // Back face (-Z)
-    MeshVertex { pos: vec3( 0.5,-0.5,-0.5), norm: vec3(0.0,0.0,-1.0), uv: vec2(0.0,0.0) },
-    MeshVertex { pos: vec3(-0.5,-0.5,-0.5), norm: vec3(0.0,0.0,-1.0), uv: vec2(1.0,0.0) },
-    MeshVertex { pos: vec3(-0.5, 0.5,-0.5), norm: vec3(0.0,0.0,-1.0), uv: vec2(1.0,1.0) },
-    MeshVertex { pos: vec3( 0.5, 0.5,-0.5), norm: vec3(0.0,0.0,-1.0), uv: vec2(0.0,1.0) },
-
-    // Left face (-X)
-    MeshVertex { pos: vec3(-0.5,-0.5,-0.5), norm: vec3(-1.0,0.0,0.0), uv: vec2(0.0,0.0) },
-    MeshVertex { pos: vec3(-0.5,-0.5, 0.5), norm: vec3(-1.0,0.0,0.0), uv: vec2(1.0,0.0) },
-    MeshVertex { pos: vec3(-0.5, 0.5, 0.5), norm: vec3(-1.0,0.0,0.0), uv: vec2(1.0,1.0) },
-    MeshVertex { pos: vec3(-0.5, 0.5,-0.5), norm: vec3(-1.0,0.0,0.0), uv: vec2(0.0,1.0) },
-
-    // Right face (+X)
-    MeshVertex { pos: vec3( 0.5,-0.5, 0.5), norm: vec3( 1.0,0.0,0.0), uv: vec2(0.0,0.0) },
-    MeshVertex { pos: vec3( 0.5,-0.5,-0.5), norm: vec3( 1.0,0.0,0.0), uv: vec2(1.0,0.0) },
-    MeshVertex { pos: vec3( 0.5, 0.5,-0.5), norm: vec3( 1.0,0.0,0.0), uv: vec2(1.0,1.0) },
-    MeshVertex { pos: vec3( 0.5, 0.5, 0.5), norm: vec3( 1.0,0.0,0.0), uv: vec2(0.0,1.0) },
-
-    // Top face (+Y)
-    MeshVertex { pos: vec3(-0.5, 0.5, 0.5), norm: vec3(0.0,1.0,0.0), uv: vec2(0.0,0.0) },
-    MeshVertex { pos: vec3( 0.5, 0.5, 0.5), norm: vec3(0.0,1.0,0.0), uv: vec2(1.0,0.0) },
-    MeshVertex { pos: vec3( 0.5, 0.5,-0.5), norm: vec3(0.0,1.0,0.0), uv: vec2(1.0,1.0) },
-    MeshVertex { pos: vec3(-0.5, 0.5,-0.5), norm: vec3(0.0,1.0,0.0), uv: vec2(0.0,1.0) },
-
-    // Bottom face (-Y)
-    MeshVertex { pos: vec3(-0.5,-0.5,-0.5), norm: vec3(0.0,-1.0,0.0), uv: vec2(0.0,0.0) },
-    MeshVertex { pos: vec3( 0.5,-0.5,-0.5), norm: vec3(0.0,-1.0,0.0), uv: vec2(1.0,0.0) },
-    MeshVertex { pos: vec3( 0.5,-0.5, 0.5), norm: vec3(0.0,-1.0,0.0), uv: vec2(1.0,1.0) },
-    MeshVertex { pos: vec3(-0.5,-0.5, 0.5), norm: vec3(0.0,-1.0,0.0), uv: vec2(0.0,1.0) },
-];
-
-#[rustfmt::skip]
-pub const INDICES: &[u16] = &[
-    0, 1, 2, 2, 3, 0,       // front
-    4, 5, 6, 6, 7, 4,       // back
-    8, 9,10,10,11, 8,       // left
-   12,13,14,14,15,12,       // right
-   16,17,18,18,19,16,       // top
-   20,21,22,22,23,20,       // bottom
-];
 
 const DESCRIPTOR_RATIOS: &[(vk::DescriptorType, u32)] = &[
     (vk::DescriptorType::COMBINED_IMAGE_SAMPLER, 1),
