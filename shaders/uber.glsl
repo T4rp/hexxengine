@@ -12,6 +12,10 @@ layout(set = 0, binding = 0) uniform SceneUniform {
 layout (set = 1, binding = 0) uniform sampler2D text;
 
 #ifdef VERTEX
+
+#ifdef SKYBOX
+void main() {}
+#else
 layout (location = 0) in vec3 inPos;
 layout (location = 1) in vec3 inNorm;
 layout (location = 2) in vec2 inUv;
@@ -34,7 +38,13 @@ void main() {
 }
 #endif
 
+#endif
+
 #ifdef FRAGMENT
+
+#ifdef SKYBOX
+void main() {}
+#else
 layout (location = 0) in vec3 inColor;
 layout (location = 1) in vec2 inUv;
 layout (location = 2) in vec3 inNorm;
@@ -62,4 +72,6 @@ void main() {
 
 	outFragColor = vec4(diffuseColor * ambientColor + diffuseColor * diffuse * lightColor * lightPower + specular * lightColor * lightPower, 1.0);
 }
+#endif
+
 #endif
