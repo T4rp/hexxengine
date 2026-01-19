@@ -535,7 +535,7 @@ pub struct VulkanContext {
     physical_device: vk::PhysicalDevice,
     descriptor_set_layouts: DescriptorSetLayouts,
     descriptor_pool: vk::DescriptorPool,
-    graphics_pipeline_layout: vk::PipelineLayout,
+    pipeline_layout: vk::PipelineLayout,
 
     command_pool: vk::CommandPool,
     textures: Vec<Texture>,
@@ -1048,8 +1048,10 @@ impl VulkanContext {
 
         let submit_semaphores = create_submit_semaphores(&device, swapchain_images.len());
 
-        let (graphics_pipeline, graphics_pipeline_layout) =
-            Self::create_graphics_pipeline(&device, surface_format, &descriptor_set_layouts);
+        let pipeline_layout = Self::create_pipeline_layout(&device, &descriptor_set_layouts);
+
+        let graphics_pipeline =
+            Self::create_graphics_pipeline(&device, pipeline_layout, surface_format);
 
         let instance_buffer = create_instance_buffer(&allocator);
 
@@ -1123,7 +1125,7 @@ impl VulkanContext {
             submit_semaphores,
             current_frame,
             graphics_pipeline,
-            graphics_pipeline_layout,
+            pipeline_layout,
             allocator,
             instance_buffer,
             descriptor_set_layouts,
@@ -1329,7 +1331,7 @@ impl VulkanContext {
             self.device.cmd_bind_descriptor_sets(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                self.graphics_pipeline_layout,
+                self.pipeline_layout,
                 0,
                 &descriptor_sets,
                 &[],
@@ -1466,11 +1468,10 @@ impl VulkanContext {
         }
     }
 
-    fn create_graphics_pipeline(
+    fn create_pipeline_layout(
         device: &ash::Device,
-        surface_format: vk::SurfaceFormatKHR,
         descriptor_set_layouts: &DescriptorSetLayouts,
-    ) -> (vk::Pipeline, vk::PipelineLayout) {
+    ) -> vk::PipelineLayout {
         let layouts = &[
             descriptor_set_layouts.per_frame_layout,
             descriptor_set_layouts.per_material_layout,
@@ -1478,12 +1479,18 @@ impl VulkanContext {
 
         let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default().set_layouts(layouts);
 
-        let graphics_pipeline_layout = unsafe {
+        unsafe {
             device
                 .create_pipeline_layout(&pipeline_layout_info, None)
                 .unwrap()
-        };
+        }
+    }
 
+    fn create_graphics_pipeline(
+        device: &ash::Device,
+        pipeline_layout: vk::PipelineLayout,
+        surface_format: vk::SurfaceFormatKHR,
+    ) -> vk::Pipeline {
         let dynamic_states = &[vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
 
         let dynamic_state_info =
@@ -1581,7 +1588,7 @@ impl VulkanContext {
             .rasterization_state(&rasterization_info)
             .multisample_state(&multisample_info)
             .color_blend_state(&color_blender_state_info)
-            .layout(graphics_pipeline_layout)
+            .layout(pipeline_layout)
             .depth_stencil_state(&depth_stencil_state_info)
             .subpass(0)
             .push_next(&mut rendering_create_info)];
@@ -1596,7 +1603,7 @@ impl VulkanContext {
                 .unwrap()[0]
         };
 
-        (graphics_pipeline, graphics_pipeline_layout)
+        graphics_pipeline
     }
 
     fn create_descriptor_pool(device: &ash::Device, set_count: u32) -> vk::DescriptorPool {
