@@ -3,7 +3,7 @@ use std::io::Cursor;
 use std::{ffi, fs, mem, ptr};
 
 use ash::vk::{self};
-use glam::{vec2, vec3, vec4};
+use glam::{Vec4, vec2, vec3, vec4};
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
@@ -1146,10 +1146,12 @@ impl VulkanContext {
         let (proj, view) = scene.camera.calc_perspective_matrices(aspect_ratio);
 
         let lighting = &scene.lighting;
+        let camera_position = scene.camera.position;
 
         let mut camera_ubo = SceneUniform {
             proj: proj,
             view: view,
+            camera_position: vec4(camera_position.x, camera_position.y, camera_position.z, 0.0),
             sun_direction: vec4(
                 lighting.sun_direction.x,
                 lighting.sun_direction.y,

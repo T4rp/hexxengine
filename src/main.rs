@@ -36,9 +36,9 @@ impl App {
             meshes: Vec::new(),
             lighting: Lighting {
                 sun_direction: vec3(0.0, -1.0, 0.0),
-                sun_color: vec3(1.0, 1.0, 1.0),
+                sun_color: vec3(1.0, 0.95, 0.9),
                 sun_power: 1.0,
-                ambient_color: vec3(0.2, 0.2, 0.2),
+                ambient_color: vec3(1.0, 1.0, 1.0) * 0.05,
             },
             are_meshes_dirty: true,
         };
@@ -82,7 +82,12 @@ impl App {
 
         self.last_frame = now;
 
-        self.scene.lighting.sun_direction = vec3(elapsed.cos(), 0.0, elapsed.sin());
+        let sun_dir = vec3(elapsed.cos(), 0.0, elapsed.sin());
+        self.scene.lighting.sun_direction = sun_dir;
+
+        let last_mesh = self.scene.meshes.last_mut().unwrap();
+        last_mesh.orientation = Quat::IDENTITY;
+        last_mesh.position = -sun_dir * 30.0;
     }
 }
 
@@ -128,7 +133,6 @@ impl ApplicationHandler for App {
             WindowEvent::RedrawRequested => {
                 self.vk_ctx.as_mut().unwrap().draw(&self.scene);
                 self.window.as_ref().unwrap().request_redraw();
-                self.scene.are_meshes_dirty = false;
             }
             _ => {}
         }

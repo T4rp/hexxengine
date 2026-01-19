@@ -10,6 +10,7 @@ layout (location = 0) out vec4 outFragColor;
 layout(set = 0, binding = 0) uniform SceneUniform {
     mat4 proj;
     mat4 view;
+	vec4 cameraPos;
     vec4 sunDir;
     vec4 sunCol;
     vec4 ambientCol;
@@ -17,34 +18,26 @@ layout(set = 0, binding = 0) uniform SceneUniform {
 
 layout (set = 1, binding = 0) uniform sampler2D text;
 
+const float shine = 32.0;
+
 void main() {
-	vec3 lightColor = vec3(sceneUbo.sunCol);
 	float lightPower = sceneUbo.sunCol.w;
-	vec3 ambientColor = vec3(sceneUbo.ambientCol);
-	vec3 specColor = lightColor;
-	float shininess = 1.0;
+	vec3 lightColor = sceneUbo.sunCol.xyz;
+	vec3 ambientColor = sceneUbo.ambientCol.xyz;
 
 	vec3 norm = normalize(inNorm);
-	vec3 lightDir = vec3(sceneUbo.sunDir);
-	float distance = dot(lightDir, lightDir);
-	lightDir = normalize(lightDir);
+	vec3 lightDir = normalize(-sceneUbo.sunDir.xyz);
+	vec3 viewDir = normalize(sceneUbo.cameraPos.xyz - inPos);
+	vec3 halfDir = normalize(lightDir + viewDir);
 
-	float lambertian = max(dot(lightDir, norm), 0.0);
+	float diffuse = max(dot(norm, lightDir), 0.0);
+
 	float specular = 0.0;
-
-	if (lambertian > 0.0) {
-		vec3 viewDir = normalize(-inPos);
-
-		vec3 halfDir = normalize(lightDir + viewDir);
-		float specAngle = max(dot(halfDir, norm), 0.0);
-		specular = pow(specAngle, shininess);
+	if (diffuse > 0.0) {
+		specular = pow(max(dot(halfDir, norm), 0.0), shine);
 	}
 
-	vec4 diffuseColor = texture(text, inUv) * vec4(inColor, 1.0);
+	vec3 diffuseColor = (texture(text, inUv) * vec4(inColor, 1.0)).xyz;
 
-	vec3 colorLinear = ambientColor +
-	vec3(diffuseColor) * lambertian * lightColor * lightPower / distance +
-	specColor * specular * lightColor * lightPower / distance;
-
-	outFragColor = diffuseColor * vec4(colorLinear, 1.0);
+	outFragColor = vec4(diffuseColor * ambientColor + diffuseColor * diffuse * lightColor * lightPower + specular * lightColor * lightPower, 1.0);
 }

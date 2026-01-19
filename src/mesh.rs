@@ -155,6 +155,7 @@ impl InstanceVertex {
 pub struct SceneUniform {
     pub proj: Mat4,
     pub view: Mat4,
+    pub camera_position: Vec4,
     pub sun_direction: Vec4,
     pub sun_color: Vec4,
     pub ambient_color: Vec4,
