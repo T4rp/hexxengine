@@ -73,7 +73,7 @@ impl App {
                 ),
                 size: vec3(2.0, 1.0, 4.0),
                 color: vec3(rng.random(), rng.random(), rng.random()),
-                mesh_id: 0,
+                mesh_id: rng.random_range(0..=1),
                 material_id: 0,
             };
 

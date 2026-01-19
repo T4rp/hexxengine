@@ -1,9 +1,11 @@
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::io::Cursor;
 use std::{ffi, fs, mem, ptr};
 
 use ash::vk::{self};
-use glam::{Vec4, vec2, vec3, vec4};
+use glam::{Vec2, Vec3, Vec4, vec2, vec3, vec4};
+use gltf::Gltf;
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
@@ -165,6 +167,7 @@ struct RenderFrame {
     per_frame_descriptor_data: PerFrameDescriptorData,
     depth_image_view: vk::ImageView,
     depth_image: (vk::Image, vk_mem::Allocation),
+    instance_buffer: (vk::Buffer, vk_mem::Allocation),
 }
 
 impl RenderFrame {
@@ -221,6 +224,8 @@ impl RenderFrame {
         let (depth_image, depth_image_view) =
             Self::create_depth_resources(device, allocator, queue, command_pool, window_extent);
 
+        let instance_buffer = create_instance_buffer(allocator);
+
         RenderFrame {
             command_pool,
             command_buffer,
@@ -230,6 +235,7 @@ impl RenderFrame {
             per_frame_descriptor_data,
             depth_image,
             depth_image_view,
+            instance_buffer,
         }
     }
 
@@ -368,6 +374,7 @@ impl RenderFrame {
     fn destroy(&mut self, allocator: &vk_mem::Allocator) {
         self.per_frame_descriptor_data.destroy(allocator);
         unsafe { allocator.destroy_image(self.depth_image.0, &mut self.depth_image.1) };
+        unsafe { allocator.destroy_buffer(self.instance_buffer.0, &mut self.instance_buffer.1) };
     }
 }
 
@@ -454,12 +461,15 @@ impl MeshBuffer {
         vertices: &[MeshVertex],
         indicies: &[u16],
     ) -> Self {
+        println!("vertex count: {}", vertices.len());
+        println!("index count: {}", indicies.len());
+
         let vertex_buffer_info = vk::BufferCreateInfo::default()
-            .size((mem::size_of::<MeshVertex>() * VERTICES.len()) as u64)
+            .size((mem::size_of::<MeshVertex>() * vertices.len()) as u64)
             .usage(vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
 
         let index_buffer_info = vk::BufferCreateInfo::default()
-            .size((mem::size_of::<u16>() * INDICES.len()) as u64)
+            .size((mem::size_of::<u16>() * indicies.len()) as u64)
             .usage(vk::BufferUsageFlags::INDEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
 
         let alloc_info = vk_mem::AllocationCreateInfo {
@@ -505,12 +515,63 @@ impl MeshBuffer {
         }
     }
 
+    fn from_file(allocator: &vk_mem::Allocator, filename: &str) -> Self {
+        let (gltf, buffers, images) = gltf::import(filename).unwrap();
+
+        let mesh = gltf
+            .default_scene()
+            .unwrap()
+            .nodes()
+            .next()
+            .unwrap()
+            .mesh()
+            .unwrap();
+
+        let mut mesh_vertiecs = Vec::new();
+        let mut mesh_indices = Vec::new();
+
+        let prim = mesh.primitives().next().unwrap();
+        let reader = prim.reader(|b| Some(&buffers[b.index()]));
+
+        let mut positions = reader.read_positions().unwrap();
+        let mut normals = reader.read_normals().unwrap();
+        let mut uvs = reader.read_tex_coords(0).unwrap().into_f32();
+        let indices = reader.read_indices().unwrap().into_u32();
+
+        let v_count = positions.len();
+
+        for _ in 0..v_count {
+            let position = positions.next().unwrap();
+            let normal = normals.next().unwrap();
+            let uv = uvs.next().unwrap();
+
+            mesh_vertiecs.push(MeshVertex {
+                pos: Vec3::from_slice(&position),
+                norm: Vec3::from_slice(&normal),
+                uv: Vec2::from_slice(&uv),
+            });
+        }
+
+        for index in indices {
+            mesh_indices.push(index as u16)
+        }
+
+        Self::allocate_mesh(allocator, &mesh_vertiecs, &mesh_indices)
+    }
+
     fn destroy(&mut self, allocator: &vk_mem::Allocator) {
         unsafe {
             allocator.destroy_buffer(self.vertex_buffer.0, &mut self.vertex_buffer.1);
             allocator.destroy_buffer(self.index_buffer.0, &mut self.index_buffer.1);
         }
     }
+}
+
+struct MeshBatch {
+    mesh_id: u32,
+    material_id: u32,
+    instance_offset: u64,
+    instance_count: usize,
 }
 
 pub struct VulkanContext {
@@ -539,7 +600,6 @@ pub struct VulkanContext {
 
     command_pool: vk::CommandPool,
     textures: Vec<Texture>,
-    instance_buffer: (vk::Buffer, vk_mem::Allocation),
 }
 
 fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> ash::Instance {
@@ -1053,8 +1113,6 @@ impl VulkanContext {
         let graphics_pipeline =
             Self::create_graphics_pipeline(&device, pipeline_layout, surface_format);
 
-        let instance_buffer = create_instance_buffer(&allocator);
-
         let current_frame: usize = 0;
         let should_resize = false;
 
@@ -1081,9 +1139,9 @@ impl VulkanContext {
         );
 
         let mut mesh_buffers = Vec::new();
-        let mesh_buffer = MeshBuffer::allocate_mesh(&allocator, VERTICES, INDICES);
 
-        mesh_buffers.push(mesh_buffer);
+        mesh_buffers.push(MeshBuffer::from_file(&allocator, "./assets/cube.gltf"));
+        mesh_buffers.push(MeshBuffer::from_file(&allocator, "./assets/sphere.gltf"));
 
         let mut textures = Vec::new();
 
@@ -1127,7 +1185,6 @@ impl VulkanContext {
             graphics_pipeline,
             pipeline_layout,
             allocator,
-            instance_buffer,
             descriptor_set_layouts,
             descriptor_pool,
             textures,
@@ -1177,16 +1234,44 @@ impl VulkanContext {
         unsafe { std::ptr::copy_nonoverlapping(&mut camera_ubo, alloc_info.mapped_data.cast(), 1) };
     }
 
-    fn update_instance_buffer(&mut self, meshes: &[MeshNode]) {
-        let mut instances = Vec::new();
+    fn update_instance_buffer(
+        &mut self,
+        instance_buffer: &(vk::Buffer, vk_mem::Allocation),
+        meshes: &[MeshNode],
+    ) -> Vec<MeshBatch> {
+        let mut batches: HashMap<u32, Vec<&MeshNode>> = HashMap::new();
 
         for mesh in meshes.iter() {
-            let instance =
-                InstanceVertex::new(mesh.position, mesh.orientation, mesh.size, mesh.color);
-            instances.push(instance);
+            let batch = batches.entry(mesh.mesh_id).or_insert(Vec::new());
+            batch.push(mesh);
         }
 
-        let alloc_info = self.allocator.get_allocation_info(&self.instance_buffer.1);
+        let mut instances: Vec<InstanceVertex> = Vec::new();
+        let mut batch_infos: Vec<MeshBatch> = Vec::new();
+        let mut start_index = 0;
+
+        for (mesh_id, mesh_nodes) in batches.into_iter() {
+            let mesh_count = mesh_nodes.len();
+
+            let batch_info = MeshBatch {
+                mesh_id: mesh_id,
+                material_id: 0,
+                instance_offset: start_index as u64 * mem::size_of::<InstanceVertex>() as u64,
+                instance_count: mesh_count,
+            };
+
+            batch_infos.push(batch_info);
+
+            start_index += mesh_count;
+
+            for node in mesh_nodes {
+                let instance =
+                    InstanceVertex::new(node.position, node.orientation, node.size, node.color);
+                instances.push(instance)
+            }
+        }
+
+        let alloc_info = self.allocator.get_allocation_info(&instance_buffer.1);
 
         unsafe {
             std::ptr::copy_nonoverlapping(
@@ -1195,6 +1280,8 @@ impl VulkanContext {
                 instances.len(),
             );
         }
+
+        batch_infos
     }
 
     pub fn draw(&mut self, scene: &RenderScene) {
@@ -1212,6 +1299,7 @@ impl VulkanContext {
         let in_flight_fence = current_frame.in_flight_fence;
         let per_frame_descriptor_set = current_frame.per_frame_set;
         let depth_image_view = current_frame.depth_image_view;
+        let instance_buffer = current_frame.instance_buffer;
 
         unsafe {
             self.device
@@ -1238,9 +1326,7 @@ impl VulkanContext {
 
             self.update_per_frame_descriptors(scene);
 
-            if scene.are_meshes_dirty {
-                self.update_instance_buffer(&scene.meshes);
-            }
+            let batch_info = self.update_instance_buffer(&instance_buffer, &scene.meshes);
 
             let submit_semaphore = self.submit_semaphores[image_index as usize];
 
@@ -1337,28 +1423,33 @@ impl VulkanContext {
                 &[],
             );
 
-            self.device.cmd_bind_vertex_buffers(
-                command_buffer,
-                0,
-                &[self.mesh_buffers[0].vertex_buffer.0, self.instance_buffer.0],
-                &[0, 0],
-            );
+            for batch in batch_info {
+                self.device.cmd_bind_vertex_buffers(
+                    command_buffer,
+                    0,
+                    &[
+                        self.mesh_buffers[batch.mesh_id as usize].vertex_buffer.0,
+                        instance_buffer.0,
+                    ],
+                    &[0, batch.instance_offset],
+                );
 
-            self.device.cmd_bind_index_buffer(
-                command_buffer,
-                self.mesh_buffers[0].index_buffer.0,
-                0,
-                vk::IndexType::UINT16,
-            );
+                self.device.cmd_bind_index_buffer(
+                    command_buffer,
+                    self.mesh_buffers[batch.mesh_id as usize].index_buffer.0,
+                    0,
+                    vk::IndexType::UINT16,
+                );
 
-            self.device.cmd_draw_indexed(
-                command_buffer,
-                self.mesh_buffers[0].index_count,
-                scene.meshes.len() as u32,
-                0,
-                0,
-                0,
-            );
+                self.device.cmd_draw_indexed(
+                    command_buffer,
+                    self.mesh_buffers[batch.mesh_id as usize].index_count,
+                    batch.instance_count as u32,
+                    0,
+                    0,
+                    0,
+                );
+            }
 
             self.device.cmd_end_rendering(command_buffer);
 
@@ -1697,9 +1788,6 @@ impl Drop for VulkanContext {
     fn drop(&mut self) {
         unsafe {
             let _ = self.device.device_wait_idle();
-
-            self.allocator
-                .destroy_buffer(self.instance_buffer.0, &mut self.instance_buffer.1);
 
             for mesh_buffer in self.mesh_buffers.iter_mut() {
                 mesh_buffer.destroy(&self.allocator);
