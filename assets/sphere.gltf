@@ -15,12 +15,7 @@
 	"nodes":[
 		{
 			"mesh":0,
-			"name":"Sphere",
-			"scale":[
-				0.5,
-				0.5,
-				0.5
-			]
+			"name":"Sphere"
 		}
 	],
 	"meshes":[
@@ -42,67 +37,67 @@
 		{
 			"bufferView":0,
 			"componentType":5126,
-			"count":559,
+			"count":151,
 			"max":[
-				0.9999997019767761,
-				1,
-				0.9999993443489075
+				0.5,
+				0.5,
+				0.5
 			],
 			"min":[
-				-0.9999990463256836,
-				-1,
-				-1
+				-0.4999999701976776,
+				-0.5,
+				-0.5
 			],
 			"type":"VEC3"
 		},
 		{
 			"bufferView":1,
 			"componentType":5126,
-			"count":559,
+			"count":151,
 			"type":"VEC3"
 		},
 		{
 			"bufferView":2,
 			"componentType":5126,
-			"count":559,
+			"count":151,
 			"type":"VEC2"
 		},
 		{
 			"bufferView":3,
 			"componentType":5123,
-			"count":2880,
+			"count":672,
 			"type":"SCALAR"
 		}
 	],
 	"bufferViews":[
 		{
 			"buffer":0,
-			"byteLength":6708,
+			"byteLength":1812,
 			"byteOffset":0,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":6708,
-			"byteOffset":6708,
+			"byteLength":1812,
+			"byteOffset":1812,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":4472,
-			"byteOffset":13416,
+			"byteLength":1208,
+			"byteOffset":3624,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":5760,
-			"byteOffset":17888,
+			"byteLength":1344,
+			"byteOffset":4832,
 			"target":34963
 		}
 	],
 	"buffers":[
 		{
-			"byteLength":23648,
+			"byteLength":6176,
 			"uri":"sphere.bin"
 		}
 	]
