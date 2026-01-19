@@ -1496,8 +1496,8 @@ impl VulkanContext {
             .viewports(viewports)
             .scissors(scissors);
 
-        let vert_shader_code = fs::read("shaders/tri.vert.spv").unwrap();
-        let frag_shader_code = fs::read("shaders/tri.frag.spv").unwrap();
+        let vert_shader_code = fs::read("shaders/base.vert.spv").unwrap();
+        let frag_shader_code = fs::read("shaders/base.frag.spv").unwrap();
 
         let vertex_shader = create_shader_module(device, &vert_shader_code);
         let fragment_shader = create_shader_module(device, &frag_shader_code);
