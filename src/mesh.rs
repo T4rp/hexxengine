@@ -86,8 +86,8 @@ pub struct InstanceVertex {
 }
 
 impl InstanceVertex {
-    pub fn new(position: Vec3, rotation: Quat, color: Vec3) -> Self {
-        let model = Mat4::from_rotation_translation(rotation, position);
+    pub fn new(position: Vec3, rotation: Quat, size: Vec3, color: Vec3) -> Self {
+        let model = Mat4::from_scale_rotation_translation(size, rotation, position);
         let model_normal = Mat3::from_mat4(model.inverse().transpose());
 
         Self {

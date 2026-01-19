@@ -32,7 +32,11 @@ impl App {
         let last_frame = start_time.clone();
 
         let mut scene = RenderScene {
-            camera: Camera::new(vec3(0.0, 0.0, 5.0), Quat::IDENTITY, 70.0),
+            camera: Camera::new(
+                vec3(0.0, 100.0, 100.0),
+                Quat::from_euler(EulerRot::ZXY, 0.0, f32::to_radians(-45.0), 0.0),
+                70.0,
+            ),
             meshes: Vec::new(),
             lighting: Lighting {
                 sun_direction: vec3(0.0, -1.0, 0.0),
@@ -45,19 +49,29 @@ impl App {
 
         let mut rng = SmallRng::from_os_rng();
 
-        for _ in 0..1000 {
+        scene.meshes.push(MeshNode {
+            position: vec3(0.0, -25.0, 0.0),
+            orientation: Quat::IDENTITY,
+            size: vec3(512.0, 50.0, 512.0),
+            color: vec3(0.8, 0.8, 0.8),
+            mesh_id: 0,
+            material_id: 0,
+        });
+
+        for _ in 0..999 {
             let instance = MeshNode {
                 position: vec3(
                     rng.random_range(-20.0..20.0),
+                    rng.random_range(1.0..5.0),
                     rng.random_range(-20.0..20.0),
-                    rng.random_range(-20.0..20.0),
-                ),
+                ) * 5.0,
                 orientation: Quat::from_euler(
                     EulerRot::XYZ,
                     rng.random::<f32>() * std::f32::consts::PI * 2.0,
                     rng.random::<f32>() * std::f32::consts::PI * 2.0,
                     rng.random::<f32>() * std::f32::consts::PI * 2.0,
                 ),
+                size: vec3(2.0, 1.0, 4.0),
                 color: vec3(rng.random(), rng.random(), rng.random()),
                 mesh_id: 0,
                 material_id: 0,

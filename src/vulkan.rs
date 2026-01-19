@@ -1179,7 +1179,8 @@ impl VulkanContext {
         let mut instances = Vec::new();
 
         for mesh in meshes.iter() {
-            let instance = InstanceVertex::new(mesh.position, mesh.orientation, mesh.color);
+            let instance =
+                InstanceVertex::new(mesh.position, mesh.orientation, mesh.size, mesh.color);
             instances.push(instance);
         }
 

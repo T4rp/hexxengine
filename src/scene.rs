@@ -37,6 +37,7 @@ pub struct Lighting {
 pub struct MeshNode {
     pub position: Vec3,
     pub orientation: Quat,
+    pub size: Vec3,
     pub color: Vec3,
     pub mesh_id: u32,
     pub material_id: u32,
