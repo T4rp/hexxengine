@@ -411,9 +411,6 @@ impl MeshBuffer {
         vertices: &[MeshVertex],
         indicies: &[u16],
     ) -> Self {
-        println!("vertex count: {}", vertices.len());
-        println!("index count: {}", indicies.len());
-
         let vertex_buffer_info = vk::BufferCreateInfo::default()
             .size((mem::size_of::<MeshVertex>() * vertices.len()) as u64)
             .usage(vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);

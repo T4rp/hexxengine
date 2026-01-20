@@ -1,0 +1,13 @@
+layout(set = 0, binding = 0) uniform SceneUniform {
+	mat4 proj;
+	mat4 view;
+	vec4 cameraPos;
+	vec4 sunDir;
+	vec4 sunCol;
+	vec4 ambientCol;
+} sceneUbo;
+
+layout (set = 1, binding = 0) uniform sampler2D text;
+
+#define SHINE 32
+
