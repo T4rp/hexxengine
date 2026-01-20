@@ -1,3 +1,4 @@
+mod color;
 mod mesh;
 mod scene;
 mod vulkan;
@@ -16,7 +17,10 @@ use winit::{
 
 use vulkan::VulkanContext;
 
-use crate::scene::{Camera, Lighting, MeshNode, RenderScene};
+use crate::{
+    color::hsv_to_rgb,
+    scene::{Camera, Lighting, MeshNode, RenderScene},
+};
 
 struct App {
     scene: RenderScene,
@@ -40,9 +44,9 @@ impl App {
             meshes: Vec::new(),
             lighting: Lighting {
                 sun_direction: vec3(0.0, -1.0, 0.0),
-                sun_color: vec3(1.0, 0.95, 0.9),
-                sun_power: 1.0,
-                ambient_color: vec3(1.0, 1.0, 1.0) * 0.05,
+                sun_color: vec3(1.0, 1.0, 1.0),
+                sun_power: 0.5,
+                ambient_color: vec3(1.0, 1.0, 1.0) * 0.1,
             },
             are_meshes_dirty: true,
         };
@@ -71,8 +75,8 @@ impl App {
                     rng.random::<f32>() * std::f32::consts::PI * 2.0,
                     rng.random::<f32>() * std::f32::consts::PI * 2.0,
                 ),
-                size: vec3(2.0, 1.0, 4.0),
-                color: vec3(rng.random(), rng.random(), rng.random()),
+                size: vec3(4.0, 4.0, 4.0) * 2.0,
+                color: hsv_to_rgb(rng.random::<f32>() * 360.0, 0.8, 1.0),
                 mesh_id: rng.random_range(0..=1),
                 material_id: 0,
             };
@@ -96,7 +100,7 @@ impl App {
 
         self.last_frame = now;
 
-        let sun_dir = vec3(elapsed.cos(), 0.0, elapsed.sin());
+        let sun_dir = vec3(elapsed.cos(), -1.0, elapsed.sin()).normalize();
         self.scene.lighting.sun_direction = sun_dir;
 
         let last_mesh = self.scene.meshes.last_mut().unwrap();
