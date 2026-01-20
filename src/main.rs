@@ -1,15 +1,17 @@
 mod color;
+mod input;
 mod mesh;
 mod scene;
 mod vulkan;
 
 use std::time::Instant;
 
-use glam::{EulerRot, Quat, vec3};
+use glam::{EulerRot, Quat, Vec3, vec3};
 use rand::{Rng, SeedableRng, rngs::SmallRng};
 use winit::{
     application::ApplicationHandler,
-    event::WindowEvent,
+    dpi::PhysicalPosition,
+    event::{ElementState, KeyEvent, MouseButton, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowAttributes},
@@ -19,8 +21,11 @@ use vulkan::VulkanContext;
 
 use crate::{
     color::hsv_to_rgb,
+    input::InputState,
     scene::{Camera, Lighting, MeshNode, RenderScene},
 };
+
+const CAMERA_SPEED: f32 = 100.0;
 
 struct App {
     scene: RenderScene,
@@ -28,6 +33,7 @@ struct App {
     vk_ctx: Option<VulkanContext>,
     last_frame: Instant,
     start_time: Instant,
+    input_state: InputState,
 }
 
 impl App {
@@ -39,7 +45,7 @@ impl App {
             camera: Camera::new(
                 vec3(0.0, 100.0, 100.0),
                 Quat::from_euler(EulerRot::ZXY, 0.0, f32::to_radians(-45.0), 0.0),
-                70.0,
+                90.0,
             ),
             meshes: Vec::new(),
             lighting: Lighting {
@@ -84,18 +90,21 @@ impl App {
             scene.meshes.push(instance);
         }
 
+        let input_state = InputState::new();
+
         Self {
             scene,
             last_frame,
             start_time,
             window: None,
             vk_ctx: None,
+            input_state,
         }
     }
 
     pub fn update(&mut self) {
         let now = Instant::now();
-        // let dt = (now - self.last_frame).as_secs_f32();
+        let dt = (now - self.last_frame).as_secs_f32();
         let elapsed = (now - self.start_time).as_secs_f32();
 
         self.last_frame = now;
@@ -106,6 +115,38 @@ impl App {
         let last_mesh = self.scene.meshes.last_mut().unwrap();
         last_mesh.orientation = Quat::IDENTITY;
         last_mesh.position = -sun_dir * 30.0;
+
+        let camera = &mut self.scene.camera;
+
+        let forward = camera.orientation * Vec3::NEG_Z;
+        let right = camera.orientation * Vec3::X;
+
+        let mouse_delta = self.input_state.mouse_delta;
+
+        if mouse_delta.z == 0.0 && self.input_state.right_mouse_down {
+            let sensitivity = 0.0005;
+
+            let yaw = Quat::from_rotation_y(-mouse_delta.x * sensitivity);
+            let pitch = Quat::from_rotation_x(-mouse_delta.y * sensitivity);
+
+            camera.orientation = yaw * camera.orientation * pitch;
+        }
+
+        if self.input_state.is_key_down(KeyCode::KeyA) {
+            camera.position -= right * dt * CAMERA_SPEED;
+        }
+
+        if self.input_state.is_key_down(KeyCode::KeyD) {
+            camera.position += right * dt * CAMERA_SPEED;
+        }
+
+        if self.input_state.is_key_down(KeyCode::KeyW) {
+            camera.position += forward * dt * CAMERA_SPEED;
+        }
+
+        if self.input_state.is_key_down(KeyCode::KeyS) {
+            camera.position -= forward * dt * CAMERA_SPEED;
+        }
     }
 }
 
@@ -127,7 +168,9 @@ impl ApplicationHandler for App {
         _window_id: winit::window::WindowId,
         event: winit::event::WindowEvent,
     ) {
-        self.update();
+        let mut should_draw = false;
+
+        self.input_state.clear();
 
         match event {
             WindowEvent::CloseRequested => {
@@ -140,7 +183,22 @@ impl ApplicationHandler for App {
             } => {
                 if PhysicalKey::Code(KeyCode::Escape) == event.physical_key {
                     event_loop.exit();
+                    return;
                 }
+                self.input_state.key_input(event);
+            }
+            WindowEvent::MouseInput {
+                device_id,
+                state,
+                button,
+            } => {
+                self.input_state.mouse_input(button, state);
+            }
+            WindowEvent::CursorMoved {
+                device_id,
+                position,
+            } => {
+                self.input_state.mouse_moved(position);
             }
             WindowEvent::Resized(size) => {
                 self.vk_ctx
@@ -149,10 +207,16 @@ impl ApplicationHandler for App {
                     .handle_resize((size.width, size.height));
             }
             WindowEvent::RedrawRequested => {
-                self.vk_ctx.as_mut().unwrap().draw(&self.scene);
                 self.window.as_ref().unwrap().request_redraw();
+                should_draw = true;
             }
             _ => {}
+        }
+
+        self.update();
+
+        if should_draw {
+            self.vk_ctx.as_mut().unwrap().draw(&self.scene);
         }
     }
 }
