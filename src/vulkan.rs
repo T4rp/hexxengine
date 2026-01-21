@@ -118,6 +118,8 @@ struct RenderFrame {
     depth_image_view: vk::ImageView,
     depth_image: (vk::Image, vk_mem::Allocation),
     instance_buffer: (vk::Buffer, vk_mem::Allocation),
+    shadow_map: (vk::Image, vk_mem::Allocation),
+    shadow_map_view: vk::ImageView,
 }
 
 impl RenderFrame {
@@ -172,7 +174,18 @@ impl RenderFrame {
             PerFrameDescriptorData::new(device, allocator, descriptor_sets[0]);
 
         let (depth_image, depth_image_view) =
-            Self::create_depth_resources(device, allocator, queue, command_pool, window_extent);
+            Self::create_depth_image(device, allocator, queue, command_pool, window_extent);
+
+        let (shadow_map, shadow_map_view) = Self::create_depth_image(
+            device,
+            allocator,
+            queue,
+            command_pool,
+            vk::Extent2D {
+                width: 1024,
+                height: 1024,
+            },
+        );
 
         let instance_buffer = create_instance_buffer(allocator);
 
@@ -185,6 +198,8 @@ impl RenderFrame {
             per_frame_descriptor_data,
             depth_image,
             depth_image_view,
+            shadow_map,
+            shadow_map_view,
             instance_buffer,
         }
     }
@@ -216,25 +231,25 @@ impl RenderFrame {
         };
 
         let (depth_image, depth_image_view) =
-            Self::create_depth_resources(device, allocator, queue, command_pool, window_extent);
+            Self::create_depth_image(device, allocator, queue, command_pool, window_extent);
 
         self.swapchain_semaphore = new_semaphore;
         self.depth_image = depth_image;
         self.depth_image_view = depth_image_view;
     }
 
-    fn create_depth_resources(
+    fn create_depth_image(
         device: &ash::Device,
         allocator: &vk_mem::Allocator,
         queue: vk::Queue,
         command_pool: vk::CommandPool,
-        window_extent: vk::Extent2D,
+        extent: vk::Extent2D,
     ) -> ((vk::Image, vk_mem::Allocation), vk::ImageView) {
         let image_info = vk::ImageCreateInfo::default()
             .image_type(vk::ImageType::TYPE_2D)
             .extent(vk::Extent3D {
-                width: window_extent.width,
-                height: window_extent.height,
+                width: extent.width,
+                height: extent.height,
                 depth: 1,
             })
             .mip_levels(1)
@@ -324,6 +339,7 @@ impl RenderFrame {
     fn destroy(&mut self, allocator: &vk_mem::Allocator) {
         self.per_frame_descriptor_data.destroy(allocator);
         unsafe { allocator.destroy_image(self.depth_image.0, &mut self.depth_image.1) };
+        unsafe { allocator.destroy_image(self.shadow_map.0, &mut self.shadow_map.1) };
         unsafe { allocator.destroy_buffer(self.instance_buffer.0, &mut self.instance_buffer.1) };
     }
 }
@@ -547,6 +563,7 @@ pub struct VulkanContext {
 
     command_pool: vk::CommandPool,
     textures: Vec<Texture>,
+    shadow_graphics_pipeline: vk::Pipeline,
 }
 
 fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> ash::Instance {
@@ -1057,8 +1074,11 @@ impl VulkanContext {
 
         let pipeline_layout = Self::create_pipeline_layout(&device, &descriptor_set_layouts);
 
-        let graphics_pipeline =
-            Self::create_graphics_pipeline(&device, pipeline_layout, surface_format);
+        let main_graphics_pipeline =
+            Self::create_main_graphics_pipeline(&device, pipeline_layout, surface_format);
+
+        let shadow_graphics_pipeline =
+            Self::create_shadow_graphics_pipeline(&device, pipeline_layout);
 
         let current_frame: usize = 0;
         let should_resize = false;
@@ -1129,7 +1149,8 @@ impl VulkanContext {
             render_frames,
             submit_semaphores,
             current_frame,
-            graphics_pipeline,
+            graphics_pipeline: main_graphics_pipeline,
+            shadow_graphics_pipeline,
             pipeline_layout,
             allocator,
             descriptor_set_layouts,
@@ -1300,7 +1321,7 @@ impl VulkanContext {
                 vk::ImageAspectFlags::COLOR,
             );
 
-            let rendering_attachment = &[vk::RenderingAttachmentInfo::default()
+            let main_rendering_attachments = &[vk::RenderingAttachmentInfo::default()
                 .image_view(swapchain_image_view)
                 .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
                 .load_op(vk::AttachmentLoadOp::CLEAR)
@@ -1311,7 +1332,7 @@ impl VulkanContext {
                     },
                 })];
 
-            let depth_attachment = vk::RenderingAttachmentInfo::default()
+            let main_depth_attachment = vk::RenderingAttachmentInfo::default()
                 .image_view(depth_image_view)
                 .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
                 .load_op(vk::AttachmentLoadOp::CLEAR)
@@ -1323,22 +1344,22 @@ impl VulkanContext {
                     },
                 });
 
-            let render_area = vk::Rect2D {
+            let main_render_area = vk::Rect2D {
                 offset: vk::Offset2D { x: 0, y: 0 },
                 extent: self.swapchain_extent,
             };
 
-            let rendering_info = vk::RenderingInfo::default()
-                .color_attachments(rendering_attachment)
-                .depth_attachment(&depth_attachment)
-                .render_area(render_area)
+            let main_rendering_info = vk::RenderingInfo::default()
+                .color_attachments(main_rendering_attachments)
+                .depth_attachment(&main_depth_attachment)
+                .render_area(main_render_area)
                 .layer_count(1);
 
             self.device
-                .cmd_begin_rendering(command_buffer, &rendering_info);
+                .cmd_begin_rendering(command_buffer, &main_rendering_info);
 
             self.device
-                .cmd_set_scissor(command_buffer, 0, &[render_area]);
+                .cmd_set_scissor(command_buffer, 0, &[main_render_area]);
 
             self.device.cmd_set_viewport(
                 command_buffer,
@@ -1346,8 +1367,8 @@ impl VulkanContext {
                 &[vk::Viewport {
                     x: 0.0,
                     y: 0.0,
-                    width: render_area.extent.width as f32,
-                    height: render_area.extent.height as f32,
+                    width: main_render_area.extent.width as f32,
+                    height: main_render_area.extent.height as f32,
                     min_depth: 0.0,
                     max_depth: 1.0,
                 }],
@@ -1524,7 +1545,7 @@ impl VulkanContext {
         }
     }
 
-    fn create_graphics_pipeline(
+    fn create_main_graphics_pipeline(
         device: &ash::Device,
         pipeline_layout: vk::PipelineLayout,
         surface_format: vk::SurfaceFormatKHR,
@@ -1626,6 +1647,109 @@ impl VulkanContext {
             .rasterization_state(&rasterization_info)
             .multisample_state(&multisample_info)
             .color_blend_state(&color_blender_state_info)
+            .layout(pipeline_layout)
+            .depth_stencil_state(&depth_stencil_state_info)
+            .subpass(0)
+            .push_next(&mut rendering_create_info)];
+
+        let graphics_pipeline = unsafe {
+            device
+                .create_graphics_pipelines(
+                    vk::PipelineCache::null(),
+                    graphics_pipeline_create_info,
+                    None,
+                )
+                .unwrap()[0]
+        };
+
+        graphics_pipeline
+    }
+
+    fn create_shadow_graphics_pipeline(
+        device: &ash::Device,
+        pipeline_layout: vk::PipelineLayout,
+    ) -> vk::Pipeline {
+        let dynamic_states = &[vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
+
+        let dynamic_state_info =
+            vk::PipelineDynamicStateCreateInfo::default().dynamic_states(dynamic_states);
+
+        let viewports = &[vk::Viewport::default()];
+        let scissors = &[vk::Rect2D::default()];
+
+        let viewport_state_info = vk::PipelineViewportStateCreateInfo::default()
+            .viewports(viewports)
+            .scissors(scissors);
+
+        let vert_shader_code = fs::read("shaders/shadow.vert.spv").unwrap();
+        let frag_shader_code = fs::read("shaders/shadow.frag.spv").unwrap();
+
+        let vertex_shader = create_shader_module(device, &vert_shader_code);
+        let fragment_shader = create_shader_module(device, &frag_shader_code);
+
+        let vert_stage_info = vk::PipelineShaderStageCreateInfo::default()
+            .stage(vk::ShaderStageFlags::VERTEX)
+            .module(vertex_shader)
+            .name(c"main");
+
+        let frag_stage_info = vk::PipelineShaderStageCreateInfo::default()
+            .stage(vk::ShaderStageFlags::FRAGMENT)
+            .module(fragment_shader)
+            .name(c"main");
+
+        let shader_stages = &[vert_stage_info, frag_stage_info];
+
+        let vertex_attribute_descriptions = MeshVertex::get_attribute_descriptions();
+        let vertex_binding_description = MeshVertex::get_binding_description();
+
+        let instance_attribute_descriptions = InstanceVertex::get_attribute_descriptions();
+        let instance_binding_description = InstanceVertex::get_binding_description();
+
+        let attribute_descriptions: Vec<vk::VertexInputAttributeDescription> =
+            vertex_attribute_descriptions
+                .iter()
+                .chain(instance_attribute_descriptions.iter())
+                .cloned()
+                .collect();
+
+        let binding_descriptions = [vertex_binding_description, instance_binding_description];
+
+        let vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default()
+            .vertex_attribute_descriptions(&attribute_descriptions)
+            .vertex_binding_descriptions(&binding_descriptions);
+
+        let input_assembly_state_info = vk::PipelineInputAssemblyStateCreateInfo::default()
+            .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
+            .primitive_restart_enable(false);
+
+        let rasterization_info = vk::PipelineRasterizationStateCreateInfo::default()
+            .depth_clamp_enable(false)
+            .polygon_mode(vk::PolygonMode::FILL)
+            .line_width(1.0)
+            .cull_mode(vk::CullModeFlags::BACK)
+            .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
+            .depth_bias_enable(false);
+
+        let multisample_info = vk::PipelineMultisampleStateCreateInfo::default()
+            .sample_shading_enable(false)
+            .rasterization_samples(vk::SampleCountFlags::TYPE_1);
+
+        let depth_stencil_state_info = vk::PipelineDepthStencilStateCreateInfo::default()
+            .depth_test_enable(true)
+            .depth_write_enable(true)
+            .depth_compare_op(vk::CompareOp::GREATER);
+
+        let mut rendering_create_info = vk::PipelineRenderingCreateInfo::default()
+            .depth_attachment_format(vk::Format::D32_SFLOAT);
+
+        let graphics_pipeline_create_info = &[vk::GraphicsPipelineCreateInfo::default()
+            .stages(shader_stages)
+            .vertex_input_state(&vertex_input_state_info)
+            .input_assembly_state(&input_assembly_state_info)
+            .dynamic_state(&dynamic_state_info)
+            .viewport_state(&viewport_state_info)
+            .rasterization_state(&rasterization_info)
+            .multisample_state(&multisample_info)
             .layout(pipeline_layout)
             .depth_stencil_state(&depth_stencil_state_info)
             .subpass(0)
