@@ -10,14 +10,7 @@ layout(location = 3) in mat4 inModel;
 layout(location = 7) in mat3 inModelNormal;
 layout(location = 10) in vec3 inColor;
 
-layout (location = 0) out vec3 outColor;
-layout (location = 1) out vec2 outUv;
-layout (location = 2) out vec3 outNorm;
-layout (location = 3) out vec3 outPos;
-layout (location = 4) out vec3 outScale;
-layout (location = 5) out vec3 outObjNorm;
-
 void main() {
-	gl_Position = sceneUbo.proj * sceneUbo.view * inModel * vec4(inPos, 1.0f);
+	gl_Position = cameraUbo.proj * cameraUbo.view * inModel * vec4(inPos, 1.0f);
 }
 

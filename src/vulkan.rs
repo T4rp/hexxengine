@@ -9,7 +9,7 @@ use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
 
-use crate::mesh::{InstanceVertex, MeshVertex, SceneUniform};
+use crate::mesh::{CameraUniform, InstanceVertex, MeshVertex, SceneUniform};
 use crate::scene::{MeshNode, RenderScene};
 
 const USE_VALIDATION_LAYERS: bool = true;
@@ -55,6 +55,7 @@ unsafe extern "system" fn debug_messager_callback(
 
 struct PerFrameDescriptorData {
     camera_buffer: (vk::Buffer, vk_mem::Allocation),
+    scene_buffer: (vk::Buffer, vk_mem::Allocation),
     descriptor_set: vk::DescriptorSet,
 }
 
@@ -66,9 +67,13 @@ impl PerFrameDescriptorData {
     ) -> Self {
         let camera_uniform_buffer_info = vk::BufferCreateInfo::default()
             .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
+            .size(mem::size_of::<CameraUniform>() as u64);
+
+        let scene_uniform_buffer_info = vk::BufferCreateInfo::default()
+            .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
             .size(mem::size_of::<SceneUniform>() as u64);
 
-        let camera_uniform_alloc_info = vk_mem::AllocationCreateInfo {
+        let uniform_alloc_info = vk_mem::AllocationCreateInfo {
             flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE
                 | vk_mem::AllocationCreateFlags::MAPPED,
             usage: vk_mem::MemoryUsage::AutoPreferHost,
@@ -78,33 +83,55 @@ impl PerFrameDescriptorData {
 
         let camera_buffer = unsafe {
             allocator
-                .create_buffer(&camera_uniform_buffer_info, &camera_uniform_alloc_info)
+                .create_buffer(&camera_uniform_buffer_info, &uniform_alloc_info)
                 .unwrap()
         };
 
-        let buff_info = [vk::DescriptorBufferInfo::default()
+        let scene_buffer = unsafe {
+            allocator
+                .create_buffer(&scene_uniform_buffer_info, &uniform_alloc_info)
+                .unwrap()
+        };
+
+        let camera_buffer_info = [vk::DescriptorBufferInfo::default()
             .offset(0)
-            .range(mem::size_of::<SceneUniform>() as u64)
+            .range(mem::size_of::<CameraUniform>() as u64)
             .buffer(camera_buffer.0)];
 
-        let descriptor_write = [vk::WriteDescriptorSet::default()
-            .dst_set(descriptor_set)
-            .dst_binding(0)
-            .dst_array_element(0)
-            .descriptor_count(1)
-            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-            .buffer_info(&buff_info)];
+        let scene_buffer_info = [vk::DescriptorBufferInfo::default()
+            .offset(0)
+            .range(mem::size_of::<SceneUniform>() as u64)
+            .buffer(scene_buffer.0)];
+
+        let descriptor_write = [
+            vk::WriteDescriptorSet::default()
+                .dst_set(descriptor_set)
+                .dst_binding(0)
+                .dst_array_element(0)
+                .descriptor_count(1)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .buffer_info(&camera_buffer_info),
+            vk::WriteDescriptorSet::default()
+                .dst_set(descriptor_set)
+                .dst_binding(1)
+                .dst_array_element(0)
+                .descriptor_count(1)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .buffer_info(&scene_buffer_info),
+        ];
 
         unsafe { device.update_descriptor_sets(&descriptor_write, &[]) };
 
         PerFrameDescriptorData {
             camera_buffer,
+            scene_buffer,
             descriptor_set,
         }
     }
 
     fn destroy(&mut self, allocator: &vk_mem::Allocator) {
         unsafe { allocator.destroy_buffer(self.camera_buffer.0, &mut self.camera_buffer.1) };
+        unsafe { allocator.destroy_buffer(self.scene_buffer.0, &mut self.scene_buffer.1) };
     }
 }
 
@@ -1163,10 +1190,7 @@ impl VulkanContext {
     fn update_per_frame_descriptors(&mut self, scene: &RenderScene) {
         let current_frame = &self.render_frames[self.current_frame % MAX_FRAMES];
         let camera_buffer_allocation = current_frame.per_frame_descriptor_data.camera_buffer.1;
-
-        let alloc_info = self
-            .allocator
-            .get_allocation_info(&camera_buffer_allocation);
+        let scene_buffer_allocation = current_frame.per_frame_descriptor_data.scene_buffer.1;
 
         let aspect_ratio = self.swapchain_extent.width as f32 / self.swapchain_extent.height as f32;
 
@@ -1175,10 +1199,13 @@ impl VulkanContext {
         let lighting = &scene.lighting;
         let camera_position = scene.camera.position;
 
-        let mut camera_ubo = SceneUniform {
+        let mut camera_ubo = CameraUniform {
             proj: proj,
             view: view,
             camera_position: vec4(camera_position.x, camera_position.y, camera_position.z, 0.0),
+        };
+
+        let mut scene_ubo = SceneUniform {
             sun_direction: vec4(
                 lighting.sun_direction.x,
                 lighting.sun_direction.y,
@@ -1199,7 +1226,16 @@ impl VulkanContext {
             ),
         };
 
-        unsafe { std::ptr::copy_nonoverlapping(&mut camera_ubo, alloc_info.mapped_data.cast(), 1) };
+        let camera_alloc_info = self
+            .allocator
+            .get_allocation_info(&camera_buffer_allocation);
+
+        let scene_alloc_info = self.allocator.get_allocation_info(&scene_buffer_allocation);
+
+        unsafe {
+            std::ptr::copy_nonoverlapping(&mut camera_ubo, camera_alloc_info.mapped_data.cast(), 1);
+            std::ptr::copy_nonoverlapping(&mut scene_ubo, scene_alloc_info.mapped_data.cast(), 1);
+        };
     }
 
     fn update_instance_buffer(
@@ -1792,11 +1828,18 @@ impl VulkanContext {
     }
 
     fn create_descriptor_layouts(device: &ash::Device) -> DescriptorSetLayouts {
-        let per_frame_bindings = [vk::DescriptorSetLayoutBinding::default()
-            .binding(0)
-            .descriptor_count(1)
-            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)];
+        let per_frame_bindings = [
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(0)
+                .descriptor_count(1)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(1)
+                .descriptor_count(1)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
+        ];
 
         let per_frame_layout_info =
             vk::DescriptorSetLayoutCreateInfo::default().bindings(&per_frame_bindings);

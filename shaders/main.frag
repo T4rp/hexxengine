@@ -27,7 +27,7 @@ void main() {
 
 	vec3 norm = normalize(inNorm);
 	vec3 lightDir = normalize(-sceneUbo.sunDir.xyz);
-	vec3 viewDir = normalize(sceneUbo.cameraPos.xyz - inPos);
+	vec3 viewDir = normalize(cameraUbo.cameraPos.xyz - inPos);
 	vec3 halfDir = normalize(lightDir + viewDir);
 
 	float diffuse = max(dot(norm, lightDir), 0.0);

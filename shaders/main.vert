@@ -23,7 +23,7 @@ void main() {
 	scale.y = length(inModel[1].xyz);
 	scale.z = length(inModel[2].xyz);
 
-	gl_Position = sceneUbo.proj * sceneUbo.view * inModel * vec4(inPos, 1.0f);
+	gl_Position = cameraUbo.proj * cameraUbo.view * inModel * vec4(inPos, 1.0f);
 	outColor = inColor;
 	outUv = inUv;
 	outNorm = inModelNormal * inNorm;
