@@ -4,7 +4,7 @@ use std::io::Cursor;
 use std::{ffi, fs, mem, ptr};
 
 use ash::vk::{self};
-use glam::{Mat4, Vec2, Vec3, vec4};
+use glam::{Mat4, Quat, Vec2, Vec3, vec4};
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
@@ -1199,12 +1199,26 @@ impl VulkanContext {
         let lighting = &scene.lighting;
         let camera_position = scene.camera.position;
 
+        let light_translation = -lighting.sun_direction * 500.0;
+
+        let light_rotation = Quat::look_at_rh(
+            light_translation,
+            light_translation + lighting.sun_direction,
+            Vec3::Y,
+        );
+
+        let light_view =
+            Mat4::from_rotation_translation(light_rotation, light_translation).inverse();
+
+        let mut light_projection = Mat4::orthographic_rh(0.0, 1024.0, 1024.0, 0.0, 10000.0, 0.0);
+        light_projection.y_axis *= vec4(1.0, -1.0, 1.0, 1.0);
+
         let mut camera_ubo = CameraUniform {
             proj: proj,
             view: view,
             camera_position: vec4(camera_position.x, camera_position.y, camera_position.z, 0.0),
-            light_proj: Mat4::IDENTITY,
-            light_view: Mat4::IDENTITY,
+            light_proj: light_projection,
+            light_view: light_view,
         };
 
         let mut scene_ubo = SceneUniform {
@@ -1305,6 +1319,7 @@ impl VulkanContext {
         let in_flight_fence = current_frame.in_flight_fence;
         let per_frame_descriptor_set = current_frame.per_frame_set;
         let depth_image_view = current_frame.depth_image_view;
+        let shadow_image_view = current_frame.shadow_map_view;
         let instance_buffer = current_frame.instance_buffer;
 
         unsafe {
@@ -1350,14 +1365,96 @@ impl VulkanContext {
                 .begin_command_buffer(command_buffer, &command_buffer_being_info)
                 .unwrap();
 
-            transition_image(
-                &self.device,
+            let shadow_depth_attachment = vk::RenderingAttachmentInfo::default()
+                .image_view(shadow_image_view)
+                .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                .load_op(vk::AttachmentLoadOp::CLEAR)
+                .store_op(vk::AttachmentStoreOp::STORE)
+                .clear_value(vk::ClearValue {
+                    depth_stencil: vk::ClearDepthStencilValue {
+                        depth: 0.0,
+                        stencil: 0,
+                    },
+                });
+
+            let shadow_render_area = vk::Rect2D {
+                offset: vk::Offset2D { x: 0, y: 0 },
+                extent: vk::Extent2D {
+                    width: 1024,
+                    height: 1024,
+                },
+            };
+
+            let shadow_rendering_info = vk::RenderingInfo::default()
+                .depth_attachment(&shadow_depth_attachment)
+                .render_area(shadow_render_area)
+                .layer_count(1);
+
+            self.device
+                .cmd_begin_rendering(command_buffer, &shadow_rendering_info);
+
+            self.device
+                .cmd_set_scissor(command_buffer, 0, &[shadow_render_area]);
+
+            self.device.cmd_set_viewport(
                 command_buffer,
-                swapchain_image,
-                vk::ImageLayout::UNDEFINED,
-                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                vk::ImageAspectFlags::COLOR,
+                0,
+                &[vk::Viewport {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1024 as f32,
+                    height: 1024 as f32,
+                    min_depth: 0.0,
+                    max_depth: 1.0,
+                }],
             );
+
+            self.device.cmd_bind_pipeline(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.shadow_graphics_pipeline,
+            );
+
+            let descriptor_sets = [per_frame_descriptor_set, self.textures[1].descriptor_set];
+
+            self.device.cmd_bind_descriptor_sets(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline_layout,
+                0,
+                &descriptor_sets,
+                &[],
+            );
+
+            for batch in batch_info.iter() {
+                self.device.cmd_bind_vertex_buffers(
+                    command_buffer,
+                    0,
+                    &[
+                        self.mesh_buffers[batch.mesh_id as usize].vertex_buffer.0,
+                        instance_buffer.0,
+                    ],
+                    &[0, batch.instance_offset],
+                );
+
+                self.device.cmd_bind_index_buffer(
+                    command_buffer,
+                    self.mesh_buffers[batch.mesh_id as usize].index_buffer.0,
+                    0,
+                    vk::IndexType::UINT16,
+                );
+
+                self.device.cmd_draw_indexed(
+                    command_buffer,
+                    self.mesh_buffers[batch.mesh_id as usize].index_count,
+                    batch.instance_count as u32,
+                    0,
+                    0,
+                    0,
+                );
+            }
+
+            self.device.cmd_end_rendering(command_buffer);
 
             let main_rendering_attachments = &[vk::RenderingAttachmentInfo::default()
                 .image_view(swapchain_image_view)
@@ -1392,6 +1489,15 @@ impl VulkanContext {
                 .depth_attachment(&main_depth_attachment)
                 .render_area(main_render_area)
                 .layer_count(1);
+
+            transition_image(
+                &self.device,
+                command_buffer,
+                swapchain_image,
+                vk::ImageLayout::UNDEFINED,
+                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                vk::ImageAspectFlags::COLOR,
+            );
 
             self.device
                 .cmd_begin_rendering(command_buffer, &main_rendering_info);
@@ -1429,7 +1535,7 @@ impl VulkanContext {
                 &[],
             );
 
-            for batch in batch_info {
+            for batch in batch_info.iter() {
                 self.device.cmd_bind_vertex_buffers(
                     command_buffer,
                     0,
