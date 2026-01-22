@@ -2,6 +2,8 @@ layout(set = 0, binding = 0) uniform CameraUniform {
 	mat4 proj;
 	mat4 view;
 	vec4 cameraPos;
+	mat4 lightProj;
+	mat4 lightView;
 } cameraUbo;
 
 layout(set = 0, binding = 1) uniform SceneUniform {

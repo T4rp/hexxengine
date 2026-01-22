@@ -4,7 +4,7 @@ use std::io::Cursor;
 use std::{ffi, fs, mem, ptr};
 
 use ash::vk::{self};
-use glam::{Vec2, Vec3, vec4};
+use glam::{Mat4, Vec2, Vec3, vec4};
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
@@ -1203,6 +1203,8 @@ impl VulkanContext {
             proj: proj,
             view: view,
             camera_position: vec4(camera_position.x, camera_position.y, camera_position.z, 0.0),
+            light_proj: Mat4::IDENTITY,
+            light_view: Mat4::IDENTITY,
         };
 
         let mut scene_ubo = SceneUniform {

@@ -11,6 +11,6 @@ layout(location = 7) in mat3 inModelNormal;
 layout(location = 10) in vec3 inColor;
 
 void main() {
-	gl_Position = cameraUbo.proj * cameraUbo.view * inModel * vec4(inPos, 1.0f);
+	gl_Position = cameraUbo.lightProj * cameraUbo.lightView * inModel * vec4(inPos, 1.0f);
 }
 

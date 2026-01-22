@@ -156,6 +156,8 @@ pub struct CameraUniform {
     pub proj: Mat4,
     pub view: Mat4,
     pub camera_position: Vec4,
+    pub light_proj: Mat4,
+    pub light_view: Mat4,
 }
 
 #[derive(Clone, Copy)]
