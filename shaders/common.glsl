@@ -12,6 +12,9 @@ layout(set = 0, binding = 1) uniform SceneUniform {
 	vec4 ambientCol;
 } sceneUbo;
 
+
+layout (set = 0, binding = 2) uniform sampler2D shadowMapText;
+
 layout (set = 1, binding = 0) uniform sampler2D text;
 
 #define SHINE 32

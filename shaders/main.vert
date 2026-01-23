@@ -16,6 +16,7 @@ layout (location = 2) out vec3 outNorm;
 layout (location = 3) out vec3 outPos;
 layout (location = 4) out vec3 outScale;
 layout (location = 5) out vec3 outObjNorm;
+layout (location = 6) out vec4 outPosLightSpace;
 
 void main() {
 	vec3 scale;
@@ -30,5 +31,6 @@ void main() {
 	outPos = vec3(inModel * vec4(inPos, 1.0));
 	outScale = scale;
 	outObjNorm = inNorm;
+	outPosLightSpace = cameraUbo.lightProj * cameraUbo.lightView * inModel * vec4(inPos, 1.0f);
 }
 

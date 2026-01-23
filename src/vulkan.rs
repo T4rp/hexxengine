@@ -9,6 +9,7 @@ use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
 
+use crate::main;
 use crate::mesh::{CameraUniform, InstanceVertex, MeshVertex, SceneUniform};
 use crate::scene::{MeshNode, RenderScene};
 
@@ -56,15 +57,33 @@ unsafe extern "system" fn debug_messager_callback(
 struct PerFrameDescriptorData {
     camera_buffer: (vk::Buffer, vk_mem::Allocation),
     scene_buffer: (vk::Buffer, vk_mem::Allocation),
-    descriptor_set: vk::DescriptorSet,
+    main_pass_descriptor_set: vk::DescriptorSet,
+    shadow_pass_descriptor_set: vk::DescriptorSet,
+    shadow_map_sampler: vk::Sampler,
 }
 
 impl PerFrameDescriptorData {
     fn new(
         device: &ash::Device,
         allocator: &vk_mem::Allocator,
-        descriptor_set: vk::DescriptorSet,
+        descriptor_pool: vk::DescriptorPool,
+        per_frame_layout: vk::DescriptorSetLayout,
+        shadow_map: vk::ImageView,
     ) -> Self {
+        let layouts = [per_frame_layout, per_frame_layout];
+        let descriptor_set_alloc_info = vk::DescriptorSetAllocateInfo::default()
+            .descriptor_pool(descriptor_pool)
+            .set_layouts(&layouts);
+
+        let descriptor_sets = unsafe {
+            device
+                .allocate_descriptor_sets(&descriptor_set_alloc_info)
+                .unwrap()
+        };
+
+        let main_pass_descriptor_set = descriptor_sets[0];
+        let shadow_pass_descriptor_set = descriptor_sets[1];
+
         let camera_uniform_buffer_info = vk::BufferCreateInfo::default()
             .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
             .size(mem::size_of::<CameraUniform>() as u64);
@@ -103,21 +122,57 @@ impl PerFrameDescriptorData {
             .range(mem::size_of::<SceneUniform>() as u64)
             .buffer(scene_buffer.0)];
 
+        let shadow_map_sampler_info = vk::SamplerCreateInfo::default()
+            .mag_filter(vk::Filter::NEAREST)
+            .min_filter(vk::Filter::NEAREST);
+
+        let shadow_map_sampler = unsafe {
+            device
+                .create_sampler(&shadow_map_sampler_info, None)
+                .unwrap()
+        };
+
+        let shadow_map_image_info = [vk::DescriptorImageInfo::default()
+            .image_view(shadow_map)
+            .image_layout(vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL)
+            .sampler(shadow_map_sampler)];
+
         let descriptor_write = [
             vk::WriteDescriptorSet::default()
-                .dst_set(descriptor_set)
+                .dst_set(shadow_pass_descriptor_set)
                 .dst_binding(0)
                 .dst_array_element(0)
                 .descriptor_count(1)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
                 .buffer_info(&camera_buffer_info),
             vk::WriteDescriptorSet::default()
-                .dst_set(descriptor_set)
+                .dst_set(shadow_pass_descriptor_set)
                 .dst_binding(1)
                 .dst_array_element(0)
                 .descriptor_count(1)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
                 .buffer_info(&scene_buffer_info),
+            vk::WriteDescriptorSet::default()
+                .dst_set(main_pass_descriptor_set)
+                .dst_binding(0)
+                .dst_array_element(0)
+                .descriptor_count(1)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .buffer_info(&camera_buffer_info),
+            vk::WriteDescriptorSet::default()
+                .dst_set(main_pass_descriptor_set)
+                .dst_binding(1)
+                .dst_array_element(0)
+                .descriptor_count(1)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .buffer_info(&scene_buffer_info),
+            vk::WriteDescriptorSet::default()
+                .dst_set(main_pass_descriptor_set)
+                .dst_binding(2)
+                .dst_array_element(0)
+                .descriptor_count(1)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .image_info(&shadow_map_image_info),
         ];
 
         unsafe { device.update_descriptor_sets(&descriptor_write, &[]) };
@@ -125,7 +180,9 @@ impl PerFrameDescriptorData {
         PerFrameDescriptorData {
             camera_buffer,
             scene_buffer,
-            descriptor_set,
+            main_pass_descriptor_set,
+            shadow_pass_descriptor_set,
+            shadow_map_sampler,
         }
     }
 
@@ -140,7 +197,6 @@ struct RenderFrame {
     command_buffer: vk::CommandBuffer,
     swapchain_semaphore: vk::Semaphore,
     in_flight_fence: vk::Fence,
-    per_frame_set: vk::DescriptorSet,
     per_frame_descriptor_data: PerFrameDescriptorData,
     depth_image_view: vk::ImageView,
     depth_image: (vk::Image, vk_mem::Allocation),
@@ -186,22 +242,14 @@ impl RenderFrame {
 
         let in_flight_fence = unsafe { device.create_fence(&fence_create_info, None).unwrap() };
 
-        let layouts = [per_frame_layout];
-        let descriptor_set_alloc_info = vk::DescriptorSetAllocateInfo::default()
-            .descriptor_pool(descriptor_pool)
-            .set_layouts(&layouts);
-
-        let descriptor_sets = unsafe {
-            device
-                .allocate_descriptor_sets(&descriptor_set_alloc_info)
-                .unwrap()
-        };
-
-        let per_frame_descriptor_data =
-            PerFrameDescriptorData::new(device, allocator, descriptor_sets[0]);
-
-        let (depth_image, depth_image_view) =
-            Self::create_depth_image(device, allocator, queue, command_pool, window_extent);
+        let (depth_image, depth_image_view) = Self::create_depth_image(
+            device,
+            allocator,
+            queue,
+            command_pool,
+            window_extent,
+            vk::ImageUsageFlags::empty(),
+        );
 
         let (shadow_map, shadow_map_view) = Self::create_depth_image(
             device,
@@ -212,6 +260,15 @@ impl RenderFrame {
                 width: 1024,
                 height: 1024,
             },
+            vk::ImageUsageFlags::SAMPLED,
+        );
+
+        let per_frame_descriptor_data = PerFrameDescriptorData::new(
+            device,
+            allocator,
+            descriptor_pool,
+            per_frame_layout,
+            shadow_map_view,
         );
 
         let instance_buffer = create_instance_buffer(allocator);
@@ -221,7 +278,6 @@ impl RenderFrame {
             command_buffer,
             swapchain_semaphore,
             in_flight_fence,
-            per_frame_set: descriptor_sets[0],
             per_frame_descriptor_data,
             depth_image,
             depth_image_view,
@@ -257,8 +313,14 @@ impl RenderFrame {
             device.destroy_image_view(self.depth_image_view, None);
         };
 
-        let (depth_image, depth_image_view) =
-            Self::create_depth_image(device, allocator, queue, command_pool, window_extent);
+        let (depth_image, depth_image_view) = Self::create_depth_image(
+            device,
+            allocator,
+            queue,
+            command_pool,
+            window_extent,
+            vk::ImageUsageFlags::empty(),
+        );
 
         self.swapchain_semaphore = new_semaphore;
         self.depth_image = depth_image;
@@ -271,6 +333,7 @@ impl RenderFrame {
         queue: vk::Queue,
         command_pool: vk::CommandPool,
         extent: vk::Extent2D,
+        extra_usage_flags: vk::ImageUsageFlags,
     ) -> ((vk::Image, vk_mem::Allocation), vk::ImageView) {
         let image_info = vk::ImageCreateInfo::default()
             .image_type(vk::ImageType::TYPE_2D)
@@ -284,7 +347,7 @@ impl RenderFrame {
             .format(vk::Format::D32_SFLOAT)
             .tiling(vk::ImageTiling::OPTIMAL)
             .initial_layout(vk::ImageLayout::UNDEFINED)
-            .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT)
+            .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | extra_usage_flags)
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
             .samples(vk::SampleCountFlags::TYPE_1);
 
@@ -1317,8 +1380,14 @@ impl VulkanContext {
         let command_buffer = current_frame.command_buffer;
         let swapchain_semaphore = current_frame.swapchain_semaphore;
         let in_flight_fence = current_frame.in_flight_fence;
-        let per_frame_descriptor_set = current_frame.per_frame_set;
+        let main_per_frame_descriptor_set = current_frame
+            .per_frame_descriptor_data
+            .main_pass_descriptor_set;
+        let shadow_per_frame_descriptor_set = current_frame
+            .per_frame_descriptor_data
+            .shadow_pass_descriptor_set;
         let depth_image_view = current_frame.depth_image_view;
+        let shadow_image = current_frame.shadow_map;
         let shadow_image_view = current_frame.shadow_map_view;
         let instance_buffer = current_frame.instance_buffer;
 
@@ -1390,6 +1459,15 @@ impl VulkanContext {
                 .render_area(shadow_render_area)
                 .layer_count(1);
 
+            transition_image(
+                &self.device,
+                command_buffer,
+                shadow_image.0,
+                vk::ImageLayout::UNDEFINED,
+                vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                vk::ImageAspectFlags::DEPTH,
+            );
+
             self.device
                 .cmd_begin_rendering(command_buffer, &shadow_rendering_info);
 
@@ -1415,14 +1493,17 @@ impl VulkanContext {
                 self.shadow_graphics_pipeline,
             );
 
-            let descriptor_sets = [per_frame_descriptor_set, self.textures[1].descriptor_set];
+            let shadow_descriptor_sets = [
+                shadow_per_frame_descriptor_set,
+                self.textures[1].descriptor_set,
+            ];
 
             self.device.cmd_bind_descriptor_sets(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline_layout,
                 0,
-                &descriptor_sets,
+                &shadow_descriptor_sets,
                 &[],
             );
 
@@ -1499,6 +1580,15 @@ impl VulkanContext {
                 vk::ImageAspectFlags::COLOR,
             );
 
+            transition_image(
+                &self.device,
+                command_buffer,
+                shadow_image.0,
+                vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                vk::ImageAspectFlags::DEPTH,
+            );
+
             self.device
                 .cmd_begin_rendering(command_buffer, &main_rendering_info);
 
@@ -1524,14 +1614,17 @@ impl VulkanContext {
                 self.graphics_pipeline,
             );
 
-            let descriptor_sets = [per_frame_descriptor_set, self.textures[1].descriptor_set];
+            let main_descriptor_sets = [
+                main_per_frame_descriptor_set,
+                self.textures[1].descriptor_set,
+            ];
 
             self.device.cmd_bind_descriptor_sets(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline_layout,
                 0,
-                &descriptor_sets,
+                &main_descriptor_sets,
                 &[],
             );
 
@@ -1946,6 +2039,11 @@ impl VulkanContext {
                 .binding(1)
                 .descriptor_count(1)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(2)
+                .descriptor_count(1)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                 .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
         ];
 

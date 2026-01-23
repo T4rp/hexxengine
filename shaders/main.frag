@@ -8,6 +8,7 @@ layout (location = 2) in vec3 inNorm;
 layout (location = 3) in vec3 inPos;
 layout (location = 4) in vec3 inScale;
 layout (location = 5) in vec3 inObjNorm;
+layout (location = 6) in vec4 inPosLightSpace;
 
 layout (location = 0) out vec4 outFragColor;
 
@@ -34,8 +35,11 @@ void main() {
 
 	float specular = pow(max(dot(halfDir, norm), 0.0), SHINE);
 
+	vec4 shadowCoord = inPosLightSpace / inPosLightSpace.w;
+	float yuh = texture(shadowMapText, shadowCoord.xy).r;
+
 	vec3 diffuseColor = (texture(text, uv) * vec4(inColor, 1.0)).xyz;
 
-	outFragColor = vec4(diffuseColor * ambientColor + diffuseColor * diffuse * lightColor * lightPower + specular * lightColor * lightPower, 1.0);
+	outFragColor = vec4(diffuseColor * ambientColor + diffuseColor * diffuse * lightColor * lightPower + specular * lightColor * lightPower, 1.0) * (1.0 - yuh);
 }
 
