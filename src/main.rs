@@ -53,7 +53,7 @@ impl App {
                 sun_direction: vec3(0.0, -1.0, 0.0),
                 sun_color: vec3(1.0, 1.0, 1.0),
                 sun_power: 0.5,
-                ambient_color: vec3(1.0, 1.0, 1.0) * 0.1,
+                ambient_color: vec3(1.0, 1.0, 1.0) * 0.01,
             },
             are_meshes_dirty: true,
         };
@@ -69,12 +69,12 @@ impl App {
             material_id: 0,
         });
 
-        for _ in 0..999 {
+        for _ in 0..200 {
             let instance = MeshNode {
                 position: vec3(
-                    rng.random_range(-20.0..20.0),
-                    rng.random_range(1.0..5.0),
-                    rng.random_range(-20.0..20.0),
+                    rng.random_range(-50.0..50.0),
+                    rng.random_range(1.0..50.0),
+                    rng.random_range(-50.0..50.0),
                 ) * 5.0,
                 orientation: Quat::from_euler(
                     EulerRot::XYZ,
@@ -82,7 +82,7 @@ impl App {
                     rng.random::<f32>() * std::f32::consts::PI * 2.0,
                     rng.random::<f32>() * std::f32::consts::PI * 2.0,
                 ),
-                size: vec3(4.0, 4.0, 4.0) * 2.0,
+                size: vec3(4.0, 4.0, 4.0) * rng.random_range(1.0..5.0),
                 color: hsv_to_rgb(rng.random::<f32>() * 360.0, 0.8, 1.0),
                 mesh_id: rng.random_range(0..=1),
                 material_id: 0,
@@ -125,7 +125,7 @@ impl App {
         let mouse_delta = self.input_state.mouse_delta;
 
         if mouse_delta.z == 0.0 && self.input_state.right_mouse_down {
-            let sensitivity = 0.0005;
+            let sensitivity = 0.001;
 
             let yaw = Quat::from_rotation_y(-mouse_delta.x * sensitivity);
             let pitch = Quat::from_rotation_x(-mouse_delta.y * sensitivity);

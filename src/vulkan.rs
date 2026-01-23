@@ -15,7 +15,7 @@ use crate::scene::{MeshNode, RenderScene};
 
 const USE_VALIDATION_LAYERS: bool = true;
 const MAX_FRAMES: usize = 2;
-const SHADOW_MAP_RESOLUTION: u32 = 512;
+const SHADOW_MAP_RESOLUTION: u32 = 1024;
 
 const DESCRIPTOR_RATIOS: &[(vk::DescriptorType, u32)] = &[
     (vk::DescriptorType::COMBINED_IMAGE_SAMPLER, 1),
@@ -124,12 +124,12 @@ impl PerFrameDescriptorData {
             .buffer(scene_buffer.0)];
 
         let shadow_map_sampler_info = vk::SamplerCreateInfo::default()
-            .mag_filter(vk::Filter::LINEAR)
-            .min_filter(vk::Filter::LINEAR)
-            .compare_enable(true)
+            .mag_filter(vk::Filter::NEAREST)
+            .min_filter(vk::Filter::NEAREST)
+            .compare_enable(false)
             .compare_op(vk::CompareOp::GREATER_OR_EQUAL)
-            .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-            .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+            .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_BORDER)
+            .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_BORDER)
             .border_color(vk::BorderColor::FLOAT_OPAQUE_BLACK);
 
         let shadow_map_sampler = unsafe {
