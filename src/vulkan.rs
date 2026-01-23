@@ -124,7 +124,11 @@ impl PerFrameDescriptorData {
 
         let shadow_map_sampler_info = vk::SamplerCreateInfo::default()
             .mag_filter(vk::Filter::NEAREST)
-            .min_filter(vk::Filter::NEAREST);
+            .min_filter(vk::Filter::NEAREST)
+            .compare_enable(false)
+            .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_BORDER)
+            .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_BORDER)
+            .border_color(vk::BorderColor::FLOAT_OPAQUE_WHITE);
 
         let shadow_map_sampler = unsafe {
             device

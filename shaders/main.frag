@@ -35,11 +35,15 @@ void main() {
 
 	float specular = pow(max(dot(halfDir, norm), 0.0), SHINE);
 
-	vec4 shadowCoord = inPosLightSpace / inPosLightSpace.w;
-	float yuh = texture(shadowMapText, shadowCoord.xy).r;
+	vec3 shadowCoordNdc = inPosLightSpace.xyz / inPosLightSpace.w;
+	vec2 shadowUv = shadowCoordNdc.xy * 0.5 + 0.5;
+	float closestDepth = texture(shadowMapText, shadowUv).r;
+	float currentDepth = 1.0 - shadowCoordNdc.z;
+
+	float shadow = currentDepth < closestDepth ? 1.0 : 0.0;
 
 	vec3 diffuseColor = (texture(text, uv) * vec4(inColor, 1.0)).xyz;
 
-	outFragColor = vec4(diffuseColor * ambientColor + diffuseColor * diffuse * lightColor * lightPower + specular * lightColor * lightPower, 1.0) * (1.0 - yuh);
+	outFragColor = vec4(diffuseColor * ambientColor + diffuseColor * diffuse * lightColor * lightPower + specular * lightColor * lightPower, 1.0) * shadow;
 }
 
