@@ -15,6 +15,7 @@ use crate::scene::{MeshNode, RenderScene};
 
 const USE_VALIDATION_LAYERS: bool = true;
 const MAX_FRAMES: usize = 2;
+const SHADOW_MAP_RESOLUTION: u32 = 512;
 
 const DESCRIPTOR_RATIOS: &[(vk::DescriptorType, u32)] = &[
     (vk::DescriptorType::COMBINED_IMAGE_SAMPLER, 1),
@@ -123,12 +124,13 @@ impl PerFrameDescriptorData {
             .buffer(scene_buffer.0)];
 
         let shadow_map_sampler_info = vk::SamplerCreateInfo::default()
-            .mag_filter(vk::Filter::NEAREST)
-            .min_filter(vk::Filter::NEAREST)
-            .compare_enable(false)
-            .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_BORDER)
-            .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_BORDER)
-            .border_color(vk::BorderColor::FLOAT_OPAQUE_WHITE);
+            .mag_filter(vk::Filter::LINEAR)
+            .min_filter(vk::Filter::LINEAR)
+            .compare_enable(true)
+            .compare_op(vk::CompareOp::GREATER_OR_EQUAL)
+            .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+            .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+            .border_color(vk::BorderColor::FLOAT_OPAQUE_BLACK);
 
         let shadow_map_sampler = unsafe {
             device
@@ -261,8 +263,8 @@ impl RenderFrame {
             queue,
             command_pool,
             vk::Extent2D {
-                width: 1024,
-                height: 1024,
+                width: SHADOW_MAP_RESOLUTION,
+                height: SHADOW_MAP_RESOLUTION,
             },
             vk::ImageUsageFlags::SAMPLED,
         );
@@ -1268,16 +1270,15 @@ impl VulkanContext {
 
         let light_translation = -lighting.sun_direction * 500.0;
 
-        let light_rotation = Quat::look_at_rh(
-            light_translation,
-            light_translation + lighting.sun_direction,
-            Vec3::Y,
-        );
+        let light_rotation = Quat::look_at_rh(light_translation, Vec3::ZERO, Vec3::Y).inverse();
 
         let light_view =
             Mat4::from_rotation_translation(light_rotation, light_translation).inverse();
 
-        let mut light_projection = Mat4::orthographic_rh(0.0, 1024.0, 1024.0, 0.0, 10000.0, 0.0);
+        let res_half = SHADOW_MAP_RESOLUTION as f32 / 2.0;
+
+        let mut light_projection =
+            Mat4::orthographic_rh(-res_half, res_half, res_half, -res_half, 1000.0, 1.0);
         light_projection.y_axis *= vec4(1.0, -1.0, 1.0, 1.0);
 
         let mut camera_ubo = CameraUniform {
@@ -1453,8 +1454,8 @@ impl VulkanContext {
             let shadow_render_area = vk::Rect2D {
                 offset: vk::Offset2D { x: 0, y: 0 },
                 extent: vk::Extent2D {
-                    width: 1024,
-                    height: 1024,
+                    width: SHADOW_MAP_RESOLUTION,
+                    height: SHADOW_MAP_RESOLUTION,
                 },
             };
 
@@ -1484,8 +1485,8 @@ impl VulkanContext {
                 &[vk::Viewport {
                     x: 0.0,
                     y: 0.0,
-                    width: 1024 as f32,
-                    height: 1024 as f32,
+                    width: SHADOW_MAP_RESOLUTION as f32,
+                    height: SHADOW_MAP_RESOLUTION as f32,
                     min_depth: 0.0,
                     max_depth: 1.0,
                 }],
