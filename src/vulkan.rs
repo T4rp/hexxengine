@@ -19,7 +19,7 @@ const SHADOW_MAP_RESOLUTION: u32 = 1024;
 
 const DESCRIPTOR_RATIOS: &[(vk::DescriptorType, u32)] = &[
     (vk::DescriptorType::COMBINED_IMAGE_SAMPLER, 1),
-    (vk::DescriptorType::UNIFORM_BUFFER, 1),
+    (vk::DescriptorType::UNIFORM_BUFFER, 2),
 ];
 
 unsafe extern "system" fn debug_messager_callback(
@@ -1123,7 +1123,7 @@ impl VulkanContext {
 
         let graphics_queue = unsafe { device.get_device_queue(graphics_queue_family_index, 0) };
 
-        let descriptor_pool = Self::create_descriptor_pool(&device, 5);
+        let descriptor_pool = Self::create_descriptor_pool(&device, 3);
         let descriptor_set_layouts = Self::create_descriptor_layouts(&device);
 
         let all_surface_formats = unsafe {
