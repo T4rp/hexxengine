@@ -14,6 +14,7 @@ layout(set = 0, binding = 1) uniform SceneUniform {
 
 
 layout (set = 0, binding = 2) uniform sampler2D shadowMapText;
+layout (set = 0, binding = 3) uniform samplerCube cubemapText;
 
 layout (set = 1, binding = 0) uniform sampler2D text;
 

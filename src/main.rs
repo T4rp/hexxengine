@@ -53,7 +53,7 @@ impl App {
                 sun_direction: vec3(0.0, -1.0, 0.0),
                 sun_color: vec3(1.0, 1.0, 1.0),
                 sun_power: 0.5,
-                ambient_color: vec3(1.0, 1.0, 1.0) * 0.01,
+                ambient_color: vec3(1.0, 1.0, 1.0) * 0.2,
             },
             are_meshes_dirty: true,
         };

@@ -70,6 +70,8 @@ impl PerFrameDescriptorData {
         descriptor_pool: vk::DescriptorPool,
         per_frame_layout: vk::DescriptorSetLayout,
         shadow_map_view: vk::ImageView,
+        skybox_view: vk::ImageView,
+        skybox_sampler: vk::Sampler,
     ) -> Self {
         let layouts = [per_frame_layout, per_frame_layout];
         let descriptor_set_alloc_info = vk::DescriptorSetAllocateInfo::default()
@@ -143,6 +145,11 @@ impl PerFrameDescriptorData {
             .image_layout(vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL)
             .sampler(shadow_map_sampler)];
 
+        let skybox_image_info = [vk::DescriptorImageInfo::default()
+            .image_view(skybox_view)
+            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+            .sampler(skybox_sampler)];
+
         let descriptor_write = [
             vk::WriteDescriptorSet::default()
                 .dst_set(shadow_pass_descriptor_set)
@@ -179,6 +186,13 @@ impl PerFrameDescriptorData {
                 .descriptor_count(1)
                 .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                 .image_info(&shadow_map_image_info),
+            vk::WriteDescriptorSet::default()
+                .dst_set(main_pass_descriptor_set)
+                .dst_binding(3)
+                .dst_array_element(0)
+                .descriptor_count(1)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .image_info(&skybox_image_info),
         ];
 
         unsafe { device.update_descriptor_sets(&descriptor_write, &[]) };
@@ -219,6 +233,8 @@ impl RenderFrame {
         descriptor_pool: vk::DescriptorPool,
         per_frame_layout: vk::DescriptorSetLayout,
         window_extent: vk::Extent2D,
+        skybox_image_view: vk::ImageView,
+        skybox_sampler: vk::Sampler,
         queue_family_index: u32,
     ) -> Self {
         let command_pool = create_command_pool(device, queue_family_index);
@@ -275,6 +291,8 @@ impl RenderFrame {
             descriptor_pool,
             per_frame_layout,
             shadow_map_view,
+            skybox_image_view,
+            skybox_sampler,
         );
 
         let instance_buffer = create_instance_buffer(allocator);
@@ -655,11 +673,12 @@ pub struct VulkanContext {
     descriptor_set_layouts: DescriptorSetLayouts,
     descriptor_pool: vk::DescriptorPool,
     pipeline_layout: vk::PipelineLayout,
-    graphics_pipeline: vk::Pipeline,
+    main_graphics_pipeline: vk::Pipeline,
     shadow_graphics_pipeline: vk::Pipeline,
     mesh_buffers: Vec<MeshBuffer>,
     textures: Vec<Texture>,
     cubemap_image: (vk::Image, vk_mem::Allocation),
+    skybox_graphics_pipeline: vk::Pipeline,
 }
 
 fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> ash::Instance {
@@ -1022,7 +1041,7 @@ fn create_cubemap_image(
     allocator: &vk_mem::Allocator,
     queue: vk::Queue,
     command_pool: vk::CommandPool,
-) -> ((vk::Image, vk_mem::Allocation), vk::ImageView) {
+) -> ((vk::Image, vk_mem::Allocation), vk::ImageView, vk::Sampler) {
     let mut skybox_image = image::open("assets/cloudy-skyboxes/Cubemap/Cubemap_Sky_04-512x512.png")
         .unwrap()
         .into_rgba8();
@@ -1035,12 +1054,12 @@ fn create_cubemap_image(
     let bottom_image = skybox_image.sub_image(512, 512 * 2, 512, 512).to_image();
 
     let mut all_image_data = Vec::new();
-    all_image_data.extend_from_slice(top_image.as_bytes());
-    all_image_data.extend_from_slice(left_image.as_bytes());
-    all_image_data.extend_from_slice(back_image.as_bytes());
     all_image_data.extend_from_slice(right_image.as_bytes());
-    all_image_data.extend_from_slice(front_image.as_bytes());
+    all_image_data.extend_from_slice(left_image.as_bytes());
+    all_image_data.extend_from_slice(top_image.as_bytes());
     all_image_data.extend_from_slice(bottom_image.as_bytes());
+    all_image_data.extend_from_slice(back_image.as_bytes());
+    all_image_data.extend_from_slice(front_image.as_bytes());
 
     let image_extent = vk::Extent3D {
         width: 512,
@@ -1065,7 +1084,7 @@ fn create_cubemap_image(
         )
         .sharing_mode(vk::SharingMode::EXCLUSIVE)
         .samples(vk::SampleCountFlags::TYPE_1)
-        .flags(vk::ImageCreateFlags::empty());
+        .flags(vk::ImageCreateFlags::CUBE_COMPATIBLE);
 
     let image_alloc_create_info = vk_mem::AllocationCreateInfo {
         usage: vk_mem::MemoryUsage::AutoPreferDevice,
@@ -1087,7 +1106,7 @@ fn create_cubemap_image(
             base_array_layer: 0,
             layer_count: 6,
         })
-        .view_type(vk::ImageViewType::TYPE_2D_ARRAY)
+        .view_type(vk::ImageViewType::CUBE)
         .format(format);
 
     let image_view = unsafe { device.create_image_view(&image_view_info, None).unwrap() };
@@ -1197,7 +1216,23 @@ fn create_cubemap_image(
         allocator.destroy_buffer(staging_buffer.0, &mut staging_buffer.1);
     }
 
-    (image, image_view)
+    let sampler_info = vk::SamplerCreateInfo::default()
+        .mag_filter(vk::Filter::LINEAR)
+        .min_filter(vk::Filter::LINEAR)
+        .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
+        .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+        .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+        .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+        .min_lod(0.0)
+        .max_lod(vk::LOD_CLAMP_NONE)
+        .mip_lod_bias(0.0)
+        .anisotropy_enable(false)
+        .compare_enable(false)
+        .unnormalized_coordinates(false);
+
+    let sampler = unsafe { device.create_sampler(&sampler_info, None).unwrap() };
+
+    (image, image_view, sampler)
 }
 
 fn create_instance_buffer(allocator: &vk_mem::Allocator) -> (vk::Buffer, vk_mem::Allocation) {
@@ -1339,7 +1374,7 @@ impl VulkanContext {
 
         let command_pool = create_command_pool(&device, graphics_queue_family_index);
 
-        let (cubemap_image, cubemap_image_view) =
+        let (cubemap_image, cubemap_image_view, cubemap_sampler) =
             create_cubemap_image(&device, &allocator, graphics_queue, command_pool);
 
         let render_frames = Self::create_render_frames(
@@ -1349,6 +1384,8 @@ impl VulkanContext {
             descriptor_pool,
             descriptor_set_layouts.per_frame_layout,
             swapchain_extent,
+            cubemap_image_view,
+            cubemap_sampler,
             graphics_queue_family_index,
         );
 
@@ -1361,6 +1398,9 @@ impl VulkanContext {
 
         let shadow_graphics_pipeline =
             Self::create_shadow_graphics_pipeline(&device, pipeline_layout);
+
+        let skybox_graphics_pipeline =
+            Self::create_sky_graphics_pipeline(&device, pipeline_layout, surface_format);
 
         let current_frame: usize = 0;
         let should_resize = false;
@@ -1431,8 +1471,9 @@ impl VulkanContext {
             render_frames,
             submit_semaphores,
             current_frame,
-            graphics_pipeline: main_graphics_pipeline,
+            main_graphics_pipeline,
             shadow_graphics_pipeline,
+            skybox_graphics_pipeline,
             pipeline_layout,
             allocator,
             descriptor_set_layouts,
@@ -1578,6 +1619,7 @@ impl VulkanContext {
         let shadow_per_frame_descriptor_set = current_frame
             .per_frame_descriptor_data
             .shadow_pass_descriptor_set;
+        let depth_image = current_frame.depth_image;
         let depth_image_view = current_frame.depth_image_view;
         let shadow_image = current_frame.shadow_map;
         let shadow_image_view = current_frame.shadow_map_view;
@@ -1803,7 +1845,7 @@ impl VulkanContext {
             self.device.cmd_bind_pipeline(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                self.graphics_pipeline,
+                self.main_graphics_pipeline,
             );
 
             let main_descriptor_sets = [
@@ -1847,6 +1889,104 @@ impl VulkanContext {
                     0,
                 );
             }
+
+            self.device.cmd_end_rendering(command_buffer);
+
+            transition_image(
+                &self.device,
+                command_buffer,
+                depth_image.0,
+                vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                vk::ImageAspectFlags::DEPTH,
+            );
+
+            let sky_rendering_attachments = &[vk::RenderingAttachmentInfo::default()
+                .image_view(swapchain_image_view)
+                .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .load_op(vk::AttachmentLoadOp::LOAD)
+                .store_op(vk::AttachmentStoreOp::STORE)
+                .clear_value(vk::ClearValue {
+                    color: vk::ClearColorValue {
+                        float32: [0.0, 0.0, 0.0, 1.0],
+                    },
+                })];
+
+            let sky_depth_attachment = vk::RenderingAttachmentInfo::default()
+                .image_view(depth_image_view)
+                .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                .load_op(vk::AttachmentLoadOp::LOAD)
+                .store_op(vk::AttachmentStoreOp::STORE);
+
+            let sky_render_area = vk::Rect2D {
+                offset: vk::Offset2D { x: 0, y: 0 },
+                extent: self.swapchain_extent,
+            };
+
+            let sky_rendering_info = vk::RenderingInfo::default()
+                .color_attachments(sky_rendering_attachments)
+                .depth_attachment(&sky_depth_attachment)
+                .render_area(sky_render_area)
+                .layer_count(1);
+
+            self.device
+                .cmd_begin_rendering(command_buffer, &sky_rendering_info);
+
+            self.device
+                .cmd_set_scissor(command_buffer, 0, &[sky_render_area]);
+
+            self.device.cmd_set_viewport(
+                command_buffer,
+                0,
+                &[vk::Viewport {
+                    x: 0.0,
+                    y: 0.0,
+                    width: sky_render_area.extent.width as f32,
+                    height: sky_render_area.extent.height as f32,
+                    min_depth: 0.0,
+                    max_depth: 1.0,
+                }],
+            );
+
+            self.device.cmd_bind_pipeline(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.skybox_graphics_pipeline,
+            );
+
+            let skybox_descriptor_sets = [
+                main_per_frame_descriptor_set,
+                self.textures[1].descriptor_set,
+            ];
+
+            self.device.cmd_bind_descriptor_sets(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline_layout,
+                0,
+                &skybox_descriptor_sets,
+                &[],
+            );
+
+            let vb = [self.mesh_buffers[0].vertex_buffer.0];
+            self.device
+                .cmd_bind_vertex_buffers(command_buffer, 0, &vb, &[0]);
+
+            self.device.cmd_bind_index_buffer(
+                command_buffer,
+                self.mesh_buffers[0].index_buffer.0,
+                0,
+                vk::IndexType::UINT16,
+            );
+
+            self.device.cmd_draw_indexed(
+                command_buffer,
+                self.mesh_buffers[0].index_count,
+                1,
+                0,
+                0,
+                0,
+            );
 
             self.device.cmd_end_rendering(command_buffer);
 
@@ -2094,6 +2234,114 @@ impl VulkanContext {
         graphics_pipeline
     }
 
+    fn create_sky_graphics_pipeline(
+        device: &ash::Device,
+        pipeline_layout: vk::PipelineLayout,
+        surface_format: vk::SurfaceFormatKHR,
+    ) -> vk::Pipeline {
+        let dynamic_states = &[vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
+
+        let dynamic_state_info =
+            vk::PipelineDynamicStateCreateInfo::default().dynamic_states(dynamic_states);
+
+        let viewports = &[vk::Viewport::default()];
+        let scissors = &[vk::Rect2D::default()];
+
+        let viewport_state_info = vk::PipelineViewportStateCreateInfo::default()
+            .viewports(viewports)
+            .scissors(scissors);
+
+        let vert_shader_code = fs::read("assets/skybox.vert.spv").unwrap();
+        let frag_shader_code = fs::read("assets/skybox.frag.spv").unwrap();
+
+        let vertex_shader = create_shader_module(device, &vert_shader_code);
+        let fragment_shader = create_shader_module(device, &frag_shader_code);
+
+        let vert_stage_info = vk::PipelineShaderStageCreateInfo::default()
+            .stage(vk::ShaderStageFlags::VERTEX)
+            .module(vertex_shader)
+            .name(c"main");
+
+        let frag_stage_info = vk::PipelineShaderStageCreateInfo::default()
+            .stage(vk::ShaderStageFlags::FRAGMENT)
+            .module(fragment_shader)
+            .name(c"main");
+
+        let shader_stages = &[vert_stage_info, frag_stage_info];
+
+        let vertex_attribute_descriptions = MeshVertex::get_attribute_descriptions();
+        let vertex_binding_descriptions = [MeshVertex::get_binding_description()];
+
+        let vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default()
+            .vertex_attribute_descriptions(&vertex_attribute_descriptions)
+            .vertex_binding_descriptions(&vertex_binding_descriptions);
+
+        let input_assembly_state_info = vk::PipelineInputAssemblyStateCreateInfo::default()
+            .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
+            .primitive_restart_enable(false);
+
+        let rasterization_info = vk::PipelineRasterizationStateCreateInfo::default()
+            .depth_clamp_enable(false)
+            .polygon_mode(vk::PolygonMode::FILL)
+            .line_width(1.0)
+            .cull_mode(vk::CullModeFlags::FRONT)
+            .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
+            .depth_bias_enable(false);
+
+        let multisample_info = vk::PipelineMultisampleStateCreateInfo::default()
+            .sample_shading_enable(false)
+            .rasterization_samples(vk::SampleCountFlags::TYPE_1);
+
+        let color_blend_attachment_states = &[vk::PipelineColorBlendAttachmentState::default()
+            .color_write_mask(vk::ColorComponentFlags::RGBA)
+            .blend_enable(true)
+            .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
+            .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+            .color_blend_op(vk::BlendOp::ADD)
+            .src_alpha_blend_factor(vk::BlendFactor::ONE)
+            .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
+            .alpha_blend_op(vk::BlendOp::ADD)];
+
+        let color_blender_state_info = vk::PipelineColorBlendStateCreateInfo::default()
+            .attachments(color_blend_attachment_states);
+
+        let depth_stencil_state_info = vk::PipelineDepthStencilStateCreateInfo::default()
+            .depth_test_enable(true)
+            .depth_write_enable(false)
+            .depth_compare_op(vk::CompareOp::GREATER);
+
+        let color_attachment_formats = [surface_format.format];
+        let mut rendering_create_info = vk::PipelineRenderingCreateInfo::default()
+            .color_attachment_formats(&color_attachment_formats)
+            .depth_attachment_format(vk::Format::D32_SFLOAT);
+
+        let graphics_pipeline_create_info = &[vk::GraphicsPipelineCreateInfo::default()
+            .stages(shader_stages)
+            .vertex_input_state(&vertex_input_state_info)
+            .input_assembly_state(&input_assembly_state_info)
+            .dynamic_state(&dynamic_state_info)
+            .viewport_state(&viewport_state_info)
+            .rasterization_state(&rasterization_info)
+            .multisample_state(&multisample_info)
+            .color_blend_state(&color_blender_state_info)
+            .layout(pipeline_layout)
+            .depth_stencil_state(&depth_stencil_state_info)
+            .subpass(0)
+            .push_next(&mut rendering_create_info)];
+
+        let graphics_pipeline = unsafe {
+            device
+                .create_graphics_pipelines(
+                    vk::PipelineCache::null(),
+                    graphics_pipeline_create_info,
+                    None,
+                )
+                .unwrap()[0]
+        };
+
+        graphics_pipeline
+    }
+
     fn create_shadow_graphics_pipeline(
         device: &ash::Device,
         pipeline_layout: vk::PipelineLayout,
@@ -2237,6 +2485,11 @@ impl VulkanContext {
                 .descriptor_count(1)
                 .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                 .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(3)
+                .descriptor_count(1)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
         ];
 
         let per_frame_layout_info =
@@ -2276,6 +2529,8 @@ impl VulkanContext {
         descriptor_pool: vk::DescriptorPool,
         per_frame_layout: vk::DescriptorSetLayout,
         window_extent: vk::Extent2D,
+        skybox_image_view: vk::ImageView,
+        skybox_sampler: vk::Sampler,
         queue_family_index: u32,
     ) -> Vec<RenderFrame> {
         let frames: Vec<RenderFrame> = (0..MAX_FRAMES)
@@ -2287,6 +2542,8 @@ impl VulkanContext {
                     descriptor_pool,
                     per_frame_layout,
                     window_extent,
+                    skybox_image_view,
+                    skybox_sampler,
                     queue_family_index,
                 )
             })
