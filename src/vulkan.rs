@@ -1890,87 +1890,18 @@ impl VulkanContext {
                 );
             }
 
-            self.device.cmd_end_rendering(command_buffer);
-
-            transition_image(
-                &self.device,
-                command_buffer,
-                depth_image.0,
-                vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                vk::ImageAspectFlags::DEPTH,
-            );
-
-            let sky_rendering_attachments = &[vk::RenderingAttachmentInfo::default()
-                .image_view(swapchain_image_view)
-                .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                .load_op(vk::AttachmentLoadOp::LOAD)
-                .store_op(vk::AttachmentStoreOp::STORE)
-                .clear_value(vk::ClearValue {
-                    color: vk::ClearColorValue {
-                        float32: [0.0, 0.0, 0.0, 1.0],
-                    },
-                })];
-
-            let sky_depth_attachment = vk::RenderingAttachmentInfo::default()
-                .image_view(depth_image_view)
-                .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-                .load_op(vk::AttachmentLoadOp::LOAD)
-                .store_op(vk::AttachmentStoreOp::STORE);
-
-            let sky_render_area = vk::Rect2D {
-                offset: vk::Offset2D { x: 0, y: 0 },
-                extent: self.swapchain_extent,
-            };
-
-            let sky_rendering_info = vk::RenderingInfo::default()
-                .color_attachments(sky_rendering_attachments)
-                .depth_attachment(&sky_depth_attachment)
-                .render_area(sky_render_area)
-                .layer_count(1);
-
-            self.device
-                .cmd_begin_rendering(command_buffer, &sky_rendering_info);
-
-            self.device
-                .cmd_set_scissor(command_buffer, 0, &[sky_render_area]);
-
-            self.device.cmd_set_viewport(
-                command_buffer,
-                0,
-                &[vk::Viewport {
-                    x: 0.0,
-                    y: 0.0,
-                    width: sky_render_area.extent.width as f32,
-                    height: sky_render_area.extent.height as f32,
-                    min_depth: 0.0,
-                    max_depth: 1.0,
-                }],
-            );
-
             self.device.cmd_bind_pipeline(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.skybox_graphics_pipeline,
             );
 
-            let skybox_descriptor_sets = [
-                main_per_frame_descriptor_set,
-                self.textures[1].descriptor_set,
-            ];
-
-            self.device.cmd_bind_descriptor_sets(
+            self.device.cmd_bind_vertex_buffers(
                 command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline_layout,
                 0,
-                &skybox_descriptor_sets,
-                &[],
+                &[self.mesh_buffers[0].vertex_buffer.0],
+                &[0],
             );
-
-            let vb = [self.mesh_buffers[0].vertex_buffer.0];
-            self.device
-                .cmd_bind_vertex_buffers(command_buffer, 0, &vb, &[0]);
 
             self.device.cmd_bind_index_buffer(
                 command_buffer,
