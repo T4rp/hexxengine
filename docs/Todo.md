@@ -1,9 +1,6 @@
 # Todo
 
 ## Doing
-- [ ] Shadow map
-    - [x] working
-    - [ ] based on camera position
 - [ ] material properties
     - [ ] albedo
     - [ ] specular power
@@ -15,6 +12,9 @@
 - [ ] descriptor indexing for textures
 
 ## Done
+- [x] Shadow map
+    - [x] working
+    - [x] based on camera position
 
 ## Wants
 - [ ] transparent rendering
