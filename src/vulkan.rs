@@ -1493,7 +1493,9 @@ impl VulkanContext {
 
         let (proj, view) = scene.camera.calc_perspective_matrices(aspect_ratio);
 
-        let corners = scene.camera.calc_frustrum_corners(aspect_ratio, 200.0);
+        let corners = scene
+            .camera
+            .calc_frustrum_corners(aspect_ratio, 30.0, 500.0);
         let mut frustrum_avg = Vec3::ZERO;
 
         for corner in corners.iter() {
@@ -1523,6 +1525,11 @@ impl VulkanContext {
             max = max.max(lsc);
         }
 
+        min.x -= 200.0;
+        max.x += 200.0;
+        min.y -= 200.0;
+        max.y += 200.0;
+
         let z_mult = 10.0;
 
         if min.z < 0.0 {
@@ -1535,30 +1542,6 @@ impl VulkanContext {
             max.z /= z_mult
         } else {
             max.z *= z_mult
-        }
-
-        if min.x < 0.0 {
-            min.x *= z_mult
-        } else {
-            min.x /= z_mult
-        }
-
-        if max.x < 0.0 {
-            max.x /= z_mult
-        } else {
-            max.x *= z_mult
-        }
-
-        if min.y < 0.0 {
-            min.y *= z_mult
-        } else {
-            min.y /= z_mult
-        }
-
-        if max.y < 0.0 {
-            max.y /= z_mult
-        } else {
-            max.y *= z_mult
         }
 
         let mut light_projection = Mat4::orthographic_rh(min.x, max.x, min.y, max.y, min.z, max.z);
