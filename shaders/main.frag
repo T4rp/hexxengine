@@ -43,7 +43,9 @@ void main() {
 	float closestDepth = texture(shadowMapText, shadowUv).r;
 	float currentDepth = shadowCoordNdc.z;
 
-	float shadow = currentDepth < closestDepth ? 1.0 : 0.0;
+	float bias = max(0.002 * (1.0 - dot(norm, lightDir)), 0.0005);
+
+	float shadow = currentDepth + bias < closestDepth ? 1.0 : 0.0;
 
 	vec3 diffuseColor = (texture(text, uv) * vec4(inColor, 1.0)).xyz;
 

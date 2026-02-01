@@ -4,14 +4,14 @@ use std::io::Cursor;
 use std::{array, ffi, fs, mem, ptr};
 
 use ash::vk::{self};
-use glam::{Mat4, Quat, Vec2, Vec3, vec4};
+use glam::{Mat3, Mat4, Quat, Vec2, Vec3, vec4};
 use image::{EncodableLayout, GenericImage};
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
 
 use crate::mesh::{CameraUniform, InstanceVertex, MeshVertex, SceneUniform};
-use crate::scene::{MeshNode, RenderScene};
+use crate::scene::{Camera, MeshNode, RenderScene};
 
 const USE_VALIDATION_LAYERS: bool = true;
 const MAX_FRAMES: usize = 2;
@@ -1493,20 +1493,75 @@ impl VulkanContext {
 
         let (proj, view) = scene.camera.calc_perspective_matrices(aspect_ratio);
 
+        let corners = scene.camera.calc_frustrum_corners(aspect_ratio, 200.0);
+        let mut frustrum_avg = Vec3::ZERO;
+
+        for corner in corners.iter() {
+            frustrum_avg += corner
+        }
+
+        frustrum_avg /= 8.0;
+
         let lighting = &scene.lighting;
         let camera_position = scene.camera.position;
 
-        let light_translation = -lighting.sun_direction * 500.0;
+        let light_translation = lighting.sun_direction + frustrum_avg;
 
-        let light_rotation = Quat::look_at_rh(light_translation, Vec3::ZERO, Vec3::Y).inverse();
+        let light_rotation = Quat::look_at_rh(light_translation, frustrum_avg, Vec3::Y).inverse();
 
         let light_view =
             Mat4::from_rotation_translation(light_rotation, light_translation).inverse();
 
-        let res_half = SHADOW_MAP_RESOLUTION as f32 / 2.0;
+        let light_view_mat3 = Mat3::from_mat4(light_view);
 
-        let mut light_projection =
-            Mat4::orthographic_rh(-res_half, res_half, res_half, -res_half, 1000.0, 1.0);
+        let mut min = Vec3::splat(0.0);
+        let mut max = Vec3::splat(0.0);
+
+        for corner in corners.iter() {
+            let lsc = light_view_mat3 * corner;
+            min = min.min(lsc);
+            max = max.max(lsc);
+        }
+
+        let z_mult = 10.0;
+
+        if min.z < 0.0 {
+            min.z *= z_mult
+        } else {
+            min.z /= z_mult
+        }
+
+        if max.z < 0.0 {
+            max.z /= z_mult
+        } else {
+            max.z *= z_mult
+        }
+
+        if min.x < 0.0 {
+            min.x *= z_mult
+        } else {
+            min.x /= z_mult
+        }
+
+        if max.x < 0.0 {
+            max.x /= z_mult
+        } else {
+            max.x *= z_mult
+        }
+
+        if min.y < 0.0 {
+            min.y *= z_mult
+        } else {
+            min.y /= z_mult
+        }
+
+        if max.y < 0.0 {
+            max.y /= z_mult
+        } else {
+            max.y *= z_mult
+        }
+
+        let mut light_projection = Mat4::orthographic_rh(min.x, max.x, min.y, max.y, min.z, max.z);
         light_projection.y_axis *= vec4(1.0, -1.0, 1.0, 1.0);
 
         let mut camera_ubo = CameraUniform {
