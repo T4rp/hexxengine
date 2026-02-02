@@ -6,7 +6,7 @@ mod vulkan;
 
 use std::time::Instant;
 
-use glam::{EulerRot, Quat, Vec3, vec3};
+use glam::{EulerRot, Quat, Vec2, Vec3, vec3};
 use rand::{Rng, SeedableRng, rngs::SmallRng};
 use winit::{
     application::ApplicationHandler,
@@ -22,6 +22,7 @@ use vulkan::VulkanContext;
 use crate::{
     color::hsv_to_rgb,
     input::InputState,
+    mesh::MeshVertex,
     scene::{Camera, Lighting, MeshNode, RenderScene},
 };
 
@@ -34,6 +35,50 @@ struct App {
     last_frame: Instant,
     start_time: Instant,
     input_state: InputState,
+}
+
+fn process_gltf_mesh(filename: &str) -> (Vec<MeshVertex>, Vec<u16>) {
+    let (gltf, buffers, images) = gltf::import(filename).unwrap();
+
+    let mesh = gltf
+        .default_scene()
+        .unwrap()
+        .nodes()
+        .next()
+        .unwrap()
+        .mesh()
+        .unwrap();
+
+    let mut mesh_vertices = Vec::new();
+    let mut mesh_indices = Vec::new();
+
+    let prim = mesh.primitives().next().unwrap();
+    let reader = prim.reader(|b| Some(&buffers[b.index()]));
+
+    let mut positions = reader.read_positions().unwrap();
+    let mut normals = reader.read_normals().unwrap();
+    let mut uvs = reader.read_tex_coords(0).unwrap().into_f32();
+    let indices = reader.read_indices().unwrap().into_u32();
+
+    let v_count = positions.len();
+
+    for _ in 0..v_count {
+        let position = positions.next().unwrap();
+        let normal = normals.next().unwrap();
+        let uv = uvs.next().unwrap();
+
+        mesh_vertices.push(MeshVertex {
+            pos: Vec3::from_slice(&position),
+            norm: Vec3::from_slice(&normal),
+            uv: Vec2::from_slice(&uv),
+        });
+    }
+
+    for index in indices {
+        mesh_indices.push(index as u16);
+    }
+
+    (mesh_vertices, mesh_indices)
 }
 
 impl App {
@@ -102,6 +147,16 @@ impl App {
         }
     }
 
+    pub fn init_vk(&mut self) {
+        let vk_ctx = self.vk_ctx.as_mut().unwrap();
+
+        let cube_mesh = process_gltf_mesh("./assets/cube.gltf");
+        let sphere_mesh = process_gltf_mesh("./assets/sphere.gltf");
+
+        vk_ctx.load_mesh(&cube_mesh.0, &cube_mesh.1);
+        vk_ctx.load_mesh(&sphere_mesh.0, &sphere_mesh.1);
+    }
+
     pub fn update(&mut self) {
         let now = Instant::now();
         let dt = (now - self.last_frame).as_secs_f32();
@@ -160,6 +215,8 @@ impl ApplicationHandler for App {
 
         self.window = Some(window);
         self.vk_ctx = Some(vk_ctx);
+
+        self.init_vk();
     }
 
     fn window_event(

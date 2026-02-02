@@ -684,63 +684,6 @@ impl MeshBuffer {
         }
     }
 
-    fn from_file(
-        device: &ash::Device,
-        allocator: &vk_mem::Allocator,
-        queue: vk::Queue,
-        command_pool: vk::CommandPool,
-        filename: &str,
-    ) -> Self {
-        let (gltf, buffers, images) = gltf::import(filename).unwrap();
-
-        let mesh = gltf
-            .default_scene()
-            .unwrap()
-            .nodes()
-            .next()
-            .unwrap()
-            .mesh()
-            .unwrap();
-
-        let mut mesh_vertices = Vec::new();
-        let mut mesh_indices = Vec::new();
-
-        let prim = mesh.primitives().next().unwrap();
-        let reader = prim.reader(|b| Some(&buffers[b.index()]));
-
-        let mut positions = reader.read_positions().unwrap();
-        let mut normals = reader.read_normals().unwrap();
-        let mut uvs = reader.read_tex_coords(0).unwrap().into_f32();
-        let indices = reader.read_indices().unwrap().into_u32();
-
-        let v_count = positions.len();
-
-        for _ in 0..v_count {
-            let position = positions.next().unwrap();
-            let normal = normals.next().unwrap();
-            let uv = uvs.next().unwrap();
-
-            mesh_vertices.push(MeshVertex {
-                pos: Vec3::from_slice(&position),
-                norm: Vec3::from_slice(&normal),
-                uv: Vec2::from_slice(&uv),
-            });
-        }
-
-        for index in indices {
-            mesh_indices.push(index as u16)
-        }
-
-        Self::allocate_mesh(
-            device,
-            allocator,
-            queue,
-            command_pool,
-            &mesh_vertices,
-            &mesh_indices,
-        )
-    }
-
     fn destroy(&mut self, allocator: &vk_mem::Allocator) {
         unsafe {
             allocator.destroy_buffer(self.vertex_buffer.0, &mut self.vertex_buffer.1);
@@ -1532,23 +1475,7 @@ impl VulkanContext {
             &[255, 255, 255, 255],
         );
 
-        let mut mesh_buffers = Vec::new();
-
-        mesh_buffers.push(MeshBuffer::from_file(
-            &device,
-            &allocator,
-            graphics_queue,
-            command_pool,
-            "./assets/cube.gltf",
-        ));
-
-        mesh_buffers.push(MeshBuffer::from_file(
-            &device,
-            &allocator,
-            graphics_queue,
-            command_pool,
-            "./assets/sphere.gltf",
-        ));
+        let mesh_buffers = Vec::new();
 
         let mut textures = Vec::new();
 
@@ -2181,6 +2108,21 @@ impl VulkanContext {
                 swapchain_extent,
             );
         }
+    }
+
+    pub fn load_mesh(&mut self, vertices: &[MeshVertex], indices: &[u16]) -> usize {
+        let mesh = MeshBuffer::allocate_mesh(
+            &self.device,
+            &self.allocator,
+            self.graphics_queue,
+            self.command_pool,
+            vertices,
+            indices,
+        );
+
+        self.mesh_buffers.push(mesh);
+
+        self.mesh_buffers.len() - 1
     }
 
     fn create_pipeline_layout(
