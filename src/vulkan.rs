@@ -1638,7 +1638,7 @@ impl VulkanContext {
         meshes: &[MeshNode],
     ) -> Vec<MeshBatch> {
         let mut meshes = meshes.to_owned();
-        meshes.sort_by_key(|m| (m.material_id, m.mesh_id));
+        meshes.sort_unstable_by_key(|m| (m.material_id, m.mesh_id));
 
         let mesh_count = meshes.len();
 
