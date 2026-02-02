@@ -1,17 +1,16 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::io::Cursor;
 use std::{array, ffi, fs, mem, ptr};
 
-use ash::vk::{self};
-use glam::{Mat3, Mat4, Quat, Vec2, Vec3, vec4};
+use ash::vk;
+use glam::{Mat3, Mat4, Quat, Vec3, vec4};
 use image::{EncodableLayout, GenericImage};
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
 
 use crate::mesh::{CameraUniform, InstanceVertex, MeshVertex, SceneUniform};
-use crate::scene::{Camera, MeshNode, RenderScene};
+use crate::scene::{MeshNode, RenderScene};
 
 const USE_VALIDATION_LAYERS: bool = true;
 const MAX_FRAMES: usize = 2;
@@ -1638,36 +1637,52 @@ impl VulkanContext {
         instance_buffer: &(vk::Buffer, vk_mem::Allocation),
         meshes: &[MeshNode],
     ) -> Vec<MeshBatch> {
-        let mut batches: HashMap<u32, Vec<&MeshNode>> = HashMap::new();
+        let mut meshes = meshes.to_owned();
+        meshes.sort_by_key(|m| (m.material_id, m.mesh_id));
 
-        for mesh in meshes.iter() {
-            let batch = batches.entry(mesh.mesh_id).or_insert(Vec::new());
-            batch.push(mesh);
-        }
+        let mesh_count = meshes.len();
 
         let mut instances: Vec<InstanceVertex> = Vec::new();
         let mut batch_infos: Vec<MeshBatch> = Vec::new();
-        let mut start_index = 0;
 
-        for (mesh_id, mesh_nodes) in batches.into_iter() {
-            let mesh_count = mesh_nodes.len();
+        let mut start = 0;
+        while start < mesh_count {
+            let key = (meshes[start].material_id, meshes[start].mesh_id);
 
-            let batch_info = MeshBatch {
-                mesh_id: mesh_id,
-                material_id: 0,
-                instance_offset: start_index as u64 * mem::size_of::<InstanceVertex>() as u64,
-                instance_count: mesh_count,
-            };
-
-            batch_infos.push(batch_info);
-
-            start_index += mesh_count;
-
-            for node in mesh_nodes {
-                let instance =
-                    InstanceVertex::new(node.position, node.orientation, node.size, node.color);
-                instances.push(instance)
+            {
+                let mesh = &meshes[start];
+                instances.push(InstanceVertex::new(
+                    mesh.position,
+                    mesh.orientation,
+                    mesh.size,
+                    mesh.color,
+                ));
             }
+
+            let mut end = start + 1;
+
+            while end < mesh_count && (meshes[end].material_id, meshes[end].mesh_id) == key {
+                {
+                    let mesh = &meshes[end];
+                    instances.push(InstanceVertex::new(
+                        mesh.position,
+                        mesh.orientation,
+                        mesh.size,
+                        mesh.color,
+                    ));
+                }
+
+                end += 1;
+            }
+
+            batch_infos.push(MeshBatch {
+                mesh_id: key.1,
+                material_id: key.0,
+                instance_offset: start as u64 * mem::size_of::<InstanceVertex>() as u64,
+                instance_count: end - start,
+            });
+
+            start = end;
         }
 
         let alloc_info = self.allocator.get_allocation_info(&instance_buffer.1);
@@ -1933,7 +1948,7 @@ impl VulkanContext {
 
             let main_descriptor_sets = [
                 main_per_frame_descriptor_set,
-                self.textures[1].descriptor_set,
+                self.textures[0].descriptor_set,
             ];
 
             self.device.cmd_bind_descriptor_sets(
@@ -1945,7 +1960,25 @@ impl VulkanContext {
                 &[],
             );
 
+            let mut last_material = None;
+
             for batch in batch_info.iter() {
+                if last_material.map_or(true, |material_id| material_id != batch.material_id) {
+                    last_material = Some(batch.material_id);
+
+                    let descriptor_sets =
+                        [self.textures[batch.material_id as usize].descriptor_set];
+
+                    self.device.cmd_bind_descriptor_sets(
+                        command_buffer,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        self.pipeline_layout,
+                        1,
+                        &descriptor_sets,
+                        &[],
+                    );
+                }
+
                 self.device.cmd_bind_vertex_buffers(
                     command_buffer,
                     0,

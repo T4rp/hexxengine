@@ -10,8 +10,7 @@ use glam::{EulerRot, Quat, Vec2, Vec3, vec3};
 use rand::{Rng, SeedableRng, rngs::SmallRng};
 use winit::{
     application::ApplicationHandler,
-    dpi::PhysicalPosition,
-    event::{ElementState, KeyEvent, MouseButton, WindowEvent},
+    event::WindowEvent,
     event_loop::{ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowAttributes},
@@ -110,7 +109,7 @@ impl App {
             size: vec3(512.0, 50.0, 512.0),
             color: vec3(0.8, 0.8, 0.8),
             mesh_id: 0,
-            material_id: 0,
+            material_id: 1,
         });
 
         for _ in 0..200 {
@@ -129,7 +128,7 @@ impl App {
                 size: vec3(4.0, 4.0, 4.0) * rng.random_range(1.0..5.0),
                 color: hsv_to_rgb(rng.random::<f32>() * 360.0, 0.8, 1.0),
                 mesh_id: rng.random_range(0..=1),
-                material_id: 0,
+                material_id: rng.random_range(0..=1),
             };
 
             scene.meshes.push(instance);

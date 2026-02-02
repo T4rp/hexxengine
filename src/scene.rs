@@ -64,6 +64,7 @@ pub struct Lighting {
     pub ambient_color: Vec3,
 }
 
+#[derive(Clone)]
 pub struct MeshNode {
     pub position: Vec3,
     pub orientation: Quat,

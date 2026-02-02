@@ -1,7 +1,7 @@
 use std::mem;
 
 use ash::vk;
-use glam::{Mat3, Mat4, Quat, Vec2, Vec3, Vec4, vec4};
+use glam::{Mat3, Mat4, Quat, Vec2, Vec3, Vec4};
 
 #[derive(Clone, Copy)]
 #[repr(C)]
