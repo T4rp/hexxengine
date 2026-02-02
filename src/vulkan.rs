@@ -537,39 +537,74 @@ struct MeshBuffer {
 
 impl MeshBuffer {
     fn allocate_mesh(
+        device: &ash::Device,
         allocator: &vk_mem::Allocator,
+        queue: vk::Queue,
+        command_pool: vk::CommandPool,
         vertices: &[MeshVertex],
         indicies: &[u16],
     ) -> Self {
-        let vertex_buffer_info = vk::BufferCreateInfo::default()
-            .size((mem::size_of::<MeshVertex>() * vertices.len()) as u64)
-            .usage(vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
-
-        let index_buffer_info = vk::BufferCreateInfo::default()
-            .size((mem::size_of::<u16>() * indicies.len()) as u64)
-            .usage(vk::BufferUsageFlags::INDEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
+        let vb_size = (mem::size_of::<MeshVertex>() * vertices.len()) as u64;
+        let ib_size = (mem::size_of::<u16>() * indicies.len()) as u64;
 
         let alloc_info = vk_mem::AllocationCreateInfo {
             usage: vk_mem::MemoryUsage::AutoPreferHost,
-            flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE
-                | vk_mem::AllocationCreateFlags::MAPPED,
             ..Default::default()
         };
 
         let vertex_buffer = unsafe {
             allocator
-                .create_buffer(&vertex_buffer_info, &alloc_info)
+                .create_buffer(
+                    &vk::BufferCreateInfo::default().size(vb_size).usage(
+                        vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST,
+                    ),
+                    &alloc_info,
+                )
                 .unwrap()
         };
 
         let index_buffer = unsafe {
             allocator
-                .create_buffer(&index_buffer_info, &alloc_info)
+                .create_buffer(
+                    &vk::BufferCreateInfo::default().size(ib_size).usage(
+                        vk::BufferUsageFlags::INDEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST,
+                    ),
+                    &alloc_info,
+                )
                 .unwrap()
         };
 
-        let vertex_alloc_info = allocator.get_allocation_info(&vertex_buffer.1);
-        let index_alloc_info = allocator.get_allocation_info(&index_buffer.1);
+        let staging_alloc_info = vk_mem::AllocationCreateInfo {
+            usage: vk_mem::MemoryUsage::Auto,
+            flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE
+                | vk_mem::AllocationCreateFlags::MAPPED,
+            ..Default::default()
+        };
+
+        let mut vertex_staging_buffer = unsafe {
+            allocator
+                .create_buffer(
+                    &vk::BufferCreateInfo::default()
+                        .usage(vk::BufferUsageFlags::TRANSFER_SRC)
+                        .size(vb_size),
+                    &staging_alloc_info,
+                )
+                .unwrap()
+        };
+
+        let mut index_staging_buffer = unsafe {
+            allocator
+                .create_buffer(
+                    &vk::BufferCreateInfo::default()
+                        .usage(vk::BufferUsageFlags::TRANSFER_SRC)
+                        .size(ib_size),
+                    &staging_alloc_info,
+                )
+                .unwrap()
+        };
+
+        let vertex_alloc_info = allocator.get_allocation_info(&vertex_staging_buffer.1);
+        let index_alloc_info = allocator.get_allocation_info(&index_staging_buffer.1);
 
         unsafe {
             std::ptr::copy_nonoverlapping(
@@ -585,6 +620,63 @@ impl MeshBuffer {
             );
         }
 
+        let command_buffer_info = vk::CommandBufferAllocateInfo::default()
+            .command_pool(command_pool)
+            .level(vk::CommandBufferLevel::PRIMARY)
+            .command_buffer_count(1);
+
+        let command_buffers = unsafe {
+            device
+                .allocate_command_buffers(&command_buffer_info)
+                .unwrap()
+        };
+
+        let command_buffer = command_buffers[0];
+
+        let being_info = vk::CommandBufferBeginInfo::default()
+            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+
+        unsafe {
+            device
+                .begin_command_buffer(command_buffer, &being_info)
+                .unwrap();
+
+            device.cmd_copy_buffer(
+                command_buffer,
+                vertex_staging_buffer.0,
+                vertex_buffer.0,
+                &[vk::BufferCopy::default()
+                    .src_offset(0)
+                    .dst_offset(0)
+                    .size(vb_size)],
+            );
+
+            device.cmd_copy_buffer(
+                command_buffer,
+                index_staging_buffer.0,
+                index_buffer.0,
+                &[vk::BufferCopy::default()
+                    .src_offset(0)
+                    .dst_offset(0)
+                    .size(ib_size)],
+            );
+
+            device.end_command_buffer(command_buffer).unwrap();
+
+            device
+                .queue_submit(
+                    queue,
+                    &[vk::SubmitInfo::default().command_buffers(&command_buffers)],
+                    vk::Fence::null(),
+                )
+                .unwrap();
+
+            device.queue_wait_idle(queue).unwrap();
+
+            allocator.destroy_buffer(index_staging_buffer.0, &mut index_staging_buffer.1);
+            allocator.destroy_buffer(vertex_staging_buffer.0, &mut vertex_staging_buffer.1);
+        };
+
         Self {
             vertex_buffer,
             index_buffer,
@@ -592,7 +684,13 @@ impl MeshBuffer {
         }
     }
 
-    fn from_file(allocator: &vk_mem::Allocator, filename: &str) -> Self {
+    fn from_file(
+        device: &ash::Device,
+        allocator: &vk_mem::Allocator,
+        queue: vk::Queue,
+        command_pool: vk::CommandPool,
+        filename: &str,
+    ) -> Self {
         let (gltf, buffers, images) = gltf::import(filename).unwrap();
 
         let mesh = gltf
@@ -604,7 +702,7 @@ impl MeshBuffer {
             .mesh()
             .unwrap();
 
-        let mut mesh_vertiecs = Vec::new();
+        let mut mesh_vertices = Vec::new();
         let mut mesh_indices = Vec::new();
 
         let prim = mesh.primitives().next().unwrap();
@@ -622,7 +720,7 @@ impl MeshBuffer {
             let normal = normals.next().unwrap();
             let uv = uvs.next().unwrap();
 
-            mesh_vertiecs.push(MeshVertex {
+            mesh_vertices.push(MeshVertex {
                 pos: Vec3::from_slice(&position),
                 norm: Vec3::from_slice(&normal),
                 uv: Vec2::from_slice(&uv),
@@ -633,7 +731,14 @@ impl MeshBuffer {
             mesh_indices.push(index as u16)
         }
 
-        Self::allocate_mesh(allocator, &mesh_vertiecs, &mesh_indices)
+        Self::allocate_mesh(
+            device,
+            allocator,
+            queue,
+            command_pool,
+            &mesh_vertices,
+            &mesh_indices,
+        )
     }
 
     fn destroy(&mut self, allocator: &vk_mem::Allocator) {
@@ -1429,8 +1534,21 @@ impl VulkanContext {
 
         let mut mesh_buffers = Vec::new();
 
-        mesh_buffers.push(MeshBuffer::from_file(&allocator, "./assets/cube.gltf"));
-        mesh_buffers.push(MeshBuffer::from_file(&allocator, "./assets/sphere.gltf"));
+        mesh_buffers.push(MeshBuffer::from_file(
+            &device,
+            &allocator,
+            graphics_queue,
+            command_pool,
+            "./assets/cube.gltf",
+        ));
+
+        mesh_buffers.push(MeshBuffer::from_file(
+            &device,
+            &allocator,
+            graphics_queue,
+            command_pool,
+            "./assets/sphere.gltf",
+        ));
 
         let mut textures = Vec::new();
 
