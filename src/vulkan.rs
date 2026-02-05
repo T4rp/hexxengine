@@ -2143,7 +2143,7 @@ impl VulkanContext {
         }
     }
 
-    pub fn load_mesh(&mut self, vertices: &[MeshVertex], indices: &[u16]) -> usize {
+    pub fn load_mesh(&mut self, vertices: &[MeshVertex], indices: &[u16]) -> u32 {
         let mesh = MeshBuffer::allocate_mesh(
             &self.device,
             &self.allocator,
@@ -2155,7 +2155,31 @@ impl VulkanContext {
 
         self.mesh_buffers.push(mesh);
 
-        self.mesh_buffers.len() - 1
+        (self.mesh_buffers.len() - 1) as u32
+    }
+
+    pub fn load_rgba_texture(&mut self, width: u32, height: u32, data: &[u8]) -> u32 {
+        let (image, image_view) = create_image_from_rgba(
+            &self.device,
+            &self.allocator,
+            self.graphics_queue,
+            self.command_pool,
+            width,
+            height,
+            data,
+        );
+
+        let texture = Texture::create_texture(
+            &self.device,
+            &self.descriptor_set_layouts,
+            self.descriptor_pool,
+            image,
+            image_view,
+        );
+
+        self.textures.push(texture);
+
+        (self.textures.len() - 1) as u32
     }
 
     fn create_pipeline_layout(
