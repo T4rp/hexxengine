@@ -54,7 +54,7 @@ unsafe extern "system" fn debug_messager_callback(
     }
 }
 
-struct PerFrameDescriptorData {
+struct GlobalDescriptors {
     camera_buffer: (vk::Buffer, vk_mem::Allocation),
     scene_buffer: (vk::Buffer, vk_mem::Allocation),
     main_pass_descriptor_set: vk::DescriptorSet,
@@ -62,7 +62,7 @@ struct PerFrameDescriptorData {
     shadow_map_sampler: vk::Sampler,
 }
 
-impl PerFrameDescriptorData {
+impl GlobalDescriptors {
     fn new(
         device: &ash::Device,
         allocator: &vk_mem::Allocator,
@@ -196,7 +196,7 @@ impl PerFrameDescriptorData {
 
         unsafe { device.update_descriptor_sets(&descriptor_write, &[]) };
 
-        PerFrameDescriptorData {
+        GlobalDescriptors {
             camera_buffer,
             scene_buffer,
             main_pass_descriptor_set,
@@ -216,7 +216,7 @@ struct RenderFrame {
     command_buffer: vk::CommandBuffer,
     swapchain_semaphore: vk::Semaphore,
     in_flight_fence: vk::Fence,
-    per_frame_descriptor_data: PerFrameDescriptorData,
+    per_frame_descriptor_data: GlobalDescriptors,
     depth_image_view: vk::ImageView,
     depth_image: (vk::Image, vk_mem::Allocation),
     instance_buffer: (vk::Buffer, vk_mem::Allocation),
@@ -284,7 +284,7 @@ impl RenderFrame {
             vk::ImageUsageFlags::SAMPLED,
         );
 
-        let per_frame_descriptor_data = PerFrameDescriptorData::new(
+        let per_frame_descriptor_data = GlobalDescriptors::new(
             device,
             allocator,
             descriptor_pool,
@@ -462,14 +462,14 @@ struct DescriptorSetLayouts {
     per_material_layout: vk::DescriptorSetLayout,
 }
 
-struct Texture {
+struct TextureDescriptors {
     image: (vk::Image, vk_mem::Allocation),
     image_view: vk::ImageView,
     sampler: vk::Sampler,
     descriptor_set: vk::DescriptorSet,
 }
 
-impl Texture {
+impl TextureDescriptors {
     fn create_texture(
         device: &ash::Device,
         descriptor_set_layouts: &DescriptorSetLayouts,
@@ -723,7 +723,7 @@ pub struct VulkanContext {
     main_graphics_pipeline: vk::Pipeline,
     shadow_graphics_pipeline: vk::Pipeline,
     mesh_buffers: Vec<MeshBuffer>,
-    textures: Vec<Texture>,
+    textures: Vec<TextureDescriptors>,
     cubemap_image: (vk::Image, vk_mem::Allocation),
     skybox_graphics_pipeline: vk::Pipeline,
 }
@@ -1478,7 +1478,7 @@ impl VulkanContext {
 
         let mut textures = Vec::new();
 
-        let fallback_texture = Texture::create_texture(
+        let fallback_texture = TextureDescriptors::create_texture(
             &device,
             &descriptor_set_layouts,
             descriptor_pool,
@@ -1486,7 +1486,7 @@ impl VulkanContext {
             fallback_image.1,
         );
 
-        let white_texture = Texture::create_texture(
+        let white_texture = TextureDescriptors::create_texture(
             &device,
             &descriptor_set_layouts,
             descriptor_pool,
@@ -1717,7 +1717,6 @@ impl VulkanContext {
         let shadow_per_frame_descriptor_set = current_frame
             .per_frame_descriptor_data
             .shadow_pass_descriptor_set;
-        let depth_image = current_frame.depth_image;
         let depth_image_view = current_frame.depth_image_view;
         let shadow_image = current_frame.shadow_map;
         let shadow_image_view = current_frame.shadow_map_view;
@@ -2169,7 +2168,7 @@ impl VulkanContext {
             data,
         );
 
-        let texture = Texture::create_texture(
+        let texture = TextureDescriptors::create_texture(
             &self.device,
             &self.descriptor_set_layouts,
             self.descriptor_pool,
