@@ -167,3 +167,10 @@ pub struct SceneUniform {
     pub sun_color: Vec4,
     pub ambient_color: Vec4,
 }
+
+#[repr(C)]
+pub struct MaterialUniform {
+    uv_scale: Vec2,
+    shininess: f32,
+    flags: u32,
+}

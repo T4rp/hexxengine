@@ -458,8 +458,9 @@ impl RenderFrame {
 }
 
 struct DescriptorSetLayouts {
-    per_frame_layout: vk::DescriptorSetLayout,
-    per_material_layout: vk::DescriptorSetLayout,
+    global_layout: vk::DescriptorSetLayout,
+    texture_layout: vk::DescriptorSetLayout,
+    material_layout: vk::DescriptorSetLayout,
 }
 
 struct TextureDescriptors {
@@ -477,7 +478,7 @@ impl TextureDescriptors {
         image: (vk::Image, vk_mem::Allocation),
         image_view: vk::ImageView,
     ) -> Self {
-        let layouts = &[descriptor_set_layouts.per_material_layout];
+        let layouts = &[descriptor_set_layouts.texture_layout];
 
         let descriptor_alloc_info = vk::DescriptorSetAllocateInfo::default()
             .descriptor_pool(descriptor_pool)
@@ -1429,7 +1430,7 @@ impl VulkanContext {
             &allocator,
             graphics_queue,
             descriptor_pool,
-            descriptor_set_layouts.per_frame_layout,
+            descriptor_set_layouts.global_layout,
             swapchain_extent,
             cubemap_image_view,
             cubemap_sampler,
@@ -2186,8 +2187,9 @@ impl VulkanContext {
         descriptor_set_layouts: &DescriptorSetLayouts,
     ) -> vk::PipelineLayout {
         let layouts = &[
-            descriptor_set_layouts.per_frame_layout,
-            descriptor_set_layouts.per_material_layout,
+            descriptor_set_layouts.global_layout,
+            descriptor_set_layouts.texture_layout,
+            descriptor_set_layouts.material_layout,
         ];
 
         let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default().set_layouts(layouts);
@@ -2554,7 +2556,7 @@ impl VulkanContext {
     }
 
     fn create_descriptor_layouts(device: &ash::Device) -> DescriptorSetLayouts {
-        let per_frame_bindings = [
+        let global_bindings = [
             vk::DescriptorSetLayoutBinding::default()
                 .binding(0)
                 .descriptor_count(1)
@@ -2577,33 +2579,48 @@ impl VulkanContext {
                 .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
         ];
 
-        let per_frame_layout_info =
-            vk::DescriptorSetLayoutCreateInfo::default().bindings(&per_frame_bindings);
+        let global_layout_info =
+            vk::DescriptorSetLayoutCreateInfo::default().bindings(&global_bindings);
 
-        let per_material_bindings = [vk::DescriptorSetLayoutBinding::default()
+        let global_layout = unsafe {
+            device
+                .create_descriptor_set_layout(&global_layout_info, None)
+                .unwrap()
+        };
+
+        let texture_bindings = [vk::DescriptorSetLayoutBinding::default()
             .binding(0)
             .descriptor_count(1)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)];
 
-        let per_material_layout_info =
-            vk::DescriptorSetLayoutCreateInfo::default().bindings(&per_material_bindings);
+        let texture_layout_info =
+            vk::DescriptorSetLayoutCreateInfo::default().bindings(&texture_bindings);
 
-        let per_frame_layout = unsafe {
+        let texture_layout = unsafe {
             device
-                .create_descriptor_set_layout(&per_frame_layout_info, None)
+                .create_descriptor_set_layout(&texture_layout_info, None)
                 .unwrap()
         };
 
-        let per_material_layout = unsafe {
+        let material_bindings = [vk::DescriptorSetLayoutBinding::default()
+            .binding(0)
+            .descriptor_count(1)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)];
+
+        let material_layout_info =
+            vk::DescriptorSetLayoutCreateInfo::default().bindings(&material_bindings);
+
+        let material_layout = unsafe {
             device
-                .create_descriptor_set_layout(&per_material_layout_info, None)
+                .create_descriptor_set_layout(&material_layout_info, None)
                 .unwrap()
         };
 
         DescriptorSetLayouts {
-            per_frame_layout,
-            per_material_layout,
+            global_layout,
+            texture_layout,
+            material_layout,
         }
     }
 

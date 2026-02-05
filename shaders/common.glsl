@@ -18,5 +18,11 @@ layout (set = 0, binding = 3) uniform samplerCube cubemapText;
 
 layout (set = 1, binding = 0) uniform sampler2D text;
 
+layout(set = 2, binding = 0) uniform MaterialUniform {
+	vec2 uvScale;
+	float shininess;
+	int flags;
+} materialUbo;
+
 #define SHINE 32
 
