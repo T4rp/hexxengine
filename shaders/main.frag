@@ -12,6 +12,46 @@ layout (location = 6) in vec4 inPosLightSpace;
 
 layout (location = 0) out vec4 outFragColor;
 
+float getShadow(vec4 shadowCoord, vec2 off) {
+	float shadow = 1.0;
+	vec4 shadowCoordNdc = shadowCoord / shadowCoord.w;
+
+	if (shadowCoordNdc.z > -1.0 && shadowCoordNdc.z < 1.0) {
+		vec2 shadowUv = shadowCoordNdc.xy;
+		shadowUv = shadowUv * 0.5 + 0.5;
+
+		float closestDepth = texture(shadowMapText, shadowUv + off).r;
+		float currentDepth = shadowCoordNdc.z;
+
+		if (shadowCoordNdc.w > 0.0 && currentDepth > closestDepth) {
+			shadow = 0.0;
+		}
+	}
+
+	return shadow;
+}
+
+float shadowFilterPcf(vec4 shadowCoord) {
+	ivec2 texDim = textureSize(shadowMapText, 0);
+	float scale = 1.0;
+	float dx = scale * 1.0 / float(texDim.x);
+	float dy = scale * 1.0 / float(texDim.y);
+
+	float shadowFactor = 0.0;
+	int count = 0;
+	int range = 1;
+
+	for (int x = -range; x <= range; x++) {
+		for (int y = -range; y <= range; y++) {
+			shadowFactor += getShadow(shadowCoord, vec2(dx*x, dy*y));
+			count++;
+		}
+	
+	}
+
+	return shadowFactor / count;
+}
+
 void main() {
 	vec2 uv;
 
@@ -35,15 +75,7 @@ void main() {
 
 	float specular = pow(max(dot(halfDir, norm), 0.0), SHINE);
 
-	vec3 shadowCoordNdc = inPosLightSpace.xyz / inPosLightSpace.w;
-	vec2 shadowUv = shadowCoordNdc.xy;
-	shadowUv = shadowUv * 0.5 + 0.5;
-	// shadowUv.x = 1.0 - shadowUv.x;
-	// shadowUv.y = 1.0 - shadowUv.y;
-	float closestDepth = texture(shadowMapText, shadowUv).r;
-	float currentDepth = shadowCoordNdc.z;
-
-	float shadow = currentDepth < closestDepth ? 1.0 : 0.0;
+	float shadow = shadowFilterPcf(inPosLightSpace);
 
 	vec3 diffuseColor = (texture(text, uv) * vec4(inColor, 1.0)).xyz;
 
