@@ -16,6 +16,7 @@ mat4 transform = mat4(
 );
 
 void main() {
-	gl_Position = cameraUbo.proj * cameraUbo.view * transform * vec4(inPos, 1.0f);
-	outPos = vec3(transform * vec4(inPos, 1.0f));
+    mat4 view = mat4(mat3(cameraUbo.view));
+	gl_Position = cameraUbo.proj * view * transform * vec4(inPos, 1.0f);
+	outPos = inPos;
 }
