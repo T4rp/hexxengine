@@ -1940,12 +1940,6 @@ impl VulkanContext {
                 }],
             );
 
-            self.device.cmd_bind_pipeline(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.main_graphics_pipeline,
-            );
-
             let main_descriptor_sets = [
                 main_per_frame_descriptor_set,
                 self.textures[0].descriptor_set,
@@ -1958,6 +1952,41 @@ impl VulkanContext {
                 0,
                 &main_descriptor_sets,
                 &[],
+            );
+
+            self.device.cmd_bind_pipeline(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.skybox_graphics_pipeline,
+            );
+
+            self.device.cmd_bind_vertex_buffers(
+                command_buffer,
+                0,
+                &[self.mesh_buffers[0].vertex_buffer.0],
+                &[0],
+            );
+
+            self.device.cmd_bind_index_buffer(
+                command_buffer,
+                self.mesh_buffers[0].index_buffer.0,
+                0,
+                vk::IndexType::UINT16,
+            );
+
+            self.device.cmd_draw_indexed(
+                command_buffer,
+                self.mesh_buffers[0].index_count,
+                1,
+                0,
+                0,
+                0,
+            );
+
+            self.device.cmd_bind_pipeline(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.main_graphics_pipeline,
             );
 
             let mut last_material = None;
@@ -2005,35 +2034,6 @@ impl VulkanContext {
                     0,
                 );
             }
-
-            self.device.cmd_bind_pipeline(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.skybox_graphics_pipeline,
-            );
-
-            self.device.cmd_bind_vertex_buffers(
-                command_buffer,
-                0,
-                &[self.mesh_buffers[0].vertex_buffer.0],
-                &[0],
-            );
-
-            self.device.cmd_bind_index_buffer(
-                command_buffer,
-                self.mesh_buffers[0].index_buffer.0,
-                0,
-                vk::IndexType::UINT16,
-            );
-
-            self.device.cmd_draw_indexed(
-                command_buffer,
-                self.mesh_buffers[0].index_count,
-                1,
-                0,
-                0,
-                0,
-            );
 
             self.device.cmd_end_rendering(command_buffer);
 
@@ -2393,7 +2393,7 @@ impl VulkanContext {
             .attachments(color_blend_attachment_states);
 
         let depth_stencil_state_info = vk::PipelineDepthStencilStateCreateInfo::default()
-            .depth_test_enable(true)
+            .depth_test_enable(false)
             .depth_write_enable(false)
             .depth_compare_op(vk::CompareOp::GREATER);
 
