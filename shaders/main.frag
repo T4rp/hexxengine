@@ -73,7 +73,7 @@ void main() {
 
 	float diffuse = max(dot(norm, lightDir), 0.0);
 
-	float specular = pow(max(dot(halfDir, norm), 0.0), SHINE);
+	float specular = pow(max(dot(halfDir, norm), 0.0), materialUbo.shininess);
 
 	float shadow = shadowFilterPcf(inPosLightSpace);
 

@@ -3,13 +3,13 @@ use std::io::Cursor;
 use std::{array, ffi, fs, mem, ptr};
 
 use ash::vk;
-use glam::{Mat3, Mat4, Quat, Vec3, vec4};
+use glam::{Mat3, Mat4, Quat, Vec2, Vec3, vec4};
 use image::{EncodableLayout, GenericImage};
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
 
-use crate::mesh::{CameraUniform, InstanceVertex, MeshVertex, SceneUniform};
+use crate::mesh::{CameraUniform, InstanceVertex, MaterialUniform, MeshVertex, SceneUniform};
 use crate::scene::{MeshNode, RenderScene};
 
 const USE_VALIDATION_LAYERS: bool = true;
@@ -699,6 +699,86 @@ struct MeshBatch {
     instance_count: usize,
 }
 
+struct MaterialDescriptor {
+    uniform_buffer: (vk::Buffer, vk_mem::Allocation),
+    descriptor_set: vk::DescriptorSet,
+}
+
+impl MaterialDescriptor {
+    fn new(
+        device: &ash::Device,
+        allocator: &vk_mem::Allocator,
+        queue: vk::Queue,
+        command_pool: vk::CommandPool,
+        descriptor_pool: vk::DescriptorPool,
+        descriptor_set_layouts: &DescriptorSetLayouts,
+        uv_scale: Vec2,
+        shininess: f32,
+    ) -> Self {
+        let layout = &[descriptor_set_layouts.material_layout];
+
+        let descriptor_info = vk::DescriptorSetAllocateInfo::default()
+            .set_layouts(layout)
+            .descriptor_pool(descriptor_pool);
+
+        let descriptor_sets = unsafe { device.allocate_descriptor_sets(&descriptor_info).unwrap() };
+        let descriptor_set = descriptor_sets[0];
+
+        let uniform_buffer_info = vk::BufferCreateInfo::default()
+            .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
+            .size(mem::size_of::<MaterialUniform>() as u64);
+
+        let alloc_create_info = vk_mem::AllocationCreateInfo {
+            flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE
+                | vk_mem::AllocationCreateFlags::MAPPED,
+            usage: vk_mem::MemoryUsage::AutoPreferHost,
+            ..Default::default()
+        };
+
+        let uniform_buffer = unsafe {
+            allocator
+                .create_buffer(&uniform_buffer_info, &alloc_create_info)
+                .unwrap()
+        };
+
+        let alloc_info = allocator.get_allocation_info(&uniform_buffer.1);
+
+        let material_uniform = MaterialUniform {
+            uv_scale,
+            shininess,
+            flags: 0,
+        };
+
+        unsafe {
+            std::ptr::copy_nonoverlapping(&material_uniform, alloc_info.mapped_data.cast(), 1);
+        };
+
+        let descriptor_buffer_info = [vk::DescriptorBufferInfo::default()
+            .buffer(uniform_buffer.0)
+            .offset(0)
+            .range(mem::size_of::<MaterialUniform>() as u64)];
+
+        let descriptor_writes = [vk::WriteDescriptorSet::default()
+            .dst_set(descriptor_set)
+            .dst_array_element(0)
+            .dst_binding(0)
+            .descriptor_count(1)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .buffer_info(&descriptor_buffer_info)];
+
+        unsafe { device.update_descriptor_sets(&descriptor_writes, &[]) };
+
+        Self {
+            uniform_buffer,
+            descriptor_set,
+        }
+    }
+
+    fn destroy(&mut self, allocator: &vk_mem::Allocator) {
+        unsafe { allocator.destroy_buffer(self.uniform_buffer.0, &mut self.uniform_buffer.1) };
+    }
+}
+
 pub struct VulkanContext {
     entry: ash::Entry,
     instance: ash::Instance,
@@ -725,6 +805,7 @@ pub struct VulkanContext {
     shadow_graphics_pipeline: vk::Pipeline,
     mesh_buffers: Vec<MeshBuffer>,
     textures: Vec<TextureDescriptors>,
+    material_descriptors: Vec<MaterialDescriptor>,
     cubemap_image: (vk::Image, vk_mem::Allocation),
     skybox_graphics_pipeline: vk::Pipeline,
 }
@@ -1389,7 +1470,7 @@ impl VulkanContext {
 
         let graphics_queue = unsafe { device.get_device_queue(graphics_queue_family_index, 0) };
 
-        let descriptor_pool = Self::create_descriptor_pool(&device, 3);
+        let descriptor_pool = Self::create_descriptor_pool(&device, 4);
         let descriptor_set_layouts = Self::create_descriptor_layouts(&device);
 
         let all_surface_formats = unsafe {
@@ -1476,8 +1557,8 @@ impl VulkanContext {
         );
 
         let mesh_buffers = Vec::new();
-
         let mut textures = Vec::new();
+        let mut materials = Vec::new();
 
         let fallback_texture = TextureDescriptors::create_texture(
             &device,
@@ -1497,6 +1578,19 @@ impl VulkanContext {
 
         textures.push(fallback_texture);
         textures.push(white_texture);
+
+        let base_material = MaterialDescriptor::new(
+            &device,
+            &allocator,
+            graphics_queue,
+            command_pool,
+            descriptor_pool,
+            &descriptor_set_layouts,
+            Vec2::ONE,
+            32.0,
+        );
+
+        materials.push(base_material);
 
         Self {
             entry,
@@ -1524,6 +1618,7 @@ impl VulkanContext {
             descriptor_set_layouts,
             descriptor_pool,
             textures,
+            material_descriptors: materials,
             mesh_buffers,
             cubemap_image,
         }
@@ -1943,6 +2038,7 @@ impl VulkanContext {
             let main_descriptor_sets = [
                 main_per_frame_descriptor_set,
                 self.textures[0].descriptor_set,
+                self.material_descriptors[0].descriptor_set,
             ];
 
             self.device.cmd_bind_descriptor_sets(
@@ -2606,7 +2702,8 @@ impl VulkanContext {
         let material_bindings = [vk::DescriptorSetLayoutBinding::default()
             .binding(0)
             .descriptor_count(1)
-            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)];
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)];
 
         let material_layout_info =
             vk::DescriptorSetLayoutCreateInfo::default().bindings(&material_bindings);
@@ -2669,6 +2766,10 @@ impl Drop for VulkanContext {
 
             for texture in self.textures.iter_mut() {
                 texture.destroy(&self.device, &self.allocator);
+            }
+
+            for material in self.material_descriptors.iter_mut() {
+                material.destroy(&self.allocator);
             }
 
             for render_frame in self.render_frames.iter_mut() {

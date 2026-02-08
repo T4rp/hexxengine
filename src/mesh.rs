@@ -168,9 +168,10 @@ pub struct SceneUniform {
     pub ambient_color: Vec4,
 }
 
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct MaterialUniform {
-    uv_scale: Vec2,
-    shininess: f32,
-    flags: u32,
+    pub uv_scale: Vec2,
+    pub shininess: f32,
+    pub flags: u32,
 }

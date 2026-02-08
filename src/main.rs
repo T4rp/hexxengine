@@ -93,7 +93,7 @@ impl App {
             ),
             meshes: Vec::new(),
             lighting: Lighting {
-                sun_direction: vec3(0.0, -1.0, 0.5).normalize(),
+                sun_direction: vec3(0.0, -1.0, 0.0),
                 sun_color: vec3(1.0, 0.95, 0.85),
                 sun_power: 0.5,
                 ambient_color: vec3(0.9, 0.95, 1.0) * 0.2,
@@ -164,7 +164,7 @@ impl App {
         self.last_frame = now;
 
         let sun_dir = vec3(elapsed.cos(), -1.0, elapsed.sin()).normalize();
-        // self.scene.lighting.sun_direction = sun_dir;
+        self.scene.lighting.sun_direction = sun_dir;
 
         let last_mesh = self.scene.meshes.last_mut().unwrap();
         last_mesh.orientation = Quat::IDENTITY;
