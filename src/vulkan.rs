@@ -1845,8 +1845,6 @@ impl VulkanContext {
             start = end;
         }
 
-        println!("{:#?}", batch_infos);
-
         let alloc_info = self.allocator.get_allocation_info(&instance_buffer.1);
 
         unsafe {
