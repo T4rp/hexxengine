@@ -113,7 +113,8 @@ impl App {
             material_id: 1,
         });
 
-        for _ in 0..900 {
+        for _ in 0..200 {
+            let opacity = if rng.random_bool(0.75) { 1.0 } else { 0.5 };
             let instance = MeshNode {
                 position: vec3(
                     rng.random_range(-50.0..50.0),
@@ -128,7 +129,7 @@ impl App {
                 ),
                 size: vec3(4.0, 4.0, 4.0) * rng.random_range(1.0..5.0),
                 color: hsv_to_rgb(rng.random::<f32>() * 360.0, 0.8, 1.0),
-                opacity: rng.random_range(0.5..=1.0),
+                opacity: opacity,
                 mesh_id: rng.random_range(0..=1),
                 material_id: rng.random_range(0..=1),
             };

@@ -1771,7 +1771,7 @@ impl VulkanContext {
 
         while start < mesh_count {
             let is_opaque = meshes[start].opacity == 1.0;
-            let start_depth = if is_opaque {
+            let depth = if is_opaque {
                 0.0
             } else {
                 let model = proj_view
@@ -1784,7 +1784,7 @@ impl VulkanContext {
                 model.w
             };
 
-            let key = (meshes[start].material_id, meshes[start].mesh_id);
+            let key = (meshes[start].material_id, meshes[start].mesh_id, depth);
 
             {
                 let mesh = &meshes[start];
@@ -1801,7 +1801,7 @@ impl VulkanContext {
 
             while end < mesh_count {
                 let is_opaque = meshes[end].opacity == 1.0;
-                let end_depth = if is_opaque {
+                let depth = if is_opaque {
                     0.0
                 } else {
                     let model = proj_view
@@ -1814,13 +1814,9 @@ impl VulkanContext {
                     model.w
                 };
 
-                let new_key = (meshes[end].material_id, meshes[end].mesh_id);
+                let new_key = (meshes[end].material_id, meshes[end].mesh_id, depth);
 
                 if new_key != key {
-                    break;
-                }
-
-                if start_depth != end_depth {
                     break;
                 }
 
@@ -1849,7 +1845,7 @@ impl VulkanContext {
             start = end;
         }
 
-        // println!("{:#?}", batch_infos);
+        println!("{:#?}", batch_infos);
 
         let alloc_info = self.allocator.get_allocation_info(&instance_buffer.1);
 
