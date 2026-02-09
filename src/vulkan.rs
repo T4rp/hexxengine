@@ -1751,7 +1751,8 @@ impl VulkanContext {
 
         meshes.sort_unstable_by_key(|m| {
             let opacity = m.opacity;
-            let depth = if opacity == 1.0 {
+            let is_opaque = opacity == 1.0;
+            let depth = if is_opaque {
                 0
             } else {
                 let model = proj_view * Vec4::new(m.position.x, m.position.y, m.position.z, 1.0);
@@ -1759,7 +1760,7 @@ impl VulkanContext {
                 (depth * 100_000_000_000.0).round() as u32
             };
 
-            (depth, m.material_id, m.mesh_id)
+            (!is_opaque, depth, m.material_id, m.mesh_id)
         });
 
         let mesh_count = meshes.len();
@@ -1999,6 +2000,12 @@ impl VulkanContext {
             );
 
             for batch in batch_info.iter() {
+                // dont render shadows for transparent objects
+                // opaque objects are already sorted to be before transparent objects
+                if !batch.is_opaque {
+                    break;
+                }
+
                 self.device.cmd_bind_vertex_buffers(
                     command_buffer,
                     0,
