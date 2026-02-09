@@ -3,7 +3,7 @@ use std::io::Cursor;
 use std::{array, ffi, fs, mem, ptr};
 
 use ash::vk;
-use glam::{Mat3, Mat4, Quat, Vec2, Vec3, vec4};
+use glam::{Mat3, Mat4, Quat, Vec2, Vec3, Vec4, vec4};
 use image::{EncodableLayout, GenericImage};
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
@@ -692,11 +692,13 @@ impl MeshBuffer {
     }
 }
 
+#[derive(Debug)]
 struct MeshBatch {
     mesh_id: u32,
     material_id: u32,
     instance_offset: u64,
     instance_count: usize,
+    is_opaque: bool,
 }
 
 struct MaterialDescriptor {
@@ -808,6 +810,7 @@ pub struct VulkanContext {
     material_descriptors: Vec<MaterialDescriptor>,
     cubemap_image: (vk::Image, vk_mem::Allocation),
     skybox_graphics_pipeline: vk::Pipeline,
+    main_transparent_graphics_pipeline: vk::Pipeline,
 }
 
 fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> ash::Instance {
@@ -1525,6 +1528,12 @@ impl VulkanContext {
         let main_graphics_pipeline =
             Self::create_main_graphics_pipeline(&device, pipeline_layout, surface_format);
 
+        let main_transparent_graphics_pipeline = Self::create_main_transparent_graphics_pipeline(
+            &device,
+            pipeline_layout,
+            surface_format,
+        );
+
         let shadow_graphics_pipeline =
             Self::create_shadow_graphics_pipeline(&device, pipeline_layout);
 
@@ -1611,6 +1620,7 @@ impl VulkanContext {
             submit_semaphores,
             current_frame,
             main_graphics_pipeline,
+            main_transparent_graphics_pipeline,
             shadow_graphics_pipeline,
             skybox_graphics_pipeline,
             pipeline_layout,
@@ -1731,10 +1741,26 @@ impl VulkanContext {
     fn update_instance_buffer(
         &mut self,
         instance_buffer: &(vk::Buffer, vk_mem::Allocation),
-        meshes: &[MeshNode],
+        scene: &RenderScene,
     ) -> Vec<MeshBatch> {
-        let mut meshes = meshes.to_owned();
-        meshes.sort_unstable_by_key(|m| (m.material_id, m.mesh_id));
+        let mut meshes = scene.meshes.clone();
+
+        let aspect_ratio = self.swapchain_extent.width as f32 / self.swapchain_extent.height as f32;
+        let (proj, view) = scene.camera.calc_perspective_matrices(aspect_ratio);
+        let proj_view = proj * view;
+
+        meshes.sort_unstable_by_key(|m| {
+            let opacity = m.opacity;
+            let depth = if opacity == 1.0 {
+                0
+            } else {
+                let model = proj_view * Vec4::new(m.position.x, m.position.y, m.position.z, 1.0);
+                let depth = model.z / model.w;
+                (depth * 100_000_000_000.0).round() as u32
+            };
+
+            (depth, m.material_id, m.mesh_id)
+        });
 
         let mesh_count = meshes.len();
 
@@ -1742,7 +1768,22 @@ impl VulkanContext {
         let mut batch_infos: Vec<MeshBatch> = Vec::new();
 
         let mut start = 0;
+
         while start < mesh_count {
+            let is_opaque = meshes[start].opacity == 1.0;
+            let start_depth = if is_opaque {
+                0.0
+            } else {
+                let model = proj_view
+                    * Vec4::new(
+                        meshes[start].position.x,
+                        meshes[start].position.y,
+                        meshes[start].position.z,
+                        1.0,
+                    );
+                model.w
+            };
+
             let key = (meshes[start].material_id, meshes[start].mesh_id);
 
             {
@@ -1752,12 +1793,37 @@ impl VulkanContext {
                     mesh.orientation,
                     mesh.size,
                     mesh.color,
+                    mesh.opacity,
                 ));
             }
 
             let mut end = start + 1;
 
-            while end < mesh_count && (meshes[end].material_id, meshes[end].mesh_id) == key {
+            while end < mesh_count {
+                let is_opaque = meshes[end].opacity == 1.0;
+                let end_depth = if is_opaque {
+                    0.0
+                } else {
+                    let model = proj_view
+                        * Vec4::new(
+                            meshes[end].position.x,
+                            meshes[end].position.y,
+                            meshes[end].position.z,
+                            1.0,
+                        );
+                    model.w
+                };
+
+                let new_key = (meshes[end].material_id, meshes[end].mesh_id);
+
+                if new_key != key {
+                    break;
+                }
+
+                if start_depth != end_depth {
+                    break;
+                }
+
                 {
                     let mesh = &meshes[end];
                     instances.push(InstanceVertex::new(
@@ -1765,6 +1831,7 @@ impl VulkanContext {
                         mesh.orientation,
                         mesh.size,
                         mesh.color,
+                        mesh.opacity,
                     ));
                 }
 
@@ -1776,10 +1843,13 @@ impl VulkanContext {
                 material_id: key.0,
                 instance_offset: start as u64 * mem::size_of::<InstanceVertex>() as u64,
                 instance_count: end - start,
+                is_opaque: is_opaque,
             });
 
             start = end;
         }
+
+        // println!("{:#?}", batch_infos);
 
         let alloc_info = self.allocator.get_allocation_info(&instance_buffer.1);
 
@@ -1843,7 +1913,7 @@ impl VulkanContext {
 
             self.update_per_frame_descriptors(scene);
 
-            let batch_info = self.update_instance_buffer(&instance_buffer, &scene.meshes);
+            let batch_info = self.update_instance_buffer(&instance_buffer, &scene);
 
             let submit_semaphore = self.submit_semaphores[image_index as usize];
 
@@ -2079,15 +2149,26 @@ impl VulkanContext {
                 0,
             );
 
-            self.device.cmd_bind_pipeline(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.main_graphics_pipeline,
-            );
-
             let mut last_material = None;
+            let mut is_opaque = None;
 
             for batch in batch_info.iter() {
+                if is_opaque.map_or(true, |is_opaque| is_opaque != batch.is_opaque) {
+                    is_opaque = Some(batch.is_opaque);
+
+                    let pipeline = if batch.is_opaque {
+                        self.main_graphics_pipeline
+                    } else {
+                        self.main_transparent_graphics_pipeline
+                    };
+
+                    self.device.cmd_bind_pipeline(
+                        command_buffer,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        pipeline,
+                    );
+                }
+
                 if last_material.map_or(true, |material_id| material_id != batch.material_id) {
                     last_material = Some(batch.material_id);
 
@@ -2383,6 +2464,126 @@ impl VulkanContext {
         let depth_stencil_state_info = vk::PipelineDepthStencilStateCreateInfo::default()
             .depth_test_enable(true)
             .depth_write_enable(true)
+            .depth_compare_op(vk::CompareOp::GREATER);
+
+        let color_attachment_formats = [surface_format.format];
+        let mut rendering_create_info = vk::PipelineRenderingCreateInfo::default()
+            .color_attachment_formats(&color_attachment_formats)
+            .depth_attachment_format(vk::Format::D32_SFLOAT);
+
+        let graphics_pipeline_create_info = &[vk::GraphicsPipelineCreateInfo::default()
+            .stages(shader_stages)
+            .vertex_input_state(&vertex_input_state_info)
+            .input_assembly_state(&input_assembly_state_info)
+            .dynamic_state(&dynamic_state_info)
+            .viewport_state(&viewport_state_info)
+            .rasterization_state(&rasterization_info)
+            .multisample_state(&multisample_info)
+            .color_blend_state(&color_blender_state_info)
+            .layout(pipeline_layout)
+            .depth_stencil_state(&depth_stencil_state_info)
+            .subpass(0)
+            .push_next(&mut rendering_create_info)];
+
+        let graphics_pipeline = unsafe {
+            device
+                .create_graphics_pipelines(
+                    vk::PipelineCache::null(),
+                    graphics_pipeline_create_info,
+                    None,
+                )
+                .unwrap()[0]
+        };
+
+        graphics_pipeline
+    }
+
+    fn create_main_transparent_graphics_pipeline(
+        device: &ash::Device,
+        pipeline_layout: vk::PipelineLayout,
+        surface_format: vk::SurfaceFormatKHR,
+    ) -> vk::Pipeline {
+        let dynamic_states = &[vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
+
+        let dynamic_state_info =
+            vk::PipelineDynamicStateCreateInfo::default().dynamic_states(dynamic_states);
+
+        let viewports = &[vk::Viewport::default()];
+        let scissors = &[vk::Rect2D::default()];
+
+        let viewport_state_info = vk::PipelineViewportStateCreateInfo::default()
+            .viewports(viewports)
+            .scissors(scissors);
+
+        let vert_shader_code = fs::read("assets/base.vert.spv").unwrap();
+        let frag_shader_code = fs::read("assets/base.frag.spv").unwrap();
+
+        let vertex_shader = create_shader_module(device, &vert_shader_code);
+        let fragment_shader = create_shader_module(device, &frag_shader_code);
+
+        let vert_stage_info = vk::PipelineShaderStageCreateInfo::default()
+            .stage(vk::ShaderStageFlags::VERTEX)
+            .module(vertex_shader)
+            .name(c"main");
+
+        let frag_stage_info = vk::PipelineShaderStageCreateInfo::default()
+            .stage(vk::ShaderStageFlags::FRAGMENT)
+            .module(fragment_shader)
+            .name(c"main");
+
+        let shader_stages = &[vert_stage_info, frag_stage_info];
+
+        let vertex_attribute_descriptions = MeshVertex::get_attribute_descriptions();
+        let vertex_binding_description = MeshVertex::get_binding_description();
+
+        let instance_attribute_descriptions = InstanceVertex::get_attribute_descriptions();
+        let instance_binding_description = InstanceVertex::get_binding_description();
+
+        let attribute_descriptions: Vec<vk::VertexInputAttributeDescription> =
+            vertex_attribute_descriptions
+                .iter()
+                .chain(instance_attribute_descriptions.iter())
+                .cloned()
+                .collect();
+
+        let binding_descriptions = [vertex_binding_description, instance_binding_description];
+
+        let vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default()
+            .vertex_attribute_descriptions(&attribute_descriptions)
+            .vertex_binding_descriptions(&binding_descriptions);
+
+        let input_assembly_state_info = vk::PipelineInputAssemblyStateCreateInfo::default()
+            .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
+            .primitive_restart_enable(false);
+
+        let rasterization_info = vk::PipelineRasterizationStateCreateInfo::default()
+            .depth_clamp_enable(false)
+            .polygon_mode(vk::PolygonMode::FILL)
+            .line_width(1.0)
+            .cull_mode(vk::CullModeFlags::BACK)
+            .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
+            .depth_bias_enable(false);
+
+        let multisample_info = vk::PipelineMultisampleStateCreateInfo::default()
+            .sample_shading_enable(false)
+            .rasterization_samples(vk::SampleCountFlags::TYPE_1);
+
+        let color_blend_attachment_states = &[vk::PipelineColorBlendAttachmentState::default()
+            .color_write_mask(vk::ColorComponentFlags::RGBA)
+            .blend_enable(true)
+            .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
+            .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+            .color_blend_op(vk::BlendOp::ADD)
+            .src_alpha_blend_factor(vk::BlendFactor::ONE)
+            .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
+            .alpha_blend_op(vk::BlendOp::ADD)];
+
+        let color_blender_state_info = vk::PipelineColorBlendStateCreateInfo::default()
+            .attachments(color_blend_attachment_states);
+
+        let depth_stencil_state_info = vk::PipelineDepthStencilStateCreateInfo::default()
+            .depth_test_enable(true)
+            .depth_write_enable(false)
             .depth_compare_op(vk::CompareOp::GREATER);
 
         let color_attachment_formats = [surface_format.format];

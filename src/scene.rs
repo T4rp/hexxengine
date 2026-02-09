@@ -70,6 +70,7 @@ pub struct MeshNode {
     pub orientation: Quat,
     pub size: Vec3,
     pub color: Vec3,
+    pub opacity: f32,
     pub mesh_id: u32,
     pub material_id: u32,
 }

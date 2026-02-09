@@ -9,6 +9,7 @@ layout (location = 3) in vec3 inPos;
 layout (location = 4) in vec3 inScale;
 layout (location = 5) in vec3 inObjNorm;
 layout (location = 6) in vec4 inPosLightSpace;
+layout (location = 7) in float inOpacity;
 
 layout (location = 0) out vec4 outFragColor;
 
@@ -79,6 +80,6 @@ void main() {
 
 	vec3 diffuseColor = (texture(text, uv) * vec4(inColor, 1.0)).xyz;
 
-	outFragColor = vec4(diffuseColor * ambientColor + (1.0 - shadow) * (diffuseColor * diffuse * lightColor * lightPower + specular * lightColor * lightPower), 1.0);
+	outFragColor = vec4(diffuseColor * ambientColor + (1.0 - shadow) * (diffuseColor * diffuse * lightColor * lightPower + specular * lightColor * lightPower), inOpacity);
 }
 

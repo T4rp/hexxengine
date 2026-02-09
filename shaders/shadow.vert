@@ -9,6 +9,7 @@ layout (location = 2) in vec2 inUv;
 layout(location = 3) in mat4 inModel;
 layout(location = 7) in mat3 inModelNormal;
 layout(location = 10) in vec3 inColor;
+layout(location = 11) in vec3 inOpacity;
 
 void main() {
 	gl_Position = cameraUbo.lightProj * cameraUbo.lightView * inModel * vec4(inPos, 1.0f);

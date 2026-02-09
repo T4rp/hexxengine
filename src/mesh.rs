@@ -83,10 +83,11 @@ pub struct InstanceVertex {
     pub model: Mat4,
     pub model_normal: Mat3,
     pub color: Vec3,
+    pub opacity: f32,
 }
 
 impl InstanceVertex {
-    pub fn new(position: Vec3, rotation: Quat, size: Vec3, color: Vec3) -> Self {
+    pub fn new(position: Vec3, rotation: Quat, size: Vec3, color: Vec3, opacity: f32) -> Self {
         let model = Mat4::from_scale_rotation_translation(size, rotation, position);
         let model_normal = Mat3::from_mat4(model.inverse().transpose());
 
@@ -94,10 +95,11 @@ impl InstanceVertex {
             model,
             model_normal,
             color,
+            opacity,
         }
     }
 
-    pub fn get_attribute_descriptions() -> [vk::VertexInputAttributeDescription; 8] {
+    pub fn get_attribute_descriptions() -> [vk::VertexInputAttributeDescription; 9] {
         [
             vk::VertexInputAttributeDescription::default()
                 .binding(1)
@@ -139,6 +141,11 @@ impl InstanceVertex {
                 .location(10)
                 .format(vk::Format::R32G32B32_SFLOAT)
                 .offset(mem::offset_of!(InstanceVertex, color) as u32),
+            vk::VertexInputAttributeDescription::default()
+                .binding(1)
+                .location(11)
+                .format(vk::Format::R32_SFLOAT)
+                .offset(mem::offset_of!(InstanceVertex, opacity) as u32),
         ]
     }
 

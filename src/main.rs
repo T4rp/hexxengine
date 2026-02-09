@@ -108,11 +108,12 @@ impl App {
             orientation: Quat::IDENTITY,
             size: vec3(512.0, 50.0, 512.0),
             color: vec3(0.8, 0.8, 0.8),
+            opacity: 1.0,
             mesh_id: 0,
             material_id: 1,
         });
 
-        for _ in 0..200 {
+        for _ in 0..900 {
             let instance = MeshNode {
                 position: vec3(
                     rng.random_range(-50.0..50.0),
@@ -127,6 +128,7 @@ impl App {
                 ),
                 size: vec3(4.0, 4.0, 4.0) * rng.random_range(1.0..5.0),
                 color: hsv_to_rgb(rng.random::<f32>() * 360.0, 0.8, 1.0),
+                opacity: rng.random_range(0.5..=1.0),
                 mesh_id: rng.random_range(0..=1),
                 material_id: rng.random_range(0..=1),
             };
