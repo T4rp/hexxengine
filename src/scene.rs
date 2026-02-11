@@ -79,5 +79,4 @@ pub struct RenderScene {
     pub camera: Camera,
     pub meshes: Vec<MeshNode>,
     pub lighting: Lighting,
-    pub are_meshes_dirty: bool,
 }

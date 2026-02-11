@@ -10,7 +10,7 @@ use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHand
 use winit::window::Window;
 
 use crate::mesh::{CameraUniform, InstanceVertex, MaterialUniform, MeshVertex, SceneUniform};
-use crate::scene::{MeshNode, RenderScene};
+use crate::scene::RenderScene;
 
 const USE_VALIDATION_LAYERS: bool = true;
 const MAX_FRAMES: usize = 2;
@@ -205,9 +205,10 @@ impl GlobalDescriptors {
         }
     }
 
-    fn destroy(&mut self, allocator: &vk_mem::Allocator) {
+    fn destroy(&mut self, device: &ash::Device, allocator: &vk_mem::Allocator) {
         unsafe { allocator.destroy_buffer(self.camera_buffer.0, &mut self.camera_buffer.1) };
         unsafe { allocator.destroy_buffer(self.scene_buffer.0, &mut self.scene_buffer.1) };
+        unsafe { device.destroy_sampler(self.shadow_map_sampler, None) };
     }
 }
 
@@ -449,8 +450,8 @@ impl RenderFrame {
         (depth_image, depth_image_view)
     }
 
-    fn destroy(&mut self, allocator: &vk_mem::Allocator) {
-        self.per_frame_descriptor_data.destroy(allocator);
+    fn destroy(&mut self, device: &ash::Device, allocator: &vk_mem::Allocator) {
+        self.per_frame_descriptor_data.destroy(device, allocator);
         unsafe { allocator.destroy_image(self.depth_image.0, &mut self.depth_image.1) };
         unsafe { allocator.destroy_image(self.shadow_map.0, &mut self.shadow_map.1) };
         unsafe { allocator.destroy_buffer(self.instance_buffer.0, &mut self.instance_buffer.1) };
@@ -525,6 +526,7 @@ impl TextureDescriptors {
         unsafe {
             allocator.destroy_image(self.image.0, &mut self.image.1);
             device.destroy_image_view(self.image_view, None);
+            device.destroy_sampler(self.sampler, None);
         };
     }
 }
@@ -544,8 +546,8 @@ impl MeshBuffer {
         vertices: &[MeshVertex],
         indicies: &[u16],
     ) -> Self {
-        let vb_size = (mem::size_of::<MeshVertex>() * vertices.len()) as u64;
-        let ib_size = (mem::size_of::<u16>() * indicies.len()) as u64;
+        let vb_size = mem::size_of_val(vertices) as u64;
+        let ib_size = mem::size_of_val(indicies) as u64;
 
         let alloc_info = vk_mem::AllocationCreateInfo {
             usage: vk_mem::MemoryUsage::AutoPreferHost,
@@ -835,7 +837,7 @@ fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> 
         .enabled_layer_names(&validation_layers);
 
     let instance = unsafe { entry.create_instance(&create_info, None).unwrap() };
-    let debug_utils_fn = ash::ext::debug_utils::Instance::new(&entry, &instance);
+    let debug_utils_fn = ash::ext::debug_utils::Instance::new(entry, &instance);
 
     let messager_create_info = vk::DebugUtilsMessengerCreateInfoEXT::default()
         .message_severity(
@@ -1019,8 +1021,8 @@ fn create_image_from_rgba(
     data: &[u8],
 ) -> ((vk::Image, vk_mem::Allocation), vk::ImageView) {
     let image_extent = vk::Extent3D {
-        width: width,
-        height: height,
+        width,
+        height,
         depth: 1,
     };
 
@@ -1694,18 +1696,18 @@ impl VulkanContext {
             max.z *= z_mult
         }
 
-        let mut light_projection = Mat4::orthographic_rh(min.x, max.x, min.y, max.y, min.z, max.z);
-        light_projection.y_axis *= vec4(1.0, -1.0, 1.0, 1.0);
+        let mut light_proj = Mat4::orthographic_rh(min.x, max.x, min.y, max.y, min.z, max.z);
+        light_proj.y_axis *= vec4(1.0, -1.0, 1.0, 1.0);
 
-        let mut camera_ubo = CameraUniform {
-            proj: proj,
-            view: view,
+        let camera_ubo = CameraUniform {
+            proj,
+            view,
             camera_position: vec4(camera_position.x, camera_position.y, camera_position.z, 0.0),
-            light_proj: light_projection,
-            light_view: light_view,
+            light_proj,
+            light_view,
         };
 
-        let mut scene_ubo = SceneUniform {
+        let scene_ubo = SceneUniform {
             sun_direction: vec4(
                 lighting.sun_direction.x,
                 lighting.sun_direction.y,
@@ -1733,8 +1735,8 @@ impl VulkanContext {
         let scene_alloc_info = self.allocator.get_allocation_info(&scene_buffer_allocation);
 
         unsafe {
-            std::ptr::copy_nonoverlapping(&mut camera_ubo, camera_alloc_info.mapped_data.cast(), 1);
-            std::ptr::copy_nonoverlapping(&mut scene_ubo, scene_alloc_info.mapped_data.cast(), 1);
+            std::ptr::copy_nonoverlapping(&camera_ubo, camera_alloc_info.mapped_data.cast(), 1);
+            std::ptr::copy_nonoverlapping(&scene_ubo, scene_alloc_info.mapped_data.cast(), 1);
         };
     }
 
@@ -1840,7 +1842,7 @@ impl VulkanContext {
                 material_id: key.0,
                 instance_offset: start as u64 * mem::size_of::<InstanceVertex>() as u64,
                 instance_count: end - start,
-                is_opaque: is_opaque,
+                is_opaque,
             });
 
             start = end;
@@ -1908,7 +1910,7 @@ impl VulkanContext {
 
             self.update_per_frame_descriptors(scene);
 
-            let batch_info = self.update_instance_buffer(&instance_buffer, &scene);
+            let batch_info = self.update_instance_buffer(&instance_buffer, scene);
 
             let submit_semaphore = self.submit_semaphores[image_index as usize];
 
@@ -2154,7 +2156,7 @@ impl VulkanContext {
             let mut is_opaque = None;
 
             for batch in batch_info.iter() {
-                if is_opaque.map_or(true, |is_opaque| is_opaque != batch.is_opaque) {
+                if is_opaque != Some(batch.is_opaque) {
                     is_opaque = Some(batch.is_opaque);
 
                     let pipeline = if batch.is_opaque {
@@ -2170,7 +2172,7 @@ impl VulkanContext {
                     );
                 }
 
-                if last_material.map_or(true, |material_id| material_id != batch.material_id) {
+                if last_material != Some(batch.material_id) {
                     last_material = Some(batch.material_id);
 
                     let descriptor_sets =
@@ -2272,7 +2274,7 @@ impl VulkanContext {
             }
         }
 
-        self.current_frame = self.current_frame + 1;
+        self.current_frame += 1;
     }
 
     pub fn handle_resize(&mut self, window_size: (u32, u32)) {
@@ -2975,7 +2977,7 @@ impl Drop for VulkanContext {
             }
 
             for render_frame in self.render_frames.iter_mut() {
-                render_frame.destroy(&self.allocator);
+                render_frame.destroy(&self.device, &self.allocator);
             }
         };
     }

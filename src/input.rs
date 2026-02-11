@@ -19,8 +19,6 @@ impl KeyboardInput {
             self.keys_down
                 .entry(key)
                 .insert_entry(event.state.is_pressed());
-
-            return;
         };
     }
 
@@ -59,8 +57,6 @@ impl InputState {
             self.keys_down
                 .entry(key)
                 .insert_entry(event.state.is_pressed());
-
-            return;
         };
     }
 

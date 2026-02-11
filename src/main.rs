@@ -37,7 +37,7 @@ struct App {
 }
 
 fn process_gltf_mesh(filename: &str) -> (Vec<MeshVertex>, Vec<u16>) {
-    let (gltf, buffers, images) = gltf::import(filename).unwrap();
+    let (gltf, buffers, _images) = gltf::import(filename).unwrap();
 
     let mesh = gltf
         .default_scene()
@@ -83,7 +83,7 @@ fn process_gltf_mesh(filename: &str) -> (Vec<MeshVertex>, Vec<u16>) {
 impl App {
     fn new() -> Self {
         let start_time = Instant::now();
-        let last_frame = start_time.clone();
+        let last_frame = start_time;
 
         let mut scene = RenderScene {
             camera: Camera::new(
@@ -98,7 +98,6 @@ impl App {
                 sun_power: 0.5,
                 ambient_color: vec3(0.9, 0.95, 1.0) * 0.2,
             },
-            are_meshes_dirty: true,
         };
 
         let mut rng = SmallRng::from_os_rng();
@@ -183,15 +182,13 @@ impl App {
         let mouse_delta = self.input_state.mouse_delta;
 
         if self.input_state.right_mouse_down {
-            let right_click_position = self.input_state.right_clicked_on;
-
             let _ = window
                 .set_cursor_grab(winit::window::CursorGrabMode::Confined)
                 .or_else(|_| window.set_cursor_grab(winit::window::CursorGrabMode::Locked));
-            let _ = window.set_cursor_visible(false);
+            window.set_cursor_visible(false);
         } else {
             let _ = window.set_cursor_grab(winit::window::CursorGrabMode::None);
-            let _ = window.set_cursor_visible(true);
+            window.set_cursor_visible(true);
         }
 
         if mouse_delta.z == 0.0 && self.input_state.right_mouse_down {
@@ -276,14 +273,14 @@ impl ApplicationHandler for App {
                 self.input_state.key_input(event);
             }
             WindowEvent::MouseInput {
-                device_id,
+                device_id: _,
                 state,
                 button,
             } => {
                 self.input_state.mouse_input(button, state);
             }
             WindowEvent::CursorMoved {
-                device_id,
+                device_id: _,
                 position,
             } => {
                 self.input_state.mouse_moved(position);
