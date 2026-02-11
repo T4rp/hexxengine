@@ -35,6 +35,7 @@ pub struct InputState {
     pub left_mouse_down: bool,
     pub last_mouse_position: Vec3,
     pub mouse_delta: Vec3,
+    pub right_clicked_on: Vec3,
 }
 
 impl InputState {
@@ -45,6 +46,7 @@ impl InputState {
             left_mouse_down: false,
             last_mouse_position: Vec3::Z,
             mouse_delta: Vec3::ZERO,
+            right_clicked_on: Vec3::ZERO,
         }
     }
 
@@ -70,16 +72,21 @@ impl InputState {
 
         match mouse_button {
             MouseButton::Left => self.left_mouse_down = down_state,
-            MouseButton::Right => self.right_mouse_down = down_state,
+            MouseButton::Right => {
+                self.right_mouse_down = down_state;
+                self.right_clicked_on = self.last_mouse_position;
+            }
             _ => {}
         }
     }
 
+    pub fn mouse_motion(&mut self, delta: (f32, f32)) {
+        self.mouse_delta += Vec3::new(delta.0, delta.1, 0.0);
+    }
+
     pub fn mouse_moved(&mut self, mouse_position: PhysicalPosition<f64>) {
         let mouse_position = Vec3::new(mouse_position.x as f32, mouse_position.y as f32, 0.0);
-        let mouse_delta = mouse_position - self.last_mouse_position;
         self.last_mouse_position = mouse_position;
-        self.mouse_delta = mouse_delta;
     }
 
     pub fn is_key_down(&self, code: KeyCode) -> bool {

@@ -10,7 +10,7 @@ use glam::{EulerRot, Quat, Vec2, Vec3, vec3};
 use rand::{Rng, SeedableRng, rngs::SmallRng};
 use winit::{
     application::ApplicationHandler,
-    event::WindowEvent,
+    event::{DeviceEvent, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowAttributes},
@@ -160,6 +160,8 @@ impl App {
     }
 
     pub fn update(&mut self) {
+        let window = self.window.as_ref().unwrap();
+
         let now = Instant::now();
         let dt = (now - self.last_frame).as_secs_f32();
         let elapsed = (now - self.start_time).as_secs_f32();
@@ -179,6 +181,18 @@ impl App {
         let right = camera.orientation * Vec3::X;
 
         let mouse_delta = self.input_state.mouse_delta;
+
+        if self.input_state.right_mouse_down {
+            let right_click_position = self.input_state.right_clicked_on;
+
+            let _ = window
+                .set_cursor_grab(winit::window::CursorGrabMode::Confined)
+                .or_else(|_| window.set_cursor_grab(winit::window::CursorGrabMode::Locked));
+            let _ = window.set_cursor_visible(false);
+        } else {
+            let _ = window.set_cursor_grab(winit::window::CursorGrabMode::None);
+            let _ = window.set_cursor_visible(true);
+        }
 
         if mouse_delta.z == 0.0 && self.input_state.right_mouse_down {
             let sensitivity = 0.001;
@@ -204,6 +218,8 @@ impl App {
         if self.input_state.is_key_down(KeyCode::KeyS) {
             camera.position -= forward * dt * CAMERA_SPEED;
         }
+
+        self.input_state.clear();
     }
 }
 
@@ -221,6 +237,21 @@ impl ApplicationHandler for App {
         self.init_vk();
     }
 
+    fn device_event(
+        &mut self,
+        _event_loop: &winit::event_loop::ActiveEventLoop,
+        _device_id: winit::event::DeviceId,
+        event: DeviceEvent,
+    ) {
+        match event {
+            DeviceEvent::MouseMotion { delta } => {
+                self.input_state
+                    .mouse_motion((delta.0 as f32, delta.1 as f32));
+            }
+            _ => {}
+        }
+    }
+
     fn window_event(
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
@@ -228,8 +259,6 @@ impl ApplicationHandler for App {
         event: winit::event::WindowEvent,
     ) {
         let mut should_draw = false;
-
-        self.input_state.clear();
 
         match event {
             WindowEvent::CloseRequested => {
