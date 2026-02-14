@@ -6,7 +6,6 @@ mod vulkan;
 
 use std::time::Instant;
 
-use ash::vk::PhysicalDeviceSubpassMergeFeedbackFeaturesEXT;
 use glam::{EulerRot, Quat, Vec2, Vec3, vec3};
 use gltf::Mesh;
 use rand::{Rng, SeedableRng, rngs::SmallRng, seq::IndexedRandom};
