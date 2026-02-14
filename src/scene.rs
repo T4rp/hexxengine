@@ -1,5 +1,7 @@
 use glam::{Mat4, Quat, Vec3, Vec4, Vec4Swizzles, vec4};
 
+use crate::mesh::MeshVertex;
+
 pub struct Camera {
     pub position: Vec3,
     pub orientation: Quat,
@@ -79,4 +81,9 @@ pub struct RenderScene {
     pub camera: Camera,
     pub meshes: Vec<MeshNode>,
     pub lighting: Lighting,
+}
+
+pub struct MeshData {
+    pub vertices: Vec<MeshVertex>,
+    pub indices: Vec<u16>,
 }

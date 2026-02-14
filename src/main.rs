@@ -7,6 +7,7 @@ mod vulkan;
 use std::time::Instant;
 
 use glam::{EulerRot, Quat, Vec2, Vec3, vec3};
+use gltf::Mesh;
 use rand::{Rng, SeedableRng, rngs::SmallRng};
 use winit::{
     application::ApplicationHandler,
@@ -22,7 +23,7 @@ use crate::{
     color::hsv_to_rgb,
     input::InputState,
     mesh::MeshVertex,
-    scene::{Camera, Lighting, MeshNode, RenderScene},
+    scene::{Camera, Lighting, MeshData, MeshNode, RenderScene},
 };
 
 const CAMERA_SPEED: f32 = 100.0;
@@ -36,18 +37,7 @@ struct App {
     input_state: InputState,
 }
 
-fn process_gltf_mesh(filename: &str) -> (Vec<MeshVertex>, Vec<u16>) {
-    let (gltf, buffers, _images) = gltf::import(filename).unwrap();
-
-    let mesh = gltf
-        .default_scene()
-        .unwrap()
-        .nodes()
-        .next()
-        .unwrap()
-        .mesh()
-        .unwrap();
-
+fn process_gltf_mesh(mesh: &Mesh, buffers: &[gltf::buffer::Data]) -> MeshData {
     let mut mesh_vertices = Vec::new();
     let mut mesh_indices = Vec::new();
 
@@ -77,7 +67,17 @@ fn process_gltf_mesh(filename: &str) -> (Vec<MeshVertex>, Vec<u16>) {
         mesh_indices.push(index as u16);
     }
 
-    (mesh_vertices, mesh_indices)
+    MeshData {
+        vertices: mesh_vertices,
+        indices: mesh_indices,
+    }
+}
+
+fn get_first_gltf_mesh(filename: &str) -> MeshData {
+    let (gltf, buffers, _images) = gltf::import(filename).unwrap();
+
+    let mesh = gltf.meshes().next().unwrap();
+    process_gltf_mesh(&mesh, &buffers)
 }
 
 impl App {
@@ -151,11 +151,11 @@ impl App {
     pub fn init_vk(&mut self) {
         let vk_ctx = self.vk_ctx.as_mut().unwrap();
 
-        let cube_mesh = process_gltf_mesh("./assets/cube.gltf");
-        let sphere_mesh = process_gltf_mesh("./assets/sphere.gltf");
+        let cube_mesh = get_first_gltf_mesh("./assets/cube.gltf");
+        let sphere_mesh = get_first_gltf_mesh("./assets/sphere.gltf");
 
-        vk_ctx.load_mesh(&cube_mesh.0, &cube_mesh.1);
-        vk_ctx.load_mesh(&sphere_mesh.0, &sphere_mesh.1);
+        vk_ctx.load_mesh(&cube_mesh.vertices, &cube_mesh.indices);
+        vk_ctx.load_mesh(&sphere_mesh.vertices, &sphere_mesh.indices);
     }
 
     pub fn update(&mut self) {
