@@ -180,5 +180,12 @@ pub struct SceneUniform {
 pub struct MaterialUniform {
     pub uv_scale: Vec2,
     pub shininess: f32,
-    pub flags: u32,
+    pub flags: MaterialFlags,
+}
+
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub enum MaterialFlags {
+    Uv = 1,
+    ModelSpace = 2,
 }

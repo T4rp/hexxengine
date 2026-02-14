@@ -54,14 +54,17 @@ float shadowFilterPcf(vec4 shadowCoord) {
 }
 
 void main() {
-	vec2 uv;
+	vec2 uv = inUv;
+	int materialFlags = materialUbo.flags;
 
-	if (abs(inObjNorm.y) > 0.5) 
-		uv = inUv * inScale.xz;
-	else if (abs(inObjNorm.z) > 0.5)
-		uv = inUv * inScale.yx;
-	else
-		uv = inUv * inScale.yz;
+	if ((materialFlags & MATERIAL_FLAG_MODEL_SPACE) != 0) { 
+		if (abs(inObjNorm.y) > 0.5) 
+			uv = inUv * inScale.xz;
+		else if (abs(inObjNorm.z) > 0.5)
+			uv = inUv * inScale.yx;
+		else
+			uv = inUv * inScale.yz;
+	}
 
 	float lightPower = sceneUbo.sunCol.w;
 	vec3 lightColor = sceneUbo.sunCol.xyz;
@@ -73,11 +76,8 @@ void main() {
 	vec3 halfDir = normalize(lightDir + viewDir);
 
 	float diffuse = max(dot(norm, lightDir), 0.0);
-
 	float specular = pow(max(dot(halfDir, norm), 0.0), materialUbo.shininess);
-
 	float shadow = shadowFilterPcf(inPosLightSpace);
-
 	vec3 diffuseColor = (texture(text, uv) * vec4(inColor, 1.0)).xyz;
 
 	outFragColor = vec4(diffuseColor * ambientColor + (1.0 - shadow) * (diffuseColor * diffuse * lightColor * lightPower + specular * lightColor * lightPower), inOpacity);

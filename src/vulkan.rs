@@ -9,7 +9,9 @@ use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
 
-use crate::mesh::{CameraUniform, InstanceVertex, MaterialUniform, MeshVertex, SceneUniform};
+use crate::mesh::{
+    CameraUniform, InstanceVertex, MaterialFlags, MaterialUniform, MeshVertex, SceneUniform,
+};
 use crate::scene::RenderScene;
 
 const USE_VALIDATION_LAYERS: bool = true;
@@ -753,7 +755,7 @@ impl MaterialDescriptor {
         let material_uniform = MaterialUniform {
             uv_scale,
             shininess,
-            flags: 0,
+            flags: MaterialFlags::ModelSpace,
         };
 
         unsafe {

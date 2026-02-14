@@ -25,4 +25,6 @@ layout(set = 2, binding = 0) uniform MaterialUniform {
 } materialUbo;
 
 #define SHINE 32
+#define MATERIAL_FLAG_UV 1
+#define MATERIAL_FLAG_MODEL_SPACE 2
 
