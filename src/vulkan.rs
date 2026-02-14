@@ -1864,6 +1864,192 @@ impl VulkanContext {
         batch_infos
     }
 
+    fn draw_shadow_map(
+        &mut self,
+        batch_info: &[MeshBatch],
+        command_buffer: vk::CommandBuffer,
+        instance_buffer: vk::Buffer,
+        shadow_per_frame_descriptor_set: vk::DescriptorSet,
+    ) {
+        unsafe {
+            self.device.cmd_bind_pipeline(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.shadow_graphics_pipeline,
+            );
+
+            let shadow_descriptor_sets = [
+                shadow_per_frame_descriptor_set,
+                self.textures[1].descriptor_set,
+            ];
+
+            self.device.cmd_bind_descriptor_sets(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline_layout,
+                0,
+                &shadow_descriptor_sets,
+                &[],
+            );
+
+            for batch in batch_info.iter() {
+                // dont render shadows for transparent objects
+                // opaque objects are already sorted to be before transparent objects
+                if !batch.is_opaque {
+                    break;
+                }
+
+                let mesh_buffer = self.get_mesh_buffer(batch.mesh_id);
+
+                self.device.cmd_bind_vertex_buffers(
+                    command_buffer,
+                    0,
+                    &[mesh_buffer.vertex_buffer.0, instance_buffer],
+                    &[0, batch.instance_offset],
+                );
+
+                self.device.cmd_bind_index_buffer(
+                    command_buffer,
+                    mesh_buffer.index_buffer.0,
+                    0,
+                    vk::IndexType::UINT16,
+                );
+
+                self.device.cmd_draw_indexed(
+                    command_buffer,
+                    mesh_buffer.index_count,
+                    batch.instance_count,
+                    0,
+                    0,
+                    0,
+                );
+            }
+        }
+    }
+
+    fn draw_skybox(
+        &mut self,
+        command_buffer: vk::CommandBuffer,
+        main_per_frame_descriptor_set: vk::DescriptorSet,
+    ) {
+        unsafe {
+            let main_descriptor_sets = [
+                main_per_frame_descriptor_set,
+                self.textures[0].descriptor_set,
+                self.material_descriptors[0].descriptor_set,
+            ];
+
+            self.device.cmd_bind_descriptor_sets(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline_layout,
+                0,
+                &main_descriptor_sets,
+                &[],
+            );
+
+            self.device.cmd_bind_pipeline(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.skybox_graphics_pipeline,
+            );
+
+            self.device.cmd_bind_vertex_buffers(
+                command_buffer,
+                0,
+                &[self.mesh_buffers[0].vertex_buffer.0],
+                &[0],
+            );
+
+            self.device.cmd_bind_index_buffer(
+                command_buffer,
+                self.mesh_buffers[0].index_buffer.0,
+                0,
+                vk::IndexType::UINT16,
+            );
+
+            self.device.cmd_draw_indexed(
+                command_buffer,
+                self.mesh_buffers[0].index_count,
+                1,
+                0,
+                0,
+                0,
+            );
+        }
+    }
+
+    fn draw_main_scene(
+        &mut self,
+        batch_info: &[MeshBatch],
+        command_buffer: vk::CommandBuffer,
+        instance_buffer: vk::Buffer,
+    ) {
+        unsafe {
+            let mut last_material = None;
+            let mut is_opaque = None;
+
+            for batch in batch_info.iter() {
+                if is_opaque != Some(batch.is_opaque) {
+                    is_opaque = Some(batch.is_opaque);
+
+                    let pipeline = if batch.is_opaque {
+                        self.main_graphics_pipeline
+                    } else {
+                        self.main_transparent_graphics_pipeline
+                    };
+
+                    self.device.cmd_bind_pipeline(
+                        command_buffer,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        pipeline,
+                    );
+                }
+
+                if last_material != Some(batch.material_id) {
+                    last_material = Some(batch.material_id);
+
+                    let descriptor_sets =
+                        [self.textures[batch.material_id as usize].descriptor_set];
+
+                    self.device.cmd_bind_descriptor_sets(
+                        command_buffer,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        self.pipeline_layout,
+                        1,
+                        &descriptor_sets,
+                        &[],
+                    );
+                }
+
+                let mesh_buffer = self.get_mesh_buffer(batch.mesh_id);
+
+                self.device.cmd_bind_vertex_buffers(
+                    command_buffer,
+                    0,
+                    &[mesh_buffer.vertex_buffer.0, instance_buffer],
+                    &[0, batch.instance_offset],
+                );
+
+                self.device.cmd_bind_index_buffer(
+                    command_buffer,
+                    mesh_buffer.index_buffer.0,
+                    0,
+                    vk::IndexType::UINT16,
+                );
+
+                self.device.cmd_draw_indexed(
+                    command_buffer,
+                    mesh_buffer.index_count,
+                    batch.instance_count,
+                    0,
+                    0,
+                    0,
+                );
+            }
+        }
+    }
+
     pub fn draw(&mut self, scene: &RenderScene) {
         if self.should_resize {
             // self.handle_resize();
@@ -1984,58 +2170,12 @@ impl VulkanContext {
                 }],
             );
 
-            self.device.cmd_bind_pipeline(
+            self.draw_shadow_map(
+                &batch_info,
                 command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.shadow_graphics_pipeline,
-            );
-
-            let shadow_descriptor_sets = [
+                instance_buffer.0,
                 shadow_per_frame_descriptor_set,
-                self.textures[1].descriptor_set,
-            ];
-
-            self.device.cmd_bind_descriptor_sets(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline_layout,
-                0,
-                &shadow_descriptor_sets,
-                &[],
             );
-
-            for batch in batch_info.iter() {
-                // dont render shadows for transparent objects
-                // opaque objects are already sorted to be before transparent objects
-                if !batch.is_opaque {
-                    break;
-                }
-
-                let mesh_buffer = self.get_mesh_buffer(batch.mesh_id);
-
-                self.device.cmd_bind_vertex_buffers(
-                    command_buffer,
-                    0,
-                    &[mesh_buffer.vertex_buffer.0, instance_buffer.0],
-                    &[0, batch.instance_offset],
-                );
-
-                self.device.cmd_bind_index_buffer(
-                    command_buffer,
-                    mesh_buffer.index_buffer.0,
-                    0,
-                    vk::IndexType::UINT16,
-                );
-
-                self.device.cmd_draw_indexed(
-                    command_buffer,
-                    mesh_buffer.index_count,
-                    batch.instance_count,
-                    0,
-                    0,
-                    0,
-                );
-            }
 
             self.device.cmd_end_rendering(command_buffer);
 
@@ -2110,111 +2250,8 @@ impl VulkanContext {
                 }],
             );
 
-            let main_descriptor_sets = [
-                main_per_frame_descriptor_set,
-                self.textures[0].descriptor_set,
-                self.material_descriptors[0].descriptor_set,
-            ];
-
-            self.device.cmd_bind_descriptor_sets(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline_layout,
-                0,
-                &main_descriptor_sets,
-                &[],
-            );
-
-            self.device.cmd_bind_pipeline(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.skybox_graphics_pipeline,
-            );
-
-            self.device.cmd_bind_vertex_buffers(
-                command_buffer,
-                0,
-                &[self.mesh_buffers[0].vertex_buffer.0],
-                &[0],
-            );
-
-            self.device.cmd_bind_index_buffer(
-                command_buffer,
-                self.mesh_buffers[0].index_buffer.0,
-                0,
-                vk::IndexType::UINT16,
-            );
-
-            self.device.cmd_draw_indexed(
-                command_buffer,
-                self.mesh_buffers[0].index_count,
-                1,
-                0,
-                0,
-                0,
-            );
-
-            let mut last_material = None;
-            let mut is_opaque = None;
-
-            for batch in batch_info.iter() {
-                if is_opaque != Some(batch.is_opaque) {
-                    is_opaque = Some(batch.is_opaque);
-
-                    let pipeline = if batch.is_opaque {
-                        self.main_graphics_pipeline
-                    } else {
-                        self.main_transparent_graphics_pipeline
-                    };
-
-                    self.device.cmd_bind_pipeline(
-                        command_buffer,
-                        vk::PipelineBindPoint::GRAPHICS,
-                        pipeline,
-                    );
-                }
-
-                if last_material != Some(batch.material_id) {
-                    last_material = Some(batch.material_id);
-
-                    let descriptor_sets =
-                        [self.textures[batch.material_id as usize].descriptor_set];
-
-                    self.device.cmd_bind_descriptor_sets(
-                        command_buffer,
-                        vk::PipelineBindPoint::GRAPHICS,
-                        self.pipeline_layout,
-                        1,
-                        &descriptor_sets,
-                        &[],
-                    );
-                }
-
-                let mesh_buffer = self.get_mesh_buffer(batch.mesh_id);
-
-                self.device.cmd_bind_vertex_buffers(
-                    command_buffer,
-                    0,
-                    &[mesh_buffer.vertex_buffer.0, instance_buffer.0],
-                    &[0, batch.instance_offset],
-                );
-
-                self.device.cmd_bind_index_buffer(
-                    command_buffer,
-                    mesh_buffer.index_buffer.0,
-                    0,
-                    vk::IndexType::UINT16,
-                );
-
-                self.device.cmd_draw_indexed(
-                    command_buffer,
-                    mesh_buffer.index_count,
-                    batch.instance_count,
-                    0,
-                    0,
-                    0,
-                );
-            }
+            self.draw_skybox(command_buffer, main_per_frame_descriptor_set);
+            self.draw_main_scene(&batch_info, command_buffer, instance_buffer.0);
 
             self.device.cmd_end_rendering(command_buffer);
 
