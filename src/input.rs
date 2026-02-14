@@ -52,7 +52,7 @@ impl InputState {
         self.mouse_delta = Vec3::ZERO
     }
 
-    pub fn key_input(&mut self, event: KeyEvent) {
+    pub fn key_input(&mut self, event: &KeyEvent) {
         if let PhysicalKey::Code(key) = event.physical_key {
             self.keys_down
                 .entry(key)
@@ -60,7 +60,7 @@ impl InputState {
         };
     }
 
-    pub fn mouse_input(&mut self, mouse_button: MouseButton, state: ElementState) {
+    pub fn mouse_input(&mut self, mouse_button: &MouseButton, state: &ElementState) {
         let down_state = match state {
             ElementState::Pressed => true,
             ElementState::Released => false,
@@ -80,7 +80,7 @@ impl InputState {
         self.mouse_delta += Vec3::new(delta.0, delta.1, 0.0);
     }
 
-    pub fn mouse_moved(&mut self, mouse_position: PhysicalPosition<f64>) {
+    pub fn mouse_moved(&mut self, mouse_position: &PhysicalPosition<f64>) {
         let mouse_position = Vec3::new(mouse_position.x as f32, mouse_position.y as f32, 0.0);
         self.last_mouse_position = mouse_position;
     }

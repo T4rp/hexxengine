@@ -6,9 +6,10 @@ mod vulkan;
 
 use std::time::Instant;
 
+use ash::vk::PhysicalDeviceSubpassMergeFeedbackFeaturesEXT;
 use glam::{EulerRot, Quat, Vec2, Vec3, vec3};
 use gltf::Mesh;
-use rand::{Rng, SeedableRng, rngs::SmallRng};
+use rand::{Rng, SeedableRng, rngs::SmallRng, seq::IndexedRandom};
 use winit::{
     application::ApplicationHandler,
     event::{DeviceEvent, WindowEvent},
@@ -27,15 +28,6 @@ use crate::{
 };
 
 const CAMERA_SPEED: f32 = 100.0;
-
-struct App {
-    scene: RenderScene,
-    window: Option<Window>,
-    vk_ctx: Option<VulkanContext>,
-    last_frame: Instant,
-    start_time: Instant,
-    input_state: InputState,
-}
 
 fn process_gltf_mesh(mesh: &Mesh, buffers: &[gltf::buffer::Data]) -> MeshData {
     let mut mesh_vertices = Vec::new();
@@ -80,8 +72,31 @@ fn get_first_gltf_mesh(filename: &str) -> MeshData {
     process_gltf_mesh(&mesh, &buffers)
 }
 
-impl App {
-    fn new() -> Self {
+struct App {
+    window: Option<Window>,
+    game: Option<Game>,
+}
+
+struct Game {
+    vk_ctx: VulkanContext,
+    scene: RenderScene,
+    last_frame: Instant,
+    start_time: Instant,
+    input_state: InputState,
+}
+
+impl Game {
+    fn new(window: &Window) -> Self {
+        let mut vk_ctx = VulkanContext::new(&window);
+
+        let cube_mesh = get_first_gltf_mesh("./assets/cube.gltf");
+        let sphere_mesh = get_first_gltf_mesh("./assets/sphere.gltf");
+
+        let cube_mesh = vk_ctx.load_mesh(&cube_mesh.vertices, &cube_mesh.indices);
+        let sphere_mesh = vk_ctx.load_mesh(&sphere_mesh.vertices, &sphere_mesh.indices);
+
+        let meshes = [cube_mesh, sphere_mesh];
+
         let start_time = Instant::now();
         let last_frame = start_time;
 
@@ -108,7 +123,7 @@ impl App {
             size: vec3(512.0, 50.0, 512.0),
             color: vec3(0.8, 0.8, 0.8),
             opacity: 1.0,
-            mesh_id: 0,
+            mesh_id: cube_mesh,
             material_id: 1,
         });
 
@@ -129,7 +144,7 @@ impl App {
                 size: vec3(4.0, 4.0, 4.0) * rng.random_range(1.0..5.0),
                 color: hsv_to_rgb(rng.random::<f32>() * 360.0, 0.8, 1.0),
                 opacity: opacity,
-                mesh_id: rng.random_range(0..=1),
+                mesh_id: *meshes.choose(&mut rng).unwrap(),
                 material_id: rng.random_range(0..=1),
             };
 
@@ -139,28 +154,15 @@ impl App {
         let input_state = InputState::new();
 
         Self {
+            vk_ctx,
             scene,
             last_frame,
             start_time,
-            window: None,
-            vk_ctx: None,
             input_state,
         }
     }
 
-    pub fn init_vk(&mut self) {
-        let vk_ctx = self.vk_ctx.as_mut().unwrap();
-
-        let cube_mesh = get_first_gltf_mesh("./assets/cube.gltf");
-        let sphere_mesh = get_first_gltf_mesh("./assets/sphere.gltf");
-
-        vk_ctx.load_mesh(&cube_mesh.vertices, &cube_mesh.indices);
-        vk_ctx.load_mesh(&sphere_mesh.vertices, &sphere_mesh.indices);
-    }
-
-    pub fn update(&mut self) {
-        let window = self.window.as_ref().unwrap();
-
+    pub fn update(&mut self, window: &Window) {
         let now = Instant::now();
         let dt = (now - self.last_frame).as_secs_f32();
         let elapsed = (now - self.start_time).as_secs_f32();
@@ -218,28 +220,8 @@ impl App {
 
         self.input_state.clear();
     }
-}
 
-impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        let window = event_loop
-            .create_window(WindowAttributes::default())
-            .unwrap();
-
-        let vk_ctx = VulkanContext::new(&window);
-
-        self.window = Some(window);
-        self.vk_ctx = Some(vk_ctx);
-
-        self.init_vk();
-    }
-
-    fn device_event(
-        &mut self,
-        _event_loop: &winit::event_loop::ActiveEventLoop,
-        _device_id: winit::event::DeviceId,
-        event: DeviceEvent,
-    ) {
+    fn handle_device_event(&mut self, event: &DeviceEvent) {
         match event {
             DeviceEvent::MouseMotion { delta } => {
                 self.input_state
@@ -249,27 +231,13 @@ impl ApplicationHandler for App {
         }
     }
 
-    fn window_event(
-        &mut self,
-        event_loop: &winit::event_loop::ActiveEventLoop,
-        _window_id: winit::window::WindowId,
-        event: winit::event::WindowEvent,
-    ) {
-        let mut should_draw = false;
-
+    fn handle_window_event(&mut self, event: &WindowEvent) {
         match event {
-            WindowEvent::CloseRequested => {
-                event_loop.exit();
-            }
             WindowEvent::KeyboardInput {
                 device_id: _,
                 event,
                 is_synthetic: _,
             } => {
-                if PhysicalKey::Code(KeyCode::Escape) == event.physical_key {
-                    event_loop.exit();
-                    return;
-                }
                 self.input_state.key_input(event);
             }
             WindowEvent::MouseInput {
@@ -286,23 +254,78 @@ impl ApplicationHandler for App {
                 self.input_state.mouse_moved(position);
             }
             WindowEvent::Resized(size) => {
-                self.vk_ctx
-                    .as_mut()
-                    .unwrap()
-                    .handle_resize((size.width, size.height));
+                self.vk_ctx.handle_resize((size.width, size.height));
+            }
+            WindowEvent::RedrawRequested => {
+                self.vk_ctx.draw(&self.scene);
+            }
+            _ => {}
+        }
+    }
+}
+
+impl App {
+    fn new() -> Self {
+        Self {
+            window: None,
+            game: None,
+        }
+    }
+}
+
+impl ApplicationHandler for App {
+    fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        let window = event_loop
+            .create_window(WindowAttributes::default())
+            .unwrap();
+
+        let game = Game::new(&window);
+
+        self.window = Some(window);
+        self.game = Some(game);
+    }
+
+    fn device_event(
+        &mut self,
+        _event_loop: &winit::event_loop::ActiveEventLoop,
+        _device_id: winit::event::DeviceId,
+        event: DeviceEvent,
+    ) {
+        self.game.as_mut().unwrap().handle_device_event(&event);
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        _window_id: winit::window::WindowId,
+        event: winit::event::WindowEvent,
+    ) {
+        let game = self.game.as_mut().unwrap();
+        let window = self.window.as_ref().unwrap();
+
+        match event {
+            WindowEvent::CloseRequested => {
+                event_loop.exit();
+            }
+
+            WindowEvent::KeyboardInput {
+                device_id: _,
+                ref event,
+                is_synthetic: _,
+            } => {
+                if PhysicalKey::Code(KeyCode::Escape) == event.physical_key {
+                    event_loop.exit();
+                    return;
+                }
             }
             WindowEvent::RedrawRequested => {
                 self.window.as_ref().unwrap().request_redraw();
-                should_draw = true;
             }
             _ => {}
         }
 
-        self.update();
-
-        if should_draw {
-            self.vk_ctx.as_mut().unwrap().draw(&self.scene);
-        }
+        game.update(window);
+        game.handle_window_event(&event);
     }
 }
 

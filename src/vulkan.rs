@@ -62,6 +62,9 @@ struct GlobalDescriptors {
     shadow_map_sampler: vk::Sampler,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub struct MeshHandle(u32);
+
 impl GlobalDescriptors {
     fn new(
         device: &ash::Device,
@@ -696,10 +699,10 @@ impl MeshBuffer {
 
 #[derive(Debug)]
 struct MeshBatch {
-    mesh_id: u32,
+    mesh_id: MeshHandle,
     material_id: u32,
     instance_offset: u64,
-    instance_count: usize,
+    instance_count: u32,
     is_opaque: bool,
 }
 
@@ -1841,7 +1844,7 @@ impl VulkanContext {
                 mesh_id: key.1,
                 material_id: key.0,
                 instance_offset: start as u64 * mem::size_of::<InstanceVertex>() as u64,
-                instance_count: end - start,
+                instance_count: (end - start) as u32,
                 is_opaque,
             });
 
@@ -2008,27 +2011,26 @@ impl VulkanContext {
                     break;
                 }
 
+                let mesh_buffer = self.get_mesh_buffer(batch.mesh_id);
+
                 self.device.cmd_bind_vertex_buffers(
                     command_buffer,
                     0,
-                    &[
-                        self.mesh_buffers[batch.mesh_id as usize].vertex_buffer.0,
-                        instance_buffer.0,
-                    ],
+                    &[mesh_buffer.vertex_buffer.0, instance_buffer.0],
                     &[0, batch.instance_offset],
                 );
 
                 self.device.cmd_bind_index_buffer(
                     command_buffer,
-                    self.mesh_buffers[batch.mesh_id as usize].index_buffer.0,
+                    mesh_buffer.index_buffer.0,
                     0,
                     vk::IndexType::UINT16,
                 );
 
                 self.device.cmd_draw_indexed(
                     command_buffer,
-                    self.mesh_buffers[batch.mesh_id as usize].index_count,
-                    batch.instance_count as u32,
+                    mesh_buffer.index_count,
+                    batch.instance_count,
                     0,
                     0,
                     0,
@@ -2188,27 +2190,26 @@ impl VulkanContext {
                     );
                 }
 
+                let mesh_buffer = self.get_mesh_buffer(batch.mesh_id);
+
                 self.device.cmd_bind_vertex_buffers(
                     command_buffer,
                     0,
-                    &[
-                        self.mesh_buffers[batch.mesh_id as usize].vertex_buffer.0,
-                        instance_buffer.0,
-                    ],
+                    &[mesh_buffer.vertex_buffer.0, instance_buffer.0],
                     &[0, batch.instance_offset],
                 );
 
                 self.device.cmd_bind_index_buffer(
                     command_buffer,
-                    self.mesh_buffers[batch.mesh_id as usize].index_buffer.0,
+                    mesh_buffer.index_buffer.0,
                     0,
                     vk::IndexType::UINT16,
                 );
 
                 self.device.cmd_draw_indexed(
                     command_buffer,
-                    self.mesh_buffers[batch.mesh_id as usize].index_count,
-                    batch.instance_count as u32,
+                    mesh_buffer.index_count,
+                    batch.instance_count,
                     0,
                     0,
                     0,
@@ -2323,7 +2324,7 @@ impl VulkanContext {
         }
     }
 
-    pub fn load_mesh(&mut self, vertices: &[MeshVertex], indices: &[u16]) -> u32 {
+    pub fn load_mesh(&mut self, vertices: &[MeshVertex], indices: &[u16]) -> MeshHandle {
         let mesh = MeshBuffer::allocate_mesh(
             &self.device,
             &self.allocator,
@@ -2335,7 +2336,7 @@ impl VulkanContext {
 
         self.mesh_buffers.push(mesh);
 
-        (self.mesh_buffers.len() - 1) as u32
+        MeshHandle((self.mesh_buffers.len() - 1) as u32)
     }
 
     pub fn load_rgba_texture(&mut self, width: u32, height: u32, data: &[u8]) -> u32 {
@@ -2379,6 +2380,10 @@ impl VulkanContext {
                 .create_pipeline_layout(&pipeline_layout_info, None)
                 .unwrap()
         }
+    }
+
+    fn get_mesh_buffer(&self, mesh_id: MeshHandle) -> &MeshBuffer {
+        &self.mesh_buffers[mesh_id.0 as usize]
     }
 
     fn create_main_graphics_pipeline(
