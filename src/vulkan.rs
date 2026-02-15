@@ -74,8 +74,6 @@ impl GlobalDescriptors {
         descriptor_pool: vk::DescriptorPool,
         per_frame_layout: vk::DescriptorSetLayout,
         shadow_map_view: vk::ImageView,
-        skybox_view: vk::ImageView,
-        skybox_sampler: vk::Sampler,
     ) -> Self {
         let layouts = [per_frame_layout, per_frame_layout];
         let descriptor_set_alloc_info = vk::DescriptorSetAllocateInfo::default()
@@ -149,11 +147,6 @@ impl GlobalDescriptors {
             .image_layout(vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL)
             .sampler(shadow_map_sampler)];
 
-        let skybox_image_info = [vk::DescriptorImageInfo::default()
-            .image_view(skybox_view)
-            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-            .sampler(skybox_sampler)];
-
         let descriptor_write = [
             vk::WriteDescriptorSet::default()
                 .dst_set(shadow_pass_descriptor_set)
@@ -190,13 +183,6 @@ impl GlobalDescriptors {
                 .descriptor_count(1)
                 .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                 .image_info(&shadow_map_image_info),
-            vk::WriteDescriptorSet::default()
-                .dst_set(main_pass_descriptor_set)
-                .dst_binding(3)
-                .dst_array_element(0)
-                .descriptor_count(1)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .image_info(&skybox_image_info),
         ];
 
         unsafe { device.update_descriptor_sets(&descriptor_write, &[]) };
@@ -208,6 +194,28 @@ impl GlobalDescriptors {
             shadow_pass_descriptor_set,
             shadow_map_sampler,
         }
+    }
+
+    fn update_skybox(
+        &mut self,
+        device: &ash::Device,
+        skybox_view: vk::ImageView,
+        skybox_sampler: vk::Sampler,
+    ) {
+        let skybox_image_info = [vk::DescriptorImageInfo::default()
+            .image_view(skybox_view)
+            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+            .sampler(skybox_sampler)];
+
+        let descriptor_write = [vk::WriteDescriptorSet::default()
+            .dst_set(self.main_pass_descriptor_set)
+            .dst_binding(3)
+            .dst_array_element(0)
+            .descriptor_count(1)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .image_info(&skybox_image_info)];
+
+        unsafe { device.update_descriptor_sets(&descriptor_write, &[]) };
     }
 
     fn destroy(&mut self, device: &ash::Device, allocator: &vk_mem::Allocator) {
@@ -238,8 +246,6 @@ impl RenderFrame {
         descriptor_pool: vk::DescriptorPool,
         per_frame_layout: vk::DescriptorSetLayout,
         window_extent: vk::Extent2D,
-        skybox_image_view: vk::ImageView,
-        skybox_sampler: vk::Sampler,
         queue_family_index: u32,
     ) -> Self {
         let command_pool = create_command_pool(device, queue_family_index);
@@ -296,8 +302,6 @@ impl RenderFrame {
             descriptor_pool,
             per_frame_layout,
             shadow_map_view,
-            skybox_image_view,
-            skybox_sampler,
         );
 
         let instance_buffer = create_instance_buffer(allocator);
@@ -818,6 +822,17 @@ pub struct VulkanContext {
     cubemap_image: (vk::Image, vk_mem::Allocation),
     skybox_graphics_pipeline: vk::Pipeline,
     main_transparent_graphics_pipeline: vk::Pipeline,
+}
+
+pub struct SkyboxImageData<'a> {
+    width: u32,
+    height: u32,
+    top: &'a [u8],
+    bottom: &'a [u8],
+    front: &'a [u8],
+    back: &'a [u8],
+    left: &'a [u8],
+    right: &'a [u8],
 }
 
 fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> ash::Instance {
@@ -2402,6 +2417,10 @@ impl VulkanContext {
         (self.textures.len() - 1) as u32
     }
 
+    pub fn load_skybox(&mut self, skybox_data: &SkyboxImageData) {
+        todo!()
+    }
+
     fn create_pipeline_layout(
         device: &ash::Device,
         descriptor_set_layouts: &DescriptorSetLayouts,
@@ -2982,17 +3001,23 @@ impl VulkanContext {
     ) -> Vec<RenderFrame> {
         let frames: Vec<RenderFrame> = (0..MAX_FRAMES)
             .map(|_i| {
-                RenderFrame::new(
+                let mut render_frame = RenderFrame::new(
                     device,
                     allocator,
                     queue,
                     descriptor_pool,
                     per_frame_layout,
                     window_extent,
+                    queue_family_index,
+                );
+
+                render_frame.per_frame_descriptor_data.update_skybox(
+                    device,
                     skybox_image_view,
                     skybox_sampler,
-                    queue_family_index,
-                )
+                );
+
+                render_frame
             })
             .collect();
 
