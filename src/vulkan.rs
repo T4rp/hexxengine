@@ -1190,34 +1190,24 @@ fn create_image_from_rgba(
     (image, image_view)
 }
 
-fn create_cubemap_image(
+fn create_skybox_resources(
     device: &ash::Device,
     allocator: &vk_mem::Allocator,
     queue: vk::Queue,
     command_pool: vk::CommandPool,
+    skybox_data: &SkyboxImageData,
 ) -> ((vk::Image, vk_mem::Allocation), vk::ImageView, vk::Sampler) {
-    let mut skybox_image = image::open("assets/cloudy-skyboxes/Cubemap/Cubemap_Sky_04-512x512.png")
-        .unwrap()
-        .into_rgba8();
-
-    let top_image = skybox_image.sub_image(512, 0, 512, 512).to_image();
-    let left_image = skybox_image.sub_image(0, 512, 512, 512).to_image();
-    let back_image = skybox_image.sub_image(512, 512, 512, 512).to_image();
-    let right_image = skybox_image.sub_image(512 * 2, 512, 512, 512).to_image();
-    let front_image = skybox_image.sub_image(512 * 3, 512, 512, 512).to_image();
-    let bottom_image = skybox_image.sub_image(512, 512 * 2, 512, 512).to_image();
-
     let mut all_image_data = Vec::new();
-    all_image_data.extend_from_slice(right_image.as_bytes());
-    all_image_data.extend_from_slice(left_image.as_bytes());
-    all_image_data.extend_from_slice(top_image.as_bytes());
-    all_image_data.extend_from_slice(bottom_image.as_bytes());
-    all_image_data.extend_from_slice(back_image.as_bytes());
-    all_image_data.extend_from_slice(front_image.as_bytes());
+    all_image_data.extend_from_slice(skybox_data.right);
+    all_image_data.extend_from_slice(skybox_data.left);
+    all_image_data.extend_from_slice(skybox_data.top);
+    all_image_data.extend_from_slice(skybox_data.bottom);
+    all_image_data.extend_from_slice(skybox_data.back);
+    all_image_data.extend_from_slice(skybox_data.front);
 
     let image_extent = vk::Extent3D {
-        width: 512,
-        height: 512,
+        width: skybox_data.width,
+        height: skybox_data.height,
         depth: 1,
     };
 
@@ -1319,7 +1309,7 @@ fn create_cubemap_image(
         vk::ImageAspectFlags::COLOR,
     );
 
-    let img_stride = 512 * 512 * 4;
+    let img_stride = skybox_data.width as u64 * skybox_data.height as u64 * 4;
 
     let copy_regions: [vk::BufferImageCopy; 6] = array::from_fn(|i| vk::BufferImageCopy {
         buffer_offset: img_stride * i as u64,
@@ -1387,6 +1377,45 @@ fn create_cubemap_image(
     let sampler = unsafe { device.create_sampler(&sampler_info, None).unwrap() };
 
     (image, image_view, sampler)
+}
+
+fn create_cubemap_image(
+    device: &ash::Device,
+    allocator: &vk_mem::Allocator,
+    queue: vk::Queue,
+    command_pool: vk::CommandPool,
+) -> ((vk::Image, vk_mem::Allocation), vk::ImageView, vk::Sampler) {
+    let mut skybox_image = image::open("assets/cloudy-skyboxes/Cubemap/Cubemap_Sky_04-512x512.png")
+        .unwrap()
+        .into_rgba8();
+
+    let top_image = skybox_image.sub_image(512, 0, 512, 512).to_image();
+    let left_image = skybox_image.sub_image(0, 512, 512, 512).to_image();
+    let back_image = skybox_image.sub_image(512, 512, 512, 512).to_image();
+    let right_image = skybox_image.sub_image(512 * 2, 512, 512, 512).to_image();
+    let front_image = skybox_image.sub_image(512 * 3, 512, 512, 512).to_image();
+    let bottom_image = skybox_image.sub_image(512, 512 * 2, 512, 512).to_image();
+
+    let mut all_image_data = Vec::new();
+    all_image_data.extend_from_slice(right_image.as_bytes());
+    all_image_data.extend_from_slice(left_image.as_bytes());
+    all_image_data.extend_from_slice(top_image.as_bytes());
+    all_image_data.extend_from_slice(bottom_image.as_bytes());
+    all_image_data.extend_from_slice(back_image.as_bytes());
+    all_image_data.extend_from_slice(front_image.as_bytes());
+
+    let skybox_data = SkyboxImageData {
+        width: 512,
+        height: 512,
+        top: top_image.as_bytes(),
+        bottom: bottom_image.as_bytes(),
+        front: front_image.as_bytes(),
+        back: back_image.as_bytes(),
+        left: left_image.as_bytes(),
+        right: right_image.as_bytes(),
+    };
+
+    create_skybox_resources(device, allocator, queue, command_pool, &skybox_data)
 }
 
 fn create_instance_buffer(allocator: &vk_mem::Allocator) -> (vk::Buffer, vk_mem::Allocation) {
