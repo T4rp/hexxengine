@@ -111,6 +111,7 @@ impl Game {
                 sun_color: vec3(1.0, 0.95, 0.85),
                 sun_power: 0.5,
                 ambient_color: vec3(0.9, 0.95, 1.0) * 0.2,
+                skybox_id: 0,
             },
         };
 

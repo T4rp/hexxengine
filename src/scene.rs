@@ -64,6 +64,7 @@ pub struct Lighting {
     pub sun_color: Vec3,
     pub sun_power: f32,
     pub ambient_color: Vec3,
+    pub skybox_id: u32,
 }
 
 #[derive(Clone)]

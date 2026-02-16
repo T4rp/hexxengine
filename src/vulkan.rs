@@ -865,6 +865,7 @@ impl Texture {
         allocator: &vk_mem::Allocator,
         queue: vk::Queue,
         command_pool: vk::CommandPool,
+        sampler_filter: vk::Filter,
         skybox_data: &SkyboxImageData,
     ) -> Self {
         let mut all_image_data = Vec::new();
@@ -1031,8 +1032,8 @@ impl Texture {
         }
 
         let sampler_info = vk::SamplerCreateInfo::default()
-            .mag_filter(vk::Filter::LINEAR)
-            .min_filter(vk::Filter::LINEAR)
+            .mag_filter(sampler_filter)
+            .min_filter(sampler_filter)
             .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
             .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
             .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
@@ -1438,7 +1439,14 @@ fn create_cubemap_image(
         right: right_image.as_bytes(),
     };
 
-    Texture::from_skybox_data(device, allocator, queue, command_pool, &skybox_data)
+    Texture::from_skybox_data(
+        device,
+        allocator,
+        queue,
+        command_pool,
+        vk::Filter::LINEAR,
+        &skybox_data,
+    )
 }
 
 fn create_instance_buffer(allocator: &vk_mem::Allocator) -> (vk::Buffer, vk_mem::Allocation) {
@@ -1580,8 +1588,35 @@ impl VulkanContext {
 
         let command_pool = create_command_pool(&device, graphics_queue_family_index);
 
-        let cubemap_texture =
-            create_cubemap_image(&device, &allocator, graphics_queue, command_pool);
+        let fallback_skybox = Texture::from_skybox_data(
+            &device,
+            &allocator,
+            graphics_queue,
+            command_pool,
+            vk::Filter::NEAREST,
+            &SkyboxImageData {
+                width: 2,
+                height: 2,
+                top: &[
+                    255, 0, 255, 255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 0, 255, 255,
+                ],
+                bottom: &[
+                    255, 0, 255, 255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 0, 255, 255,
+                ],
+                left: &[
+                    255, 0, 255, 255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 0, 255, 255,
+                ],
+                right: &[
+                    255, 0, 255, 255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 0, 255, 255,
+                ],
+                front: &[
+                    255, 0, 255, 255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 0, 255, 255,
+                ],
+                back: &[
+                    255, 0, 255, 255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 0, 255, 255,
+                ],
+            },
+        );
 
         let render_frames = Self::create_render_frames(
             &device,
@@ -1590,7 +1625,7 @@ impl VulkanContext {
             descriptor_pool,
             descriptor_set_layouts.global_layout,
             swapchain_extent,
-            &cubemap_texture,
+            &fallback_skybox,
             graphics_queue_family_index,
         );
 
@@ -1705,7 +1740,7 @@ impl VulkanContext {
             textures,
             material_descriptors: materials,
             mesh_buffers,
-            cubemap_texture,
+            cubemap_texture: fallback_skybox,
         }
     }
 
