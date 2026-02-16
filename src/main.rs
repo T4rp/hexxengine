@@ -6,8 +6,10 @@ mod vulkan;
 
 use std::time::Instant;
 
+use ash::vk;
 use glam::{EulerRot, Quat, Vec2, Vec3, vec3};
 use gltf::Mesh;
+use image::{EncodableLayout, GenericImage};
 use rand::{Rng, SeedableRng, rngs::SmallRng, seq::IndexedRandom};
 use winit::{
     application::ApplicationHandler,
@@ -24,6 +26,7 @@ use crate::{
     input::InputState,
     mesh::MeshVertex,
     scene::{Camera, Lighting, MeshData, MeshNode, RenderScene},
+    vulkan::SkyboxImageData,
 };
 
 const CAMERA_SPEED: f32 = 100.0;
@@ -71,6 +74,40 @@ fn get_first_gltf_mesh(filename: &str) -> MeshData {
     process_gltf_mesh(&mesh, &buffers)
 }
 
+fn load_skybox<'a>(render: &mut VulkanContext) -> u32 {
+    let mut skybox_image = image::open("assets/cloudy-skyboxes/Cubemap/Cubemap_Sky_04-512x512.png")
+        .unwrap()
+        .into_rgba8();
+
+    let top_image = skybox_image.sub_image(512, 0, 512, 512).to_image();
+    let left_image = skybox_image.sub_image(0, 512, 512, 512).to_image();
+    let back_image = skybox_image.sub_image(512, 512, 512, 512).to_image();
+    let right_image = skybox_image.sub_image(512 * 2, 512, 512, 512).to_image();
+    let front_image = skybox_image.sub_image(512 * 3, 512, 512, 512).to_image();
+    let bottom_image = skybox_image.sub_image(512, 512 * 2, 512, 512).to_image();
+
+    let mut all_image_data = Vec::new();
+    all_image_data.extend_from_slice(right_image.as_bytes());
+    all_image_data.extend_from_slice(left_image.as_bytes());
+    all_image_data.extend_from_slice(top_image.as_bytes());
+    all_image_data.extend_from_slice(bottom_image.as_bytes());
+    all_image_data.extend_from_slice(back_image.as_bytes());
+    all_image_data.extend_from_slice(front_image.as_bytes());
+
+    let skybox_data = SkyboxImageData {
+        width: 512,
+        height: 512,
+        top: top_image.as_bytes(),
+        bottom: bottom_image.as_bytes(),
+        front: front_image.as_bytes(),
+        back: back_image.as_bytes(),
+        left: left_image.as_bytes(),
+        right: right_image.as_bytes(),
+    };
+
+    render.load_skybox(vk::Filter::LINEAR, &skybox_data)
+}
+
 struct App {
     window: Option<Window>,
     game: Option<Game>,
@@ -94,6 +131,8 @@ impl Game {
         let cube_mesh = vk_ctx.load_mesh(&cube_mesh.vertices, &cube_mesh.indices);
         let sphere_mesh = vk_ctx.load_mesh(&sphere_mesh.vertices, &sphere_mesh.indices);
 
+        let skybox_id = load_skybox(&mut vk_ctx);
+
         let meshes = [cube_mesh, sphere_mesh];
 
         let start_time = Instant::now();
@@ -111,7 +150,7 @@ impl Game {
                 sun_color: vec3(1.0, 0.95, 0.85),
                 sun_power: 0.5,
                 ambient_color: vec3(0.9, 0.95, 1.0) * 0.2,
-                skybox_id: 0,
+                skybox_id,
             },
         };
 

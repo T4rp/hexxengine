@@ -4,7 +4,6 @@ use std::{array, ffi, fs, mem, ptr};
 
 use ash::vk;
 use glam::{Mat3, Mat4, Quat, Vec2, Vec3, Vec4, vec4};
-use image::{EncodableLayout, GenericImage};
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
@@ -1183,20 +1182,21 @@ pub struct VulkanContext {
     mesh_buffers: Vec<MeshBuffer>,
     textures: Vec<TextureDescriptors>,
     material_descriptors: Vec<MaterialDescriptor>,
-    cubemap_texture: Texture,
+    skybox_textures: Vec<Texture>,
+    current_skybox: Option<u32>,
     skybox_graphics_pipeline: vk::Pipeline,
     main_transparent_graphics_pipeline: vk::Pipeline,
 }
 
 pub struct SkyboxImageData<'a> {
-    width: u32,
-    height: u32,
-    top: &'a [u8],
-    bottom: &'a [u8],
-    front: &'a [u8],
-    back: &'a [u8],
-    left: &'a [u8],
-    right: &'a [u8],
+    pub width: u32,
+    pub height: u32,
+    pub top: &'a [u8],
+    pub bottom: &'a [u8],
+    pub front: &'a [u8],
+    pub back: &'a [u8],
+    pub left: &'a [u8],
+    pub right: &'a [u8],
 }
 
 fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> ash::Instance {
@@ -1403,52 +1403,6 @@ fn create_shader_module(device: &ash::Device, data: &[u8]) -> vk::ShaderModule {
     unsafe { device.create_shader_module(&create_info, None).unwrap() }
 }
 
-fn create_cubemap_image(
-    device: &ash::Device,
-    allocator: &vk_mem::Allocator,
-    queue: vk::Queue,
-    command_pool: vk::CommandPool,
-) -> Texture {
-    let mut skybox_image = image::open("assets/cloudy-skyboxes/Cubemap/Cubemap_Sky_04-512x512.png")
-        .unwrap()
-        .into_rgba8();
-
-    let top_image = skybox_image.sub_image(512, 0, 512, 512).to_image();
-    let left_image = skybox_image.sub_image(0, 512, 512, 512).to_image();
-    let back_image = skybox_image.sub_image(512, 512, 512, 512).to_image();
-    let right_image = skybox_image.sub_image(512 * 2, 512, 512, 512).to_image();
-    let front_image = skybox_image.sub_image(512 * 3, 512, 512, 512).to_image();
-    let bottom_image = skybox_image.sub_image(512, 512 * 2, 512, 512).to_image();
-
-    let mut all_image_data = Vec::new();
-    all_image_data.extend_from_slice(right_image.as_bytes());
-    all_image_data.extend_from_slice(left_image.as_bytes());
-    all_image_data.extend_from_slice(top_image.as_bytes());
-    all_image_data.extend_from_slice(bottom_image.as_bytes());
-    all_image_data.extend_from_slice(back_image.as_bytes());
-    all_image_data.extend_from_slice(front_image.as_bytes());
-
-    let skybox_data = SkyboxImageData {
-        width: 512,
-        height: 512,
-        top: top_image.as_bytes(),
-        bottom: bottom_image.as_bytes(),
-        front: front_image.as_bytes(),
-        back: back_image.as_bytes(),
-        left: left_image.as_bytes(),
-        right: right_image.as_bytes(),
-    };
-
-    Texture::from_skybox_data(
-        device,
-        allocator,
-        queue,
-        command_pool,
-        vk::Filter::LINEAR,
-        &skybox_data,
-    )
-}
-
 fn create_instance_buffer(allocator: &vk_mem::Allocator) -> (vk::Buffer, vk_mem::Allocation) {
     let instance_buffer_info = vk::BufferCreateInfo::default()
         .size((mem::size_of::<InstanceVertex>() * 1000) as u64)
@@ -1588,6 +1542,8 @@ impl VulkanContext {
 
         let command_pool = create_command_pool(&device, graphics_queue_family_index);
 
+        let mut skybox_textures = Vec::new();
+
         let fallback_skybox = Texture::from_skybox_data(
             &device,
             &allocator,
@@ -1618,6 +1574,8 @@ impl VulkanContext {
             },
         );
 
+        skybox_textures.push(fallback_skybox);
+
         let render_frames = Self::create_render_frames(
             &device,
             &allocator,
@@ -1625,7 +1583,6 @@ impl VulkanContext {
             descriptor_pool,
             descriptor_set_layouts.global_layout,
             swapchain_extent,
-            &fallback_skybox,
             graphics_queue_family_index,
         );
 
@@ -1740,7 +1697,8 @@ impl VulkanContext {
             textures,
             material_descriptors: materials,
             mesh_buffers,
-            cubemap_texture: fallback_skybox,
+            skybox_textures,
+            current_skybox: None,
         }
     }
 
@@ -1846,6 +1804,14 @@ impl VulkanContext {
             std::ptr::copy_nonoverlapping(&camera_ubo, camera_alloc_info.mapped_data.cast(), 1);
             std::ptr::copy_nonoverlapping(&scene_ubo, scene_alloc_info.mapped_data.cast(), 1);
         };
+    }
+
+    fn update_skybox_texture(&mut self, skybox_id: u32) {
+        for render_frame in self.render_frames.iter_mut() {
+            render_frame
+                .per_frame_descriptor_data
+                .update_skybox(&self.device, &self.skybox_textures[skybox_id as usize]);
+        }
     }
 
     fn update_instance_buffer(
@@ -2204,6 +2170,11 @@ impl VulkanContext {
 
             self.update_per_frame_descriptors(scene);
 
+            if self.current_skybox != Some(scene.lighting.skybox_id) {
+                self.current_skybox = Some(scene.lighting.skybox_id);
+                self.update_skybox_texture(scene.lighting.skybox_id);
+            }
+
             let batch_info = self.update_instance_buffer(&instance_buffer, scene);
 
             let submit_semaphore = self.submit_semaphores[image_index as usize];
@@ -2507,8 +2478,22 @@ impl VulkanContext {
         (self.textures.len() - 1) as u32
     }
 
-    pub fn load_skybox(&mut self, skybox_data: &SkyboxImageData) {
-        todo!()
+    pub fn load_skybox(
+        &mut self,
+        sampler_filter: vk::Filter,
+        skybox_data: &SkyboxImageData,
+    ) -> u32 {
+        let skybox_texture = Texture::from_skybox_data(
+            &self.device,
+            &self.allocator,
+            self.graphics_queue,
+            self.command_pool,
+            sampler_filter,
+            skybox_data,
+        );
+
+        self.skybox_textures.push(skybox_texture);
+        (self.skybox_textures.len() - 1) as u32
     }
 
     fn create_pipeline_layout(
@@ -3085,12 +3070,11 @@ impl VulkanContext {
         descriptor_pool: vk::DescriptorPool,
         per_frame_layout: vk::DescriptorSetLayout,
         window_extent: vk::Extent2D,
-        skybox_texture: &Texture,
         queue_family_index: u32,
     ) -> Vec<RenderFrame> {
         let frames: Vec<RenderFrame> = (0..MAX_FRAMES)
-            .map(|_i| {
-                let mut render_frame = RenderFrame::new(
+            .map(|_i| -> RenderFrame {
+                RenderFrame::new(
                     device,
                     allocator,
                     queue,
@@ -3098,13 +3082,7 @@ impl VulkanContext {
                     per_frame_layout,
                     window_extent,
                     queue_family_index,
-                );
-
-                render_frame
-                    .per_frame_descriptor_data
-                    .update_skybox(device, &skybox_texture);
-
-                render_frame
+                )
             })
             .collect();
 
@@ -3117,7 +3095,9 @@ impl Drop for VulkanContext {
         unsafe {
             let _ = self.device.device_wait_idle();
 
-            self.cubemap_texture.destroy(&self.device, &self.allocator);
+            for skybox_texture in self.skybox_textures.iter_mut() {
+                skybox_texture.destroy(&self.device, &self.allocator);
+            }
 
             for mesh_buffer in self.mesh_buffers.iter_mut() {
                 mesh_buffer.destroy(&self.allocator);
