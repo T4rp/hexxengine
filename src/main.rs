@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use ash::vk;
 use glam::{EulerRot, Quat, Vec2, Vec3, vec3};
-use gltf::Mesh;
+use gltf::{Mesh, json::Path};
 use image::{EncodableLayout, GenericImage};
 use rand::{Rng, SeedableRng, rngs::SmallRng, seq::IndexedRandom};
 use winit::{
@@ -74,10 +74,8 @@ fn get_first_gltf_mesh(filename: &str) -> MeshData {
     process_gltf_mesh(&mesh, &buffers)
 }
 
-fn load_skybox<'a>(render: &mut VulkanContext) -> u32 {
-    let mut skybox_image = image::open("assets/cloudy-skyboxes/Cubemap/Cubemap_Sky_04-512x512.png")
-        .unwrap()
-        .into_rgba8();
+fn load_skybox<'a>(render: &mut VulkanContext, file_path: &str) -> u32 {
+    let mut skybox_image = image::open(file_path).unwrap().into_rgba8();
 
     let top_image = skybox_image.sub_image(512, 0, 512, 512).to_image();
     let left_image = skybox_image.sub_image(0, 512, 512, 512).to_image();
@@ -119,6 +117,8 @@ struct Game {
     last_frame: Instant,
     start_time: Instant,
     input_state: InputState,
+    skybox1: u32,
+    skybox2: u32,
 }
 
 impl Game {
@@ -131,7 +131,15 @@ impl Game {
         let cube_mesh = vk_ctx.load_mesh(&cube_mesh.vertices, &cube_mesh.indices);
         let sphere_mesh = vk_ctx.load_mesh(&sphere_mesh.vertices, &sphere_mesh.indices);
 
-        let skybox_id = load_skybox(&mut vk_ctx);
+        let skybox1_id = load_skybox(
+            &mut vk_ctx,
+            "assets/cloudy-skyboxes/Cubemap/Cubemap_Sky_04-512x512.png",
+        );
+
+        let skybox2_id = load_skybox(
+            &mut vk_ctx,
+            "assets/cloudy-skyboxes/Cubemap/Cubemap_Sky_02-512x512.png",
+        );
 
         let meshes = [cube_mesh, sphere_mesh];
 
@@ -150,7 +158,7 @@ impl Game {
                 sun_color: vec3(1.0, 0.95, 0.85),
                 sun_power: 0.5,
                 ambient_color: vec3(0.9, 0.95, 1.0) * 0.2,
-                skybox_id,
+                skybox_id: skybox1_id,
             },
         };
 
@@ -198,6 +206,8 @@ impl Game {
             last_frame,
             start_time,
             input_state,
+            skybox1: skybox1_id,
+            skybox2: skybox2_id,
         }
     }
 
@@ -205,6 +215,14 @@ impl Game {
         let now = Instant::now();
         let dt = (now - self.last_frame).as_secs_f32();
         let elapsed = (now - self.start_time).as_secs_f32();
+
+        let skybox_switch = ((elapsed / 10.0).floor() as i32) % 10;
+
+        if skybox_switch % 2 == 0 {
+            self.scene.lighting.skybox_id = self.skybox1
+        } else {
+            self.scene.lighting.skybox_id = self.skybox2
+        }
 
         self.last_frame = now;
 

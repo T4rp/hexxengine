@@ -61,6 +61,7 @@ struct GlobalDescriptors {
     main_pass_descriptor_set: vk::DescriptorSet,
     shadow_pass_descriptor_set: vk::DescriptorSet,
     shadow_map_sampler: vk::Sampler,
+    skybox_dirty: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -192,6 +193,7 @@ impl GlobalDescriptors {
             main_pass_descriptor_set,
             shadow_pass_descriptor_set,
             shadow_map_sampler,
+            skybox_dirty: true,
         }
     }
 
@@ -1703,7 +1705,7 @@ impl VulkanContext {
     }
 
     fn update_per_frame_descriptors(&mut self, scene: &RenderScene) {
-        let current_frame = &self.render_frames[self.current_frame % MAX_FRAMES];
+        let current_frame = &mut self.render_frames[self.current_frame % MAX_FRAMES];
         let camera_buffer_allocation = current_frame.per_frame_descriptor_data.camera_buffer.1;
         let scene_buffer_allocation = current_frame.per_frame_descriptor_data.scene_buffer.1;
 
@@ -1804,13 +1806,18 @@ impl VulkanContext {
             std::ptr::copy_nonoverlapping(&camera_ubo, camera_alloc_info.mapped_data.cast(), 1);
             std::ptr::copy_nonoverlapping(&scene_ubo, scene_alloc_info.mapped_data.cast(), 1);
         };
+
+        if current_frame.per_frame_descriptor_data.skybox_dirty {
+            current_frame.per_frame_descriptor_data.update_skybox(
+                &self.device,
+                &self.skybox_textures[scene.lighting.skybox_id as usize],
+            );
+        }
     }
 
-    fn update_skybox_texture(&mut self, skybox_id: u32) {
+    fn set_global_descriptor_dirty(&mut self) {
         for render_frame in self.render_frames.iter_mut() {
-            render_frame
-                .per_frame_descriptor_data
-                .update_skybox(&self.device, &self.skybox_textures[skybox_id as usize]);
+            render_frame.per_frame_descriptor_data.skybox_dirty = true;
         }
     }
 
@@ -2129,7 +2136,8 @@ impl VulkanContext {
 
         let swapchain_fn = ash::khr::swapchain::Device::new(&self.instance, &self.device);
 
-        let current_frame = &mut self.render_frames[self.current_frame % MAX_FRAMES];
+        let current_frame_index = self.current_frame % MAX_FRAMES;
+        let current_frame = &mut self.render_frames[current_frame_index];
         let command_pool = current_frame.command_pool;
         let command_buffer = current_frame.command_buffer;
         let swapchain_semaphore = current_frame.swapchain_semaphore;
@@ -2168,12 +2176,12 @@ impl VulkanContext {
 
             self.device.reset_fences(&[in_flight_fence]).unwrap();
 
-            self.update_per_frame_descriptors(scene);
-
             if self.current_skybox != Some(scene.lighting.skybox_id) {
                 self.current_skybox = Some(scene.lighting.skybox_id);
-                self.update_skybox_texture(scene.lighting.skybox_id);
+                self.set_global_descriptor_dirty();
             }
+
+            self.update_per_frame_descriptors(scene);
 
             let batch_info = self.update_instance_buffer(&instance_buffer, scene);
 
