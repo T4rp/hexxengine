@@ -1,14 +1,13 @@
 mod color;
 mod input;
-mod mesh;
+mod renderer;
 mod scene;
-mod vulkan;
 
 use std::time::Instant;
 
 use ash::vk;
 use glam::{EulerRot, Quat, Vec2, Vec3, vec3};
-use gltf::{Mesh, json::Path};
+use gltf::Mesh;
 use image::{EncodableLayout, GenericImage};
 use rand::{Rng, SeedableRng, rngs::SmallRng, seq::IndexedRandom};
 use winit::{
@@ -19,14 +18,14 @@ use winit::{
     window::{Window, WindowAttributes},
 };
 
-use vulkan::VulkanContext;
-
 use crate::{
     color::hsv_to_rgb,
     input::InputState,
-    mesh::MeshVertex,
+    renderer::{
+        mesh::MeshVertex,
+        renderer::{SkyboxImageData, VulkanContext},
+    },
     scene::{Camera, Lighting, MeshData, MeshNode, RenderScene},
-    vulkan::SkyboxImageData,
 };
 
 const CAMERA_SPEED: f32 = 100.0;

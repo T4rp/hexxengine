@@ -1,6 +1,6 @@
 use glam::{Mat4, Quat, Vec3, Vec4, Vec4Swizzles, vec4};
 
-use crate::{mesh::MeshVertex, vulkan::MeshHandle};
+use crate::renderer::{mesh::MeshVertex, renderer::MeshHandle};
 
 pub struct Camera {
     pub position: Vec3,

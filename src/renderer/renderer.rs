@@ -8,7 +8,7 @@ use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
 
-use crate::mesh::{
+use crate::renderer::mesh::{
     CameraUniform, InstanceVertex, MaterialFlags, MaterialUniform, MeshVertex, SceneUniform,
 };
 use crate::scene::RenderScene;
