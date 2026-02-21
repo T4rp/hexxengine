@@ -31,6 +31,7 @@ use crate::{
 };
 
 const CAMERA_SPEED: f32 = 100.0;
+const STEP_HZ: f32 = 1.0 / 60.0;
 
 fn process_gltf_mesh(mesh: &gltf::Mesh, buffers: &[gltf::buffer::Data]) -> MeshData {
     let mut mesh_vertices = Vec::new();
@@ -127,8 +128,11 @@ impl PhysicsContext {
         let mut impulse_joint_set = ImpulseJointSet::new();
         let mut multibody_joint_set = MultibodyJointSet::new();
 
-        let gravity = vec3(0.0, -9.81, 0.0);
-        let integration_parameters = IntegrationParameters::default();
+        let gravity = vec3(0.0, -196.0, 0.0);
+        let integration_parameters = IntegrationParameters {
+            length_unit: 1.0,
+            ..Default::default()
+        };
         let mut physics_pipeline = PhysicsPipeline::new();
         let mut island_manager = IslandManager::new();
         let mut broad_phase = DefaultBroadPhase::new();
@@ -178,6 +182,7 @@ pub struct Game {
     resources: GameResources,
     cubes: Vec<Cuboid>,
     physics_context: PhysicsContext,
+    accumulator: f32,
 }
 
 struct Cuboid {
@@ -220,11 +225,11 @@ impl Cuboid {
         size: Vec3,
         color: Vec3,
     ) -> Self {
-        let collider = ColliderBuilder::cuboid(size.x / 2.0, size.y / 2.0, size.z / 2.0)
-            .position(Pose3::from_parts(position, orientation))
-            .build();
+        let collider = ColliderBuilder::cuboid(size.x / 2.0, size.y / 2.0, size.z / 2.0).build();
 
-        let rigid_body = RigidBodyBuilder::dynamic().build();
+        let rigid_body = RigidBodyBuilder::dynamic()
+            .pose(Pose3::from_parts(position, orientation))
+            .build();
 
         let rigid_body_handle = rigid_body_set.insert(rigid_body);
 
@@ -336,7 +341,12 @@ impl Game {
             resources,
             cubes,
             physics_context,
+            accumulator: 0.0,
         }
+    }
+
+    fn update_fixed(&mut self, window: &Window) {
+        self.physics_context.step();
     }
 
     pub fn update(&mut self, window: &Window) {
@@ -344,7 +354,12 @@ impl Game {
         let dt = (now - self.last_frame).as_secs_f32();
         let elapsed = (now - self.start_time).as_secs_f32();
 
-        self.physics_context.step();
+        self.accumulator += dt;
+
+        while self.accumulator > STEP_HZ {
+            self.update_fixed(window);
+            self.accumulator -= STEP_HZ;
+        }
 
         for cube in self.cubes.iter_mut() {
             let Some(rigid_body_handle) = cube.rigid_body_handle else {
