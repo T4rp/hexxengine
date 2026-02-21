@@ -1936,7 +1936,7 @@ impl VulkanContext {
             std::ptr::copy_nonoverlapping(
                 instances.as_ptr(),
                 alloc_info.mapped_data.cast(),
-                instances.len(),
+                instances.len().min(MAX_INSTANCE_COUNT),
             );
         }
 
