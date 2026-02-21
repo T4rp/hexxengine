@@ -51,7 +51,8 @@ impl InputState {
     }
 
     pub fn clear(&mut self) {
-        self.mouse_delta = Vec3::ZERO
+        self.mouse_delta = Vec3::ZERO;
+        self.keys_pressed.clear();
     }
 
     pub fn key_input(&mut self, event: &KeyEvent) {
@@ -63,14 +64,11 @@ impl InputState {
             ElementState::Pressed => {
                 if !self.keys_down.get(&key).unwrap_or(&false) {
                     self.keys_pressed.entry(key).insert_entry(true);
-                } else {
-                    self.keys_pressed.remove(&key);
                 }
                 self.keys_down.entry(key).insert_entry(true);
             }
             ElementState::Released => {
                 self.keys_down.remove(&key);
-                self.keys_pressed.remove(&key);
             }
         }
     }

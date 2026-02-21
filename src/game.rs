@@ -366,7 +366,7 @@ impl Game {
         let camera_forward = camera.orientation * Vec3::NEG_Z;
         let camera_right = camera.orientation * Vec3::X;
 
-        if self.input_state.is_key_down(KeyCode::Space) {
+        if self.input_state.is_key_pressed(KeyCode::Space) {
             let rng = &mut self.rng;
 
             let cuboid = Cuboid::new_rigid_body(
