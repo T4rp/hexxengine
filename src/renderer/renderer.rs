@@ -16,6 +16,7 @@ use crate::scene::RenderScene;
 const USE_VALIDATION_LAYERS: bool = true;
 const MAX_FRAMES: usize = 2;
 const SHADOW_MAP_RESOLUTION: u32 = 1024;
+const MAX_INSTANCE_COUNT: usize = 1000;
 
 const DESCRIPTOR_RATIOS: &[(vk::DescriptorType, u32)] = &[
     (vk::DescriptorType::COMBINED_IMAGE_SAMPLER, 1),
@@ -1407,7 +1408,7 @@ fn create_shader_module(device: &ash::Device, data: &[u8]) -> vk::ShaderModule {
 
 fn create_instance_buffer(allocator: &vk_mem::Allocator) -> (vk::Buffer, vk_mem::Allocation) {
     let instance_buffer_info = vk::BufferCreateInfo::default()
-        .size((mem::size_of::<InstanceVertex>() * 1000) as u64)
+        .size((mem::size_of::<InstanceVertex>() * MAX_INSTANCE_COUNT) as u64)
         .usage(vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
 
     let alloc_info = vk_mem::AllocationCreateInfo {

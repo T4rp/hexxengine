@@ -29,6 +29,7 @@ impl KeyboardInput {
 
 pub struct InputState {
     keys_down: HashMap<KeyCode, bool>,
+    keys_pressed: HashMap<KeyCode, bool>,
     pub right_mouse_down: bool,
     pub left_mouse_down: bool,
     pub last_mouse_position: Vec3,
@@ -40,6 +41,7 @@ impl InputState {
     pub fn new() -> Self {
         Self {
             keys_down: HashMap::new(),
+            keys_pressed: HashMap::new(),
             right_mouse_down: false,
             left_mouse_down: false,
             last_mouse_position: Vec3::Z,
@@ -53,11 +55,24 @@ impl InputState {
     }
 
     pub fn key_input(&mut self, event: &KeyEvent) {
-        if let PhysicalKey::Code(key) = event.physical_key {
-            self.keys_down
-                .entry(key)
-                .insert_entry(event.state.is_pressed());
+        let PhysicalKey::Code(key) = event.physical_key else {
+            return;
         };
+
+        match event.state {
+            ElementState::Pressed => {
+                if !self.keys_down.get(&key).unwrap_or(&false) {
+                    self.keys_pressed.entry(key).insert_entry(true);
+                } else {
+                    self.keys_pressed.remove(&key);
+                }
+                self.keys_down.entry(key).insert_entry(true);
+            }
+            ElementState::Released => {
+                self.keys_down.remove(&key);
+                self.keys_pressed.remove(&key);
+            }
+        }
     }
 
     pub fn mouse_input(&mut self, mouse_button: &MouseButton, state: &ElementState) {
@@ -87,5 +102,9 @@ impl InputState {
 
     pub fn is_key_down(&self, code: KeyCode) -> bool {
         *self.keys_down.get(&code).unwrap_or(&false)
+    }
+
+    pub fn is_key_pressed(&self, code: KeyCode) -> bool {
+        *self.keys_pressed.get(&code).unwrap_or(&false)
     }
 }

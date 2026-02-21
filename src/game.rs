@@ -285,7 +285,7 @@ impl Game {
             ),
             meshes: Vec::new(),
             lighting: Lighting {
-                sun_direction: vec3(0.0, -1.0, 0.0),
+                sun_direction: vec3(0.0, -1.0, -1.0).normalize(),
                 sun_color: vec3(1.0, 0.95, 0.85),
                 sun_power: 0.5,
                 ambient_color: vec3(0.9, 0.95, 1.0) * 0.2,
@@ -307,7 +307,7 @@ impl Game {
             vec3(0.8, 0.8, 0.8),
         ));
 
-        for _ in 0..100 {
+        for _ in 0..200 {
             let cuboid = Cuboid::new_rigid_body(
                 &mut physics_context.collider_set,
                 &mut physics_context.rigid_body_set,
@@ -361,6 +361,38 @@ impl Game {
             self.accumulator -= STEP_HZ;
         }
 
+        let camera = &mut self.scene.camera;
+
+        let camera_forward = camera.orientation * Vec3::NEG_Z;
+        let camera_right = camera.orientation * Vec3::X;
+
+        if self.input_state.is_key_down(KeyCode::Space) {
+            let rng = &mut self.rng;
+
+            let cuboid = Cuboid::new_rigid_body(
+                &mut self.physics_context.collider_set,
+                &mut self.physics_context.rigid_body_set,
+                camera.position + camera_forward * 30.0,
+                Quat::from_euler(
+                    EulerRot::XYZ,
+                    rng.random::<f32>() * std::f32::consts::PI * 2.0,
+                    rng.random::<f32>() * std::f32::consts::PI * 2.0,
+                    rng.random::<f32>() * std::f32::consts::PI * 2.0,
+                ),
+                vec3(4.0, 4.0, 4.0) * rng.random_range(1.0..5.0),
+                hsv_to_rgb(rng.random::<f32>() * 360.0, 0.8, 1.0),
+            );
+
+            let rigid_body_handle = cuboid.rigid_body_handle.unwrap();
+            let rigit_body = self
+                .physics_context
+                .rigid_body_set
+                .get_mut(rigid_body_handle)
+                .unwrap();
+            rigit_body.set_linvel(camera_forward * 500.0, true);
+            self.cubes.push(cuboid);
+        }
+
         for cube in self.cubes.iter_mut() {
             let Some(rigid_body_handle) = cube.rigid_body_handle else {
                 continue;
@@ -388,12 +420,7 @@ impl Game {
         self.last_frame = now;
 
         let sun_dir = vec3(elapsed.cos(), -1.0, elapsed.sin()).normalize();
-        self.scene.lighting.sun_direction = sun_dir;
-
-        let camera = &mut self.scene.camera;
-
-        let forward = camera.orientation * Vec3::NEG_Z;
-        let right = camera.orientation * Vec3::X;
+        // self.scene.lighting.sun_direction = sun_dir;
 
         let mouse_delta = self.input_state.mouse_delta;
 
@@ -417,19 +444,19 @@ impl Game {
         }
 
         if self.input_state.is_key_down(KeyCode::KeyA) {
-            camera.position -= right * dt * CAMERA_SPEED;
+            camera.position -= camera_right * dt * CAMERA_SPEED;
         }
 
         if self.input_state.is_key_down(KeyCode::KeyD) {
-            camera.position += right * dt * CAMERA_SPEED;
+            camera.position += camera_right * dt * CAMERA_SPEED;
         }
 
         if self.input_state.is_key_down(KeyCode::KeyW) {
-            camera.position += forward * dt * CAMERA_SPEED;
+            camera.position += camera_forward * dt * CAMERA_SPEED;
         }
 
         if self.input_state.is_key_down(KeyCode::KeyS) {
-            camera.position -= forward * dt * CAMERA_SPEED;
+            camera.position -= camera_forward * dt * CAMERA_SPEED;
         }
 
         self.input_state.clear();
