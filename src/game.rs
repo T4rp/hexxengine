@@ -5,15 +5,14 @@ use glam::{EulerRot, Quat, Vec2, Vec3, vec3};
 use image::{EncodableLayout, GenericImage};
 use rand::{Rng, SeedableRng, rngs::SmallRng};
 use rapier3d::{
-    math::{Pose, Pose3},
-    na::vector,
-    parry::simba::scalar::SupersetOf,
+    math::Pose3,
     prelude::{
         CCDSolver, ColliderBuilder, ColliderHandle, ColliderSet, DefaultBroadPhase,
         ImpulseJointSet, IntegrationParameters, IslandManager, MultibodyJointSet, NarrowPhase,
         PhysicsPipeline, RigidBodyBuilder, RigidBodyHandle, RigidBodySet,
     },
 };
+use thunderdome::Arena;
 use winit::{
     event::{DeviceEvent, WindowEvent},
     keyboard::KeyCode,
@@ -123,21 +122,21 @@ struct PhysicsContext {
 
 impl PhysicsContext {
     fn new() -> Self {
-        let mut rigid_body_set = RigidBodySet::new();
-        let mut collider_set = ColliderSet::new();
-        let mut impulse_joint_set = ImpulseJointSet::new();
-        let mut multibody_joint_set = MultibodyJointSet::new();
+        let rigid_body_set = RigidBodySet::new();
+        let collider_set = ColliderSet::new();
+        let impulse_joint_set = ImpulseJointSet::new();
+        let multibody_joint_set = MultibodyJointSet::new();
 
         let gravity = vec3(0.0, -196.0, 0.0);
         let integration_parameters = IntegrationParameters {
             length_unit: 1.0,
             ..Default::default()
         };
-        let mut physics_pipeline = PhysicsPipeline::new();
-        let mut island_manager = IslandManager::new();
-        let mut broad_phase = DefaultBroadPhase::new();
-        let mut narrow_phase = NarrowPhase::new();
-        let mut ccd_solver = CCDSolver::new();
+        let physics_pipeline = PhysicsPipeline::new();
+        let island_manager = IslandManager::new();
+        let broad_phase = DefaultBroadPhase::new();
+        let narrow_phase = NarrowPhase::new();
+        let ccd_solver = CCDSolver::new();
 
         Self {
             gravity,
@@ -180,7 +179,7 @@ pub struct Game {
     start_time: Instant,
     rng: SmallRng,
     resources: GameResources,
-    cubes: Vec<Cuboid>,
+    cubes: Arena<Cuboid>,
     physics_context: PhysicsContext,
     accumulator: f32,
 }
@@ -191,21 +190,30 @@ struct Cuboid {
     size: Vec3,
     color: Vec3,
     collider: ColliderHandle,
-    rigid_body_handle: Option<RigidBodyHandle>,
+    rigid_body_handle: RigidBodyHandle,
 }
 
 impl Cuboid {
     fn new(
-        collider_set: &mut ColliderSet,
+        phys_ctx: &mut PhysicsContext,
         position: Vec3,
         orientation: Quat,
         size: Vec3,
         color: Vec3,
     ) -> Self {
-        let collider = ColliderBuilder::cuboid(size.x / 2.0, size.y / 2.0, size.z / 2.0)
-            .position(Pose3::from_parts(position, orientation))
+        let collider = ColliderBuilder::cuboid(size.x / 2.0, size.y / 2.0, size.z / 2.0).build();
+
+        let rigid_body = RigidBodyBuilder::fixed()
+            .pose(Pose3::from_parts(position, orientation))
             .build();
-        let collider_handle = collider_set.insert(collider);
+
+        let rigid_body_handle = phys_ctx.rigid_body_set.insert(rigid_body);
+
+        let collider_handle = phys_ctx.collider_set.insert_with_parent(
+            collider,
+            rigid_body_handle,
+            &mut phys_ctx.rigid_body_set,
+        );
 
         Self {
             position,
@@ -213,13 +221,12 @@ impl Cuboid {
             size,
             color,
             collider: collider_handle,
-            rigid_body_handle: None,
+            rigid_body_handle: rigid_body_handle,
         }
     }
 
     fn new_rigid_body(
-        collider_set: &mut ColliderSet,
-        rigid_body_set: &mut RigidBodySet,
+        phys_ctx: &mut PhysicsContext,
         position: Vec3,
         orientation: Quat,
         size: Vec3,
@@ -231,10 +238,13 @@ impl Cuboid {
             .pose(Pose3::from_parts(position, orientation))
             .build();
 
-        let rigid_body_handle = rigid_body_set.insert(rigid_body);
+        let rigid_body_handle = phys_ctx.rigid_body_set.insert(rigid_body);
 
-        let collider_handle =
-            collider_set.insert_with_parent(collider, rigid_body_handle, rigid_body_set);
+        let collider_handle = phys_ctx.collider_set.insert_with_parent(
+            collider,
+            rigid_body_handle,
+            &mut phys_ctx.rigid_body_set,
+        );
 
         Self {
             position,
@@ -242,8 +252,19 @@ impl Cuboid {
             size,
             color,
             collider: collider_handle,
-            rigid_body_handle: Some(rigid_body_handle),
+            rigid_body_handle: rigid_body_handle,
         }
+    }
+
+    fn destroy(self, phys_ctx: &mut PhysicsContext) {
+        phys_ctx.rigid_body_set.remove(
+            self.rigid_body_handle,
+            &mut phys_ctx.island_manager,
+            &mut phys_ctx.collider_set,
+            &mut phys_ctx.impulse_joint_set,
+            &mut phys_ctx.multibody_joint_set,
+            true,
+        );
     }
 }
 
@@ -297,10 +318,10 @@ impl Game {
 
         let mut physics_context = PhysicsContext::new();
 
-        let mut cubes = Vec::new();
+        let mut cubes = Arena::new();
 
-        cubes.push(Cuboid::new(
-            &mut physics_context.collider_set,
+        cubes.insert(Cuboid::new(
+            &mut physics_context,
             vec3(0.0, -25.0, 0.0),
             Quat::IDENTITY,
             vec3(512.0, 50.0, 512.0),
@@ -309,8 +330,7 @@ impl Game {
 
         for _ in 0..200 {
             let cuboid = Cuboid::new_rigid_body(
-                &mut physics_context.collider_set,
-                &mut physics_context.rigid_body_set,
+                &mut physics_context,
                 vec3(
                     rng.random_range(-50.0..50.0),
                     rng.random_range(1.0..50.0),
@@ -326,7 +346,7 @@ impl Game {
                 hsv_to_rgb(rng.random::<f32>() * 360.0, 0.8, 1.0),
             );
 
-            cubes.push(cuboid);
+            cubes.insert(cuboid);
         }
 
         let input_state = InputState::new();
@@ -370,8 +390,7 @@ impl Game {
             let rng = &mut self.rng;
 
             let cuboid = Cuboid::new_rigid_body(
-                &mut self.physics_context.collider_set,
-                &mut self.physics_context.rigid_body_set,
+                &mut self.physics_context,
                 camera.position + camera_forward * 30.0,
                 Quat::from_euler(
                     EulerRot::XYZ,
@@ -383,30 +402,41 @@ impl Game {
                 hsv_to_rgb(rng.random::<f32>() * 360.0, 0.8, 1.0),
             );
 
-            let rigid_body_handle = cuboid.rigid_body_handle.unwrap();
             let rigit_body = self
                 .physics_context
                 .rigid_body_set
-                .get_mut(rigid_body_handle)
+                .get_mut(cuboid.rigid_body_handle)
                 .unwrap();
             rigit_body.set_linvel(camera_forward * 500.0, true);
-            self.cubes.push(cuboid);
+            self.cubes.insert(cuboid);
         }
 
-        for cube in self.cubes.iter_mut() {
-            let Some(rigid_body_handle) = cube.rigid_body_handle else {
-                continue;
-            };
+        let mut to_remove = Vec::new();
 
+        for (index, cube) in self.cubes.iter_mut() {
             let rigid_body = self
                 .physics_context
                 .rigid_body_set
-                .get(rigid_body_handle)
+                .get(cube.rigid_body_handle)
                 .unwrap();
 
             let pose = rigid_body.position();
+
+            if pose.translation.y < -500.0 {
+                to_remove.push(index);
+            }
+
             cube.position = pose.translation;
             cube.orientation = pose.rotation;
+        }
+
+        for index in to_remove {
+            let Some(cube) = self.cubes.remove(index) else {
+                continue;
+            };
+
+            cube.destroy(&mut self.physics_context);
+            println!("removed {:?}", index);
         }
 
         let skybox_switch = ((elapsed / 10.0).floor() as i32) % 10;
@@ -465,7 +495,7 @@ impl Game {
     fn draw(&mut self) {
         self.scene.meshes.clear();
 
-        for cube in self.cubes.iter() {
+        for (_i, cube) in self.cubes.iter() {
             self.scene.meshes.push(MeshNode {
                 position: cube.position,
                 orientation: cube.orientation,
