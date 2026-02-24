@@ -1847,7 +1847,7 @@ impl VulkanContext {
             (!is_opaque, depth, m.material_id, m.mesh_id)
         });
 
-        let mesh_count = meshes.len();
+        let mesh_count = meshes.len().min(MAX_INSTANCE_COUNT);
 
         let mut instances: Vec<InstanceVertex> = Vec::new();
         let mut batch_infos: Vec<MeshBatch> = Vec::new();
