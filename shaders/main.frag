@@ -66,6 +66,8 @@ void main() {
 			uv = inUv * inScale.yz;
 	}
 
+	uv = uv * materialUbo.uvScale;
+
 	float lightPower = sceneUbo.sunCol.w;
 	vec3 lightColor = sceneUbo.sunCol.xyz;
 	vec3 ambientColor = sceneUbo.ambientCol.xyz;

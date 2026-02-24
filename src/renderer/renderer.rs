@@ -1665,7 +1665,7 @@ impl VulkanContext {
             command_pool,
             descriptor_pool,
             &descriptor_set_layouts,
-            Vec2::ONE,
+            Vec2::splat(0.5),
             32.0,
         );
 

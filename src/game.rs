@@ -538,7 +538,7 @@ impl Game {
                         color: part.color,
                         opacity: 1.0,
                         mesh_id: self.resources.sphere_mesh,
-                        material_id: 1,
+                        material_id: 0,
                     });
                 }
             }
