@@ -1,6 +1,8 @@
+mod assets;
 mod color;
 mod game;
 mod input;
+mod physics;
 mod renderer;
 mod scene;
 

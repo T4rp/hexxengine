@@ -20,8 +20,10 @@ use winit::{
 };
 
 use crate::{
+    assets::{get_first_gltf_mesh, load_skybox},
     color::hsv_to_rgb,
     input::InputState,
+    physics::PhysicsContext,
     renderer::{
         mesh::MeshVertex,
         renderer::{MeshHandle, SkyboxImageData, VulkanContext},
@@ -32,143 +34,11 @@ use crate::{
 const CAMERA_SPEED: f32 = 100.0;
 const STEP_HZ: f32 = 1.0 / 60.0;
 
-fn process_gltf_mesh(mesh: &gltf::Mesh, buffers: &[gltf::buffer::Data]) -> MeshData {
-    let mut mesh_vertices = Vec::new();
-    let mut mesh_indices = Vec::new();
-
-    let prim = mesh.primitives().next().unwrap();
-    let reader = prim.reader(|b| Some(&buffers[b.index()]));
-
-    let mut positions = reader.read_positions().unwrap();
-    let mut normals = reader.read_normals().unwrap();
-    let mut uvs = reader.read_tex_coords(0).unwrap().into_f32();
-    let indices = reader.read_indices().unwrap().into_u32();
-
-    let v_count = positions.len();
-
-    for _ in 0..v_count {
-        let position = positions.next().unwrap();
-        let normal = normals.next().unwrap();
-        let uv = uvs.next().unwrap();
-
-        mesh_vertices.push(MeshVertex {
-            pos: Vec3::from_slice(&position),
-            norm: Vec3::from_slice(&normal),
-            uv: Vec2::from_slice(&uv),
-        });
-    }
-
-    for index in indices {
-        mesh_indices.push(index as u16);
-    }
-
-    MeshData {
-        vertices: mesh_vertices,
-        indices: mesh_indices,
-    }
-}
-
-fn get_first_gltf_mesh(filename: &str) -> MeshData {
-    let (gltf, buffers, _images) = gltf::import(filename).unwrap();
-
-    let mesh = gltf.meshes().next().unwrap();
-    process_gltf_mesh(&mesh, &buffers)
-}
-
-fn load_skybox<'a>(render: &mut VulkanContext, file_path: &str) -> u32 {
-    let mut skybox_image = image::open(file_path).unwrap().into_rgba8();
-
-    let top_image = skybox_image.sub_image(512, 0, 512, 512).to_image();
-    let left_image = skybox_image.sub_image(0, 512, 512, 512).to_image();
-    let back_image = skybox_image.sub_image(512, 512, 512, 512).to_image();
-    let right_image = skybox_image.sub_image(512 * 2, 512, 512, 512).to_image();
-    let front_image = skybox_image.sub_image(512 * 3, 512, 512, 512).to_image();
-    let bottom_image = skybox_image.sub_image(512, 512 * 2, 512, 512).to_image();
-
-    let skybox_data = SkyboxImageData {
-        width: 512,
-        height: 512,
-        top: top_image.as_bytes(),
-        bottom: bottom_image.as_bytes(),
-        front: front_image.as_bytes(),
-        back: back_image.as_bytes(),
-        left: left_image.as_bytes(),
-        right: right_image.as_bytes(),
-    };
-
-    render.load_skybox(vk::Filter::LINEAR, &skybox_data)
-}
-
 struct GameResources {
     cube_mesh: MeshHandle,
     sphere_mesh: MeshHandle,
     skybox1: u32,
     skybox2: u32,
-}
-
-struct PhysicsContext {
-    gravity: Vec3,
-    rigid_body_set: RigidBodySet,
-    collider_set: ColliderSet,
-    impulse_joint_set: ImpulseJointSet,
-    multibody_joint_set: MultibodyJointSet,
-    integration_parameters: IntegrationParameters,
-    island_manager: IslandManager,
-    broad_phase: DefaultBroadPhase,
-    narrow_phase: NarrowPhase,
-    ccd_solver: CCDSolver,
-    physics_pipeline: PhysicsPipeline,
-}
-
-impl PhysicsContext {
-    fn new() -> Self {
-        let rigid_body_set = RigidBodySet::new();
-        let collider_set = ColliderSet::new();
-        let impulse_joint_set = ImpulseJointSet::new();
-        let multibody_joint_set = MultibodyJointSet::new();
-
-        let gravity = vec3(0.0, -196.0, 0.0);
-        let integration_parameters = IntegrationParameters {
-            length_unit: 1.0,
-            ..Default::default()
-        };
-        let physics_pipeline = PhysicsPipeline::new();
-        let island_manager = IslandManager::new();
-        let broad_phase = DefaultBroadPhase::new();
-        let narrow_phase = NarrowPhase::new();
-        let ccd_solver = CCDSolver::new();
-
-        Self {
-            gravity,
-            rigid_body_set,
-            collider_set,
-            impulse_joint_set,
-            multibody_joint_set,
-            broad_phase,
-            integration_parameters,
-            island_manager,
-            ccd_solver,
-            physics_pipeline,
-            narrow_phase,
-        }
-    }
-
-    fn step(&mut self) {
-        self.physics_pipeline.step(
-            self.gravity,
-            &self.integration_parameters,
-            &mut self.island_manager,
-            &mut self.broad_phase,
-            &mut self.narrow_phase,
-            &mut self.rigid_body_set,
-            &mut self.collider_set,
-            &mut self.impulse_joint_set,
-            &mut self.multibody_joint_set,
-            &mut self.ccd_solver,
-            &(),
-            &(),
-        );
-    }
 }
 
 pub struct Game {
