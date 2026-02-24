@@ -436,7 +436,6 @@ impl Game {
             };
 
             cube.destroy(&mut self.physics_context);
-            println!("removed {:?}", index);
         }
 
         let skybox_switch = ((elapsed / 10.0).floor() as i32) % 10;
