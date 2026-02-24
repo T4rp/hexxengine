@@ -244,26 +244,57 @@ impl Game {
         }
     }
 
-    fn update_fixed(&mut self, window: &Window) {
+    fn update_fixed(&mut self) {
         self.physics_context.step();
     }
 
-    pub fn update(&mut self, window: &Window) {
-        let now = Instant::now();
-        let dt = (now - self.last_frame).as_secs_f32();
-        let elapsed = (now - self.start_time).as_secs_f32();
-
-        self.accumulator += dt;
-
-        while self.accumulator > STEP_HZ {
-            self.update_fixed(window);
-            self.accumulator -= STEP_HZ;
-        }
-
+    fn move_camera(&mut self, dt: f32, window: &Window) {
         let camera = &mut self.scene.camera;
 
         let camera_forward = camera.orientation * Vec3::NEG_Z;
         let camera_right = camera.orientation * Vec3::X;
+
+        if self.input_state.right_mouse_down {
+            let _ = window
+                .set_cursor_grab(winit::window::CursorGrabMode::Confined)
+                .or_else(|_| window.set_cursor_grab(winit::window::CursorGrabMode::Locked));
+            window.set_cursor_visible(false);
+        } else {
+            let _ = window.set_cursor_grab(winit::window::CursorGrabMode::None);
+            window.set_cursor_visible(true);
+        }
+
+        let mouse_delta = self.input_state.mouse_delta;
+
+        if mouse_delta.z == 0.0 && self.input_state.right_mouse_down {
+            let sensitivity = 0.001;
+
+            let yaw = Quat::from_rotation_y(-mouse_delta.x * sensitivity);
+            let pitch = Quat::from_rotation_x(-mouse_delta.y * sensitivity);
+
+            camera.orientation = yaw * camera.orientation * pitch;
+        }
+
+        if self.input_state.is_key_down(KeyCode::KeyA) {
+            camera.position -= camera_right * dt * CAMERA_SPEED;
+        }
+
+        if self.input_state.is_key_down(KeyCode::KeyD) {
+            camera.position += camera_right * dt * CAMERA_SPEED;
+        }
+
+        if self.input_state.is_key_down(KeyCode::KeyW) {
+            camera.position += camera_forward * dt * CAMERA_SPEED;
+        }
+
+        if self.input_state.is_key_down(KeyCode::KeyS) {
+            camera.position -= camera_forward * dt * CAMERA_SPEED;
+        }
+    }
+
+    fn handle_spawning_parts(&mut self) {
+        let camera_position = self.scene.camera.position;
+        let camera_forward = self.scene.camera.orientation * Vec3::NEG_Z;
 
         if self.input_state.is_key_down(KeyCode::Space) {
             let rng = &mut self.rng;
@@ -272,7 +303,7 @@ impl Game {
                 Part::new_cube(
                     &mut self.physics_context,
                     RigidBodyType::Dynamic,
-                    camera.position + camera_forward * 30.0,
+                    camera_position + camera_forward * 30.0,
                     Quat::from_euler(
                         EulerRot::XYZ,
                         rng.random::<f32>() * std::f32::consts::PI * 2.0,
@@ -286,7 +317,7 @@ impl Game {
                 Part::new_sphere(
                     &mut self.physics_context,
                     RigidBodyType::Dynamic,
-                    camera.position + camera_forward * 30.0,
+                    camera_position + camera_forward * 30.0,
                     Quat::from_euler(
                         EulerRot::XYZ,
                         rng.random::<f32>() * std::f32::consts::PI * 2.0,
@@ -306,7 +337,9 @@ impl Game {
             rigid_body.set_linvel(camera_forward * 500.0, true);
             self.parts.insert(part);
         }
+    }
 
+    fn clean_parts(&mut self) {
         let mut to_remove = Vec::new();
 
         for (index, cube) in self.parts.iter_mut() {
@@ -333,6 +366,24 @@ impl Game {
 
             cube.destroy(&mut self.physics_context);
         }
+    }
+
+    pub fn update(&mut self, window: &Window) {
+        let now = Instant::now();
+        let dt = (now - self.last_frame).as_secs_f32();
+        let elapsed = (now - self.start_time).as_secs_f32();
+
+        self.last_frame = now;
+        self.accumulator += dt;
+
+        while self.accumulator > STEP_HZ {
+            self.update_fixed();
+            self.accumulator -= STEP_HZ;
+        }
+
+        self.move_camera(dt, window);
+        self.handle_spawning_parts();
+        self.clean_parts();
 
         let skybox_switch = ((elapsed / 10.0).floor() as i32) % 10;
 
@@ -340,45 +391,6 @@ impl Game {
             self.scene.lighting.skybox_id = self.resources.skybox1
         } else {
             self.scene.lighting.skybox_id = self.resources.skybox2
-        }
-
-        self.last_frame = now;
-
-        let mouse_delta = self.input_state.mouse_delta;
-
-        if self.input_state.right_mouse_down {
-            let _ = window
-                .set_cursor_grab(winit::window::CursorGrabMode::Confined)
-                .or_else(|_| window.set_cursor_grab(winit::window::CursorGrabMode::Locked));
-            window.set_cursor_visible(false);
-        } else {
-            let _ = window.set_cursor_grab(winit::window::CursorGrabMode::None);
-            window.set_cursor_visible(true);
-        }
-
-        if mouse_delta.z == 0.0 && self.input_state.right_mouse_down {
-            let sensitivity = 0.001;
-
-            let yaw = Quat::from_rotation_y(-mouse_delta.x * sensitivity);
-            let pitch = Quat::from_rotation_x(-mouse_delta.y * sensitivity);
-
-            camera.orientation = yaw * camera.orientation * pitch;
-        }
-
-        if self.input_state.is_key_down(KeyCode::KeyA) {
-            camera.position -= camera_right * dt * CAMERA_SPEED;
-        }
-
-        if self.input_state.is_key_down(KeyCode::KeyD) {
-            camera.position += camera_right * dt * CAMERA_SPEED;
-        }
-
-        if self.input_state.is_key_down(KeyCode::KeyW) {
-            camera.position += camera_forward * dt * CAMERA_SPEED;
-        }
-
-        if self.input_state.is_key_down(KeyCode::KeyS) {
-            camera.position -= camera_forward * dt * CAMERA_SPEED;
         }
 
         self.input_state.clear();
