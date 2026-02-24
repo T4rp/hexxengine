@@ -9,7 +9,7 @@ use rapier3d::{
     prelude::{
         CCDSolver, ColliderBuilder, ColliderHandle, ColliderSet, DefaultBroadPhase,
         ImpulseJointSet, IntegrationParameters, IslandManager, MultibodyJointSet, NarrowPhase,
-        PhysicsPipeline, RigidBodyBuilder, RigidBodyHandle, RigidBodySet,
+        PhysicsPipeline, RigidBodyBuilder, RigidBodyHandle, RigidBodySet, RigidBodyType,
     },
 };
 use thunderdome::Arena;
@@ -179,23 +179,29 @@ pub struct Game {
     start_time: Instant,
     rng: SmallRng,
     resources: GameResources,
-    cubes: Arena<Cuboid>,
+    parts: Arena<Part>,
     physics_context: PhysicsContext,
     accumulator: f32,
 }
 
-struct Cuboid {
+enum PartShape {
+    Cube(Vec3),
+    Sphere(f32),
+}
+
+struct Part {
     position: Vec3,
     orientation: Quat,
-    size: Vec3,
+    shape: PartShape,
     color: Vec3,
     collider: ColliderHandle,
     rigid_body_handle: RigidBodyHandle,
 }
 
-impl Cuboid {
-    fn new(
+impl Part {
+    fn new_cube(
         phys_ctx: &mut PhysicsContext,
+        body_type: RigidBodyType,
         position: Vec3,
         orientation: Quat,
         size: Vec3,
@@ -203,7 +209,7 @@ impl Cuboid {
     ) -> Self {
         let collider = ColliderBuilder::cuboid(size.x / 2.0, size.y / 2.0, size.z / 2.0).build();
 
-        let rigid_body = RigidBodyBuilder::fixed()
+        let rigid_body = RigidBodyBuilder::new(body_type)
             .pose(Pose3::from_parts(position, orientation))
             .build();
 
@@ -218,23 +224,24 @@ impl Cuboid {
         Self {
             position,
             orientation,
-            size,
+            shape: PartShape::Cube(size),
             color,
             collider: collider_handle,
             rigid_body_handle: rigid_body_handle,
         }
     }
 
-    fn new_rigid_body(
+    fn new_sphere(
         phys_ctx: &mut PhysicsContext,
+        body_type: RigidBodyType,
         position: Vec3,
         orientation: Quat,
-        size: Vec3,
+        radius: f32,
         color: Vec3,
     ) -> Self {
-        let collider = ColliderBuilder::cuboid(size.x / 2.0, size.y / 2.0, size.z / 2.0).build();
+        let collider = ColliderBuilder::ball(radius).build();
 
-        let rigid_body = RigidBodyBuilder::dynamic()
+        let rigid_body = RigidBodyBuilder::new(body_type)
             .pose(Pose3::from_parts(position, orientation))
             .build();
 
@@ -249,7 +256,7 @@ impl Cuboid {
         Self {
             position,
             orientation,
-            size,
+            shape: PartShape::Sphere(radius),
             color,
             collider: collider_handle,
             rigid_body_handle: rigid_body_handle,
@@ -320,8 +327,9 @@ impl Game {
 
         let mut cubes = Arena::new();
 
-        cubes.insert(Cuboid::new(
+        cubes.insert(Part::new_cube(
             &mut physics_context,
+            RigidBodyType::Fixed,
             vec3(0.0, -25.0, 0.0),
             Quat::IDENTITY,
             vec3(512.0, 50.0, 512.0),
@@ -329,8 +337,9 @@ impl Game {
         ));
 
         for _ in 0..200 {
-            let cuboid = Cuboid::new_rigid_body(
+            let cuboid = Part::new_cube(
                 &mut physics_context,
+                RigidBodyType::Dynamic,
                 vec3(
                     rng.random_range(-50.0..50.0),
                     rng.random_range(1.0..50.0),
@@ -359,7 +368,7 @@ impl Game {
             input_state,
             rng,
             resources,
-            cubes,
+            parts: cubes,
             physics_context,
             accumulator: 0.0,
         }
@@ -386,34 +395,51 @@ impl Game {
         let camera_forward = camera.orientation * Vec3::NEG_Z;
         let camera_right = camera.orientation * Vec3::X;
 
-        if self.input_state.is_key_pressed(KeyCode::Space) {
+        if self.input_state.is_key_down(KeyCode::Space) {
             let rng = &mut self.rng;
 
-            let cuboid = Cuboid::new_rigid_body(
-                &mut self.physics_context,
-                camera.position + camera_forward * 30.0,
-                Quat::from_euler(
-                    EulerRot::XYZ,
-                    rng.random::<f32>() * std::f32::consts::PI * 2.0,
-                    rng.random::<f32>() * std::f32::consts::PI * 2.0,
-                    rng.random::<f32>() * std::f32::consts::PI * 2.0,
-                ),
-                vec3(4.0, 4.0, 4.0) * rng.random_range(1.0..5.0),
-                hsv_to_rgb(rng.random::<f32>() * 360.0, 0.8, 1.0),
-            );
+            let part = if rng.random_bool(0.5) {
+                Part::new_cube(
+                    &mut self.physics_context,
+                    RigidBodyType::Dynamic,
+                    camera.position + camera_forward * 30.0,
+                    Quat::from_euler(
+                        EulerRot::XYZ,
+                        rng.random::<f32>() * std::f32::consts::PI * 2.0,
+                        rng.random::<f32>() * std::f32::consts::PI * 2.0,
+                        rng.random::<f32>() * std::f32::consts::PI * 2.0,
+                    ),
+                    vec3(4.0, 4.0, 4.0) * rng.random_range(1.0..5.0),
+                    hsv_to_rgb(rng.random::<f32>() * 360.0, 0.8, 1.0),
+                )
+            } else {
+                Part::new_sphere(
+                    &mut self.physics_context,
+                    RigidBodyType::Dynamic,
+                    camera.position + camera_forward * 30.0,
+                    Quat::from_euler(
+                        EulerRot::XYZ,
+                        rng.random::<f32>() * std::f32::consts::PI * 2.0,
+                        rng.random::<f32>() * std::f32::consts::PI * 2.0,
+                        rng.random::<f32>() * std::f32::consts::PI * 2.0,
+                    ),
+                    rng.random_range(5.0..10.0),
+                    hsv_to_rgb(rng.random::<f32>() * 360.0, 0.8, 1.0),
+                )
+            };
 
-            let rigit_body = self
+            let rigid_body = self
                 .physics_context
                 .rigid_body_set
-                .get_mut(cuboid.rigid_body_handle)
+                .get_mut(part.rigid_body_handle)
                 .unwrap();
-            rigit_body.set_linvel(camera_forward * 500.0, true);
-            self.cubes.insert(cuboid);
+            rigid_body.set_linvel(camera_forward * 500.0, true);
+            self.parts.insert(part);
         }
 
         let mut to_remove = Vec::new();
 
-        for (index, cube) in self.cubes.iter_mut() {
+        for (index, cube) in self.parts.iter_mut() {
             let rigid_body = self
                 .physics_context
                 .rigid_body_set
@@ -431,7 +457,7 @@ impl Game {
         }
 
         for index in to_remove {
-            let Some(cube) = self.cubes.remove(index) else {
+            let Some(cube) = self.parts.remove(index) else {
                 continue;
             };
 
@@ -447,9 +473,6 @@ impl Game {
         }
 
         self.last_frame = now;
-
-        let sun_dir = vec3(elapsed.cos(), -1.0, elapsed.sin()).normalize();
-        // self.scene.lighting.sun_direction = sun_dir;
 
         let mouse_delta = self.input_state.mouse_delta;
 
@@ -494,16 +517,31 @@ impl Game {
     fn draw(&mut self) {
         self.scene.meshes.clear();
 
-        for (_i, cube) in self.cubes.iter() {
-            self.scene.meshes.push(MeshNode {
-                position: cube.position,
-                orientation: cube.orientation,
-                size: cube.size,
-                color: cube.color,
-                opacity: 1.0,
-                mesh_id: self.resources.cube_mesh,
-                material_id: 1,
-            });
+        for (_i, part) in self.parts.iter() {
+            match part.shape {
+                PartShape::Cube(size) => {
+                    self.scene.meshes.push(MeshNode {
+                        position: part.position,
+                        orientation: part.orientation,
+                        size: size,
+                        color: part.color,
+                        opacity: 1.0,
+                        mesh_id: self.resources.cube_mesh,
+                        material_id: 1,
+                    });
+                }
+                PartShape::Sphere(radius) => {
+                    self.scene.meshes.push(MeshNode {
+                        position: part.position,
+                        orientation: part.orientation,
+                        size: Vec3::splat(radius * 2.0),
+                        color: part.color,
+                        opacity: 1.0,
+                        mesh_id: self.resources.sphere_mesh,
+                        material_id: 1,
+                    });
+                }
+            }
         }
 
         self.vk_ctx.draw(&self.scene);
