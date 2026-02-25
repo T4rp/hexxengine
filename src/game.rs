@@ -202,7 +202,7 @@ impl Game {
             RigidBodyType::Fixed,
             vec3(0.0, -25.0, 0.0),
             Quat::IDENTITY,
-            vec3(512.0, 50.0, 512.0),
+            vec3(2048.0, 50.0, 2048.0),
             vec3(0.8, 0.8, 0.8),
         ));
 
