@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use glam::Vec3;
 use winit::{
@@ -8,8 +8,8 @@ use winit::{
 };
 
 pub struct InputState {
-    keys_down: HashMap<KeyCode, bool>,
-    keys_pressed: HashMap<KeyCode, bool>,
+    keys_down: HashSet<KeyCode>,
+    keys_pressed: HashSet<KeyCode>,
     pub right_mouse_down: bool,
     pub left_mouse_down: bool,
     pub last_mouse_position: Vec3,
@@ -20,8 +20,8 @@ pub struct InputState {
 impl InputState {
     pub fn new() -> Self {
         Self {
-            keys_down: HashMap::new(),
-            keys_pressed: HashMap::new(),
+            keys_down: HashSet::with_capacity(50),
+            keys_pressed: HashSet::with_capacity(10),
             right_mouse_down: false,
             left_mouse_down: false,
             last_mouse_position: Vec3::Z,
@@ -42,10 +42,10 @@ impl InputState {
 
         match event.state {
             ElementState::Pressed => {
-                if !self.keys_down.get(&key).unwrap_or(&false) {
-                    self.keys_pressed.entry(key).insert_entry(true);
+                if !self.keys_down.contains(&key) {
+                    self.keys_pressed.insert(key);
                 }
-                self.keys_down.entry(key).insert_entry(true);
+                self.keys_down.insert(key);
             }
             ElementState::Released => {
                 self.keys_down.remove(&key);
@@ -79,10 +79,10 @@ impl InputState {
     }
 
     pub fn is_key_down(&self, code: KeyCode) -> bool {
-        *self.keys_down.get(&code).unwrap_or(&false)
+        self.keys_down.contains(&code)
     }
 
     pub fn is_key_pressed(&self, code: KeyCode) -> bool {
-        *self.keys_pressed.get(&code).unwrap_or(&false)
+        self.keys_pressed.contains(&code)
     }
 }
