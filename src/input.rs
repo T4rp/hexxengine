@@ -7,26 +7,6 @@ use winit::{
     keyboard::{KeyCode, PhysicalKey},
 };
 
-#[derive(Default, Debug)]
-pub struct KeyboardInput {
-    keys_down: HashMap<KeyCode, bool>,
-    pub right_mouse_down: bool,
-}
-
-impl KeyboardInput {
-    pub fn input(&mut self, event: KeyEvent) {
-        if let PhysicalKey::Code(key) = event.physical_key {
-            self.keys_down
-                .entry(key)
-                .insert_entry(event.state.is_pressed());
-        };
-    }
-
-    pub fn is_key_down(&self, code: KeyCode) -> bool {
-        *self.keys_down.get(&code).unwrap_or(&false)
-    }
-}
-
 pub struct InputState {
     keys_down: HashMap<KeyCode, bool>,
     keys_pressed: HashMap<KeyCode, bool>,
