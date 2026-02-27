@@ -16,8 +16,3 @@ thunderdome = "0.6.1"
 vk-mem = "0.5.0"
 winit = "0.30.12"
 
-[profile.dev.package.rapier3d]
-opt-level = 3
-
-[profile.dev.package.image]
-opt-level = 3
