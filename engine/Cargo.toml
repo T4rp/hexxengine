@@ -3,6 +3,9 @@ name = "hexxengine"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+path = "src/lib.rs"
+
 [dependencies]
 ash = "0.38.0"
 ash-window = "0.13.0"

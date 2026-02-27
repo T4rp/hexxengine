@@ -1,17 +1,14 @@
 use std::time::Instant;
 
-use ash::vk;
-use glam::{EulerRot, Quat, Vec2, Vec3, vec3};
-use image::{EncodableLayout, GenericImage};
-use rand::{Rng, SeedableRng, rngs::SmallRng};
+use hexxengine::{glam, rand, rapier3d, thunderdome, winit};
+
+use glam::{EulerRot, Quat, Vec3, vec3};
 use rapier3d::{
     math::Pose3,
-    prelude::{
-        CCDSolver, ColliderBuilder, ColliderHandle, ColliderSet, DefaultBroadPhase,
-        ImpulseJointSet, IntegrationParameters, IslandManager, MultibodyJointSet, NarrowPhase,
-        PhysicsPipeline, RigidBodyBuilder, RigidBodyHandle, RigidBodySet, RigidBodyType,
-    },
+    prelude::{ColliderBuilder, ColliderHandle, RigidBodyBuilder, RigidBodyHandle, RigidBodyType},
 };
+
+use rand::{Rng, SeedableRng, rngs::SmallRng};
 use thunderdome::Arena;
 use winit::{
     event::{DeviceEvent, WindowEvent},
@@ -19,16 +16,13 @@ use winit::{
     window::Window,
 };
 
-use crate::{
+use hexxengine::{
     assets::{get_first_gltf_mesh, load_skybox},
     color::hsv_to_rgb,
     input::InputState,
     physics::PhysicsContext,
-    renderer::{
-        mesh::MeshVertex,
-        renderer::{MeshHandle, SkyboxImageData, VulkanContext},
-    },
-    scene::{Camera, Lighting, MeshData, MeshNode, RenderScene},
+    renderer::renderer::{MeshHandle, VulkanContext},
+    scene::{Camera, Lighting, MeshNode, RenderScene},
 };
 
 const CAMERA_SPEED: f32 = 100.0;
@@ -175,7 +169,7 @@ impl Game {
         let start_time = Instant::now();
         let last_frame = start_time;
 
-        let mut scene = RenderScene {
+        let scene = RenderScene {
             camera: Camera::new(
                 vec3(0.0, 100.0, 100.0),
                 Quat::from_euler(EulerRot::ZXY, 0.0, f32::to_radians(-45.0), 0.0),
