@@ -17,6 +17,7 @@ const USE_VALIDATION_LAYERS: bool = true;
 const MAX_FRAMES: usize = 2;
 const SHADOW_MAP_RESOLUTION: u32 = 1024;
 const MAX_INSTANCE_COUNT: usize = 10000;
+const ASSET_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../assets");
 
 const DESCRIPTOR_RATIOS: &[(vk::DescriptorType, u32)] = &[
     (vk::DescriptorType::COMBINED_IMAGE_SAMPLER, 1),
@@ -2545,8 +2546,8 @@ impl VulkanContext {
             .viewports(viewports)
             .scissors(scissors);
 
-        let vert_shader_code = fs::read("assets/base.vert.spv").unwrap();
-        let frag_shader_code = fs::read("assets/base.frag.spv").unwrap();
+        let vert_shader_code = fs::read(format!("{}/base.vert.spv", ASSET_PATH)).unwrap();
+        let frag_shader_code = fs::read(format!("{}/base.frag.spv", ASSET_PATH)).unwrap();
 
         let vertex_shader = create_shader_module(device, &vert_shader_code);
         let fragment_shader = create_shader_module(device, &frag_shader_code);
@@ -2665,8 +2666,8 @@ impl VulkanContext {
             .viewports(viewports)
             .scissors(scissors);
 
-        let vert_shader_code = fs::read("assets/base.vert.spv").unwrap();
-        let frag_shader_code = fs::read("assets/base.frag.spv").unwrap();
+        let vert_shader_code = fs::read(format!("{}/base.vert.spv", ASSET_PATH)).unwrap();
+        let frag_shader_code = fs::read(format!("{}/base.frag.spv", ASSET_PATH)).unwrap();
 
         let vertex_shader = create_shader_module(device, &vert_shader_code);
         let fragment_shader = create_shader_module(device, &frag_shader_code);
@@ -2785,8 +2786,8 @@ impl VulkanContext {
             .viewports(viewports)
             .scissors(scissors);
 
-        let vert_shader_code = fs::read("assets/skybox.vert.spv").unwrap();
-        let frag_shader_code = fs::read("assets/skybox.frag.spv").unwrap();
+        let vert_shader_code = fs::read(format!("{}/skybox.vert.spv", ASSET_PATH)).unwrap();
+        let frag_shader_code = fs::read(format!("{}/skybox.frag.spv", ASSET_PATH)).unwrap();
 
         let vertex_shader = create_shader_module(device, &vert_shader_code);
         let fragment_shader = create_shader_module(device, &frag_shader_code);
@@ -2892,8 +2893,8 @@ impl VulkanContext {
             .viewports(viewports)
             .scissors(scissors);
 
-        let vert_shader_code = fs::read("assets/shadow.vert.spv").unwrap();
-        let frag_shader_code = fs::read("assets/shadow.frag.spv").unwrap();
+        let vert_shader_code = fs::read(format!("{}/shadow.vert.spv", ASSET_PATH)).unwrap();
+        let frag_shader_code = fs::read(format!("{}/shadow.frag.spv", ASSET_PATH)).unwrap();
 
         let vertex_shader = create_shader_module(device, &vert_shader_code);
         let fragment_shader = create_shader_module(device, &frag_shader_code);

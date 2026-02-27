@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use glam::Vec3;
 use winit::{
     dpi::PhysicalPosition,
-    event::{ElementState, KeyEvent, MouseButton},
+    event::{ElementState, KeyEvent, MouseButton, RawKeyEvent},
     keyboard::{KeyCode, PhysicalKey},
 };
 
@@ -33,6 +33,24 @@ impl InputState {
     pub fn clear(&mut self) {
         self.mouse_delta = Vec3::ZERO;
         self.keys_pressed.clear();
+    }
+
+    pub fn raw_key_input(&mut self, event: &RawKeyEvent) {
+        let PhysicalKey::Code(key) = event.physical_key else {
+            return;
+        };
+
+        match event.state {
+            ElementState::Pressed => {
+                if !self.keys_down.contains(&key) {
+                    self.keys_pressed.insert(key);
+                }
+                self.keys_down.insert(key);
+            }
+            ElementState::Released => {
+                self.keys_down.remove(&key);
+            }
+        }
     }
 
     pub fn key_input(&mut self, event: &KeyEvent) {

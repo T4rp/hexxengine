@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["engine", "physics-demo"]
+members = ["character-controller-demo","engine", "physics-demo"]
 
 [profile.dev.package.rapier3d]
 opt-level = 3
