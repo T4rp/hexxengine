@@ -11,6 +11,7 @@ use winit::window::Window;
 use crate::renderer::mesh::{
     CameraUniform, InstanceVertex, MaterialFlags, MaterialUniform, MeshVertex, SceneUniform,
 };
+use crate::renderer::pipelines::RendererPipelineObjects;
 use crate::scene::RenderScene;
 
 const USE_VALIDATION_LAYERS: bool = true;
@@ -1180,16 +1181,13 @@ pub struct VulkanContext {
     graphics_queue_family_index: u32,
     descriptor_set_layouts: DescriptorSetLayouts,
     descriptor_pool: vk::DescriptorPool,
-    pipeline_layout: vk::PipelineLayout,
-    main_graphics_pipeline: vk::Pipeline,
-    shadow_graphics_pipeline: vk::Pipeline,
+    pipeline_layout_3d: vk::PipelineLayout,
     mesh_buffers: Vec<MeshBuffer>,
     textures: Vec<TextureDescriptors>,
     material_descriptors: Vec<MaterialDescriptor>,
     skybox_textures: Vec<Texture>,
     current_skybox: Option<u32>,
-    skybox_graphics_pipeline: vk::Pipeline,
-    main_transparent_graphics_pipeline: vk::Pipeline,
+    pipeline_objects: RendererPipelineObjects,
 }
 
 pub struct SkyboxImageData<'a> {
@@ -1398,15 +1396,6 @@ fn create_submit_semaphores(device: &ash::Device, count: usize) -> Vec<vk::Semap
     semaphores
 }
 
-fn create_shader_module(device: &ash::Device, data: &[u8]) -> vk::ShaderModule {
-    let mut cursor = Cursor::new(data);
-    let spv = ash::util::read_spv(&mut cursor).unwrap();
-
-    let create_info = vk::ShaderModuleCreateInfo::default().code(&spv);
-
-    unsafe { device.create_shader_module(&create_info, None).unwrap() }
-}
-
 fn create_instance_buffer(allocator: &vk_mem::Allocator) -> (vk::Buffer, vk_mem::Allocation) {
     let instance_buffer_info = vk::BufferCreateInfo::default()
         .size((mem::size_of::<InstanceVertex>() * MAX_INSTANCE_COUNT) as u64)
@@ -1594,20 +1583,8 @@ impl VulkanContext {
 
         let pipeline_layout = Self::create_pipeline_layout(&device, &descriptor_set_layouts);
 
-        let main_graphics_pipeline =
-            Self::create_main_graphics_pipeline(&device, pipeline_layout, surface_format);
-
-        let main_transparent_graphics_pipeline = Self::create_main_transparent_graphics_pipeline(
-            &device,
-            pipeline_layout,
-            surface_format,
-        );
-
-        let shadow_graphics_pipeline =
-            Self::create_shadow_graphics_pipeline(&device, pipeline_layout);
-
-        let skybox_graphics_pipeline =
-            Self::create_sky_graphics_pipeline(&device, pipeline_layout, surface_format);
+        let pipeline_objects =
+            RendererPipelineObjects::new(&device, pipeline_layout, surface_format);
 
         let current_frame: usize = 0;
         let should_resize = false;
@@ -1690,11 +1667,7 @@ impl VulkanContext {
             render_frames,
             submit_semaphores,
             current_frame,
-            main_graphics_pipeline,
-            main_transparent_graphics_pipeline,
-            shadow_graphics_pipeline,
-            skybox_graphics_pipeline,
-            pipeline_layout,
+            pipeline_layout_3d: pipeline_layout,
             allocator,
             descriptor_set_layouts,
             descriptor_pool,
@@ -1703,6 +1676,7 @@ impl VulkanContext {
             mesh_buffers,
             skybox_textures,
             current_skybox: None,
+            pipeline_objects,
         }
     }
 
@@ -1955,7 +1929,7 @@ impl VulkanContext {
             self.device.cmd_bind_pipeline(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                self.shadow_graphics_pipeline,
+                self.pipeline_objects.shadow_graphics_pipeline,
             );
 
             let shadow_descriptor_sets = [
@@ -1966,7 +1940,7 @@ impl VulkanContext {
             self.device.cmd_bind_descriptor_sets(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline_layout,
+                self.pipeline_layout_3d,
                 0,
                 &shadow_descriptor_sets,
                 &[],
@@ -2022,7 +1996,7 @@ impl VulkanContext {
             self.device.cmd_bind_descriptor_sets(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline_layout,
+                self.pipeline_layout_3d,
                 0,
                 &main_descriptor_sets,
                 &[],
@@ -2031,7 +2005,7 @@ impl VulkanContext {
             self.device.cmd_bind_pipeline(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                self.skybox_graphics_pipeline,
+                self.pipeline_objects.skybox_graphics_pipeline,
             );
 
             self.device.cmd_bind_vertex_buffers(
@@ -2074,9 +2048,9 @@ impl VulkanContext {
                     is_opaque = Some(batch.is_opaque);
 
                     let pipeline = if batch.is_opaque {
-                        self.main_graphics_pipeline
+                        self.pipeline_objects.main_graphics_pipeline
                     } else {
-                        self.main_transparent_graphics_pipeline
+                        self.pipeline_objects.main_transparent_graphics_pipeline
                     };
 
                     self.device.cmd_bind_pipeline(
@@ -2095,7 +2069,7 @@ impl VulkanContext {
                     self.device.cmd_bind_descriptor_sets(
                         command_buffer,
                         vk::PipelineBindPoint::GRAPHICS,
-                        self.pipeline_layout,
+                        self.pipeline_layout_3d,
                         1,
                         &descriptor_sets,
                         &[],
@@ -2527,457 +2501,6 @@ impl VulkanContext {
 
     fn get_mesh_buffer(&self, mesh_id: MeshHandle) -> &MeshBuffer {
         &self.mesh_buffers[mesh_id.0 as usize]
-    }
-
-    fn create_main_graphics_pipeline(
-        device: &ash::Device,
-        pipeline_layout: vk::PipelineLayout,
-        surface_format: vk::SurfaceFormatKHR,
-    ) -> vk::Pipeline {
-        let dynamic_states = &[vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
-
-        let dynamic_state_info =
-            vk::PipelineDynamicStateCreateInfo::default().dynamic_states(dynamic_states);
-
-        let viewports = &[vk::Viewport::default()];
-        let scissors = &[vk::Rect2D::default()];
-
-        let viewport_state_info = vk::PipelineViewportStateCreateInfo::default()
-            .viewports(viewports)
-            .scissors(scissors);
-
-        let vert_shader_code = fs::read(format!("{}/base.vert.spv", ASSET_PATH)).unwrap();
-        let frag_shader_code = fs::read(format!("{}/base.frag.spv", ASSET_PATH)).unwrap();
-
-        let vertex_shader = create_shader_module(device, &vert_shader_code);
-        let fragment_shader = create_shader_module(device, &frag_shader_code);
-
-        let vert_stage_info = vk::PipelineShaderStageCreateInfo::default()
-            .stage(vk::ShaderStageFlags::VERTEX)
-            .module(vertex_shader)
-            .name(c"main");
-
-        let frag_stage_info = vk::PipelineShaderStageCreateInfo::default()
-            .stage(vk::ShaderStageFlags::FRAGMENT)
-            .module(fragment_shader)
-            .name(c"main");
-
-        let shader_stages = &[vert_stage_info, frag_stage_info];
-
-        let vertex_attribute_descriptions = MeshVertex::get_attribute_descriptions();
-        let vertex_binding_description = MeshVertex::get_binding_description();
-
-        let instance_attribute_descriptions = InstanceVertex::get_attribute_descriptions();
-        let instance_binding_description = InstanceVertex::get_binding_description();
-
-        let attribute_descriptions: Vec<vk::VertexInputAttributeDescription> =
-            vertex_attribute_descriptions
-                .iter()
-                .chain(instance_attribute_descriptions.iter())
-                .cloned()
-                .collect();
-
-        let binding_descriptions = [vertex_binding_description, instance_binding_description];
-
-        let vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default()
-            .vertex_attribute_descriptions(&attribute_descriptions)
-            .vertex_binding_descriptions(&binding_descriptions);
-
-        let input_assembly_state_info = vk::PipelineInputAssemblyStateCreateInfo::default()
-            .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
-            .primitive_restart_enable(false);
-
-        let rasterization_info = vk::PipelineRasterizationStateCreateInfo::default()
-            .depth_clamp_enable(false)
-            .polygon_mode(vk::PolygonMode::FILL)
-            .line_width(1.0)
-            .cull_mode(vk::CullModeFlags::BACK)
-            .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
-            .depth_bias_enable(false);
-
-        let multisample_info = vk::PipelineMultisampleStateCreateInfo::default()
-            .sample_shading_enable(false)
-            .rasterization_samples(vk::SampleCountFlags::TYPE_1);
-
-        let color_blend_attachment_states = &[vk::PipelineColorBlendAttachmentState::default()
-            .color_write_mask(vk::ColorComponentFlags::RGBA)
-            .blend_enable(true)
-            .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
-            .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
-            .color_blend_op(vk::BlendOp::ADD)
-            .src_alpha_blend_factor(vk::BlendFactor::ONE)
-            .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-            .alpha_blend_op(vk::BlendOp::ADD)];
-
-        let color_blender_state_info = vk::PipelineColorBlendStateCreateInfo::default()
-            .attachments(color_blend_attachment_states);
-
-        let depth_stencil_state_info = vk::PipelineDepthStencilStateCreateInfo::default()
-            .depth_test_enable(true)
-            .depth_write_enable(true)
-            .depth_compare_op(vk::CompareOp::GREATER);
-
-        let color_attachment_formats = [surface_format.format];
-        let mut rendering_create_info = vk::PipelineRenderingCreateInfo::default()
-            .color_attachment_formats(&color_attachment_formats)
-            .depth_attachment_format(vk::Format::D32_SFLOAT);
-
-        let graphics_pipeline_create_info = &[vk::GraphicsPipelineCreateInfo::default()
-            .stages(shader_stages)
-            .vertex_input_state(&vertex_input_state_info)
-            .input_assembly_state(&input_assembly_state_info)
-            .dynamic_state(&dynamic_state_info)
-            .viewport_state(&viewport_state_info)
-            .rasterization_state(&rasterization_info)
-            .multisample_state(&multisample_info)
-            .color_blend_state(&color_blender_state_info)
-            .layout(pipeline_layout)
-            .depth_stencil_state(&depth_stencil_state_info)
-            .subpass(0)
-            .push_next(&mut rendering_create_info)];
-
-        let graphics_pipeline = unsafe {
-            device
-                .create_graphics_pipelines(
-                    vk::PipelineCache::null(),
-                    graphics_pipeline_create_info,
-                    None,
-                )
-                .unwrap()[0]
-        };
-
-        graphics_pipeline
-    }
-
-    fn create_main_transparent_graphics_pipeline(
-        device: &ash::Device,
-        pipeline_layout: vk::PipelineLayout,
-        surface_format: vk::SurfaceFormatKHR,
-    ) -> vk::Pipeline {
-        let dynamic_states = &[vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
-
-        let dynamic_state_info =
-            vk::PipelineDynamicStateCreateInfo::default().dynamic_states(dynamic_states);
-
-        let viewports = &[vk::Viewport::default()];
-        let scissors = &[vk::Rect2D::default()];
-
-        let viewport_state_info = vk::PipelineViewportStateCreateInfo::default()
-            .viewports(viewports)
-            .scissors(scissors);
-
-        let vert_shader_code = fs::read(format!("{}/base.vert.spv", ASSET_PATH)).unwrap();
-        let frag_shader_code = fs::read(format!("{}/base.frag.spv", ASSET_PATH)).unwrap();
-
-        let vertex_shader = create_shader_module(device, &vert_shader_code);
-        let fragment_shader = create_shader_module(device, &frag_shader_code);
-
-        let vert_stage_info = vk::PipelineShaderStageCreateInfo::default()
-            .stage(vk::ShaderStageFlags::VERTEX)
-            .module(vertex_shader)
-            .name(c"main");
-
-        let frag_stage_info = vk::PipelineShaderStageCreateInfo::default()
-            .stage(vk::ShaderStageFlags::FRAGMENT)
-            .module(fragment_shader)
-            .name(c"main");
-
-        let shader_stages = &[vert_stage_info, frag_stage_info];
-
-        let vertex_attribute_descriptions = MeshVertex::get_attribute_descriptions();
-        let vertex_binding_description = MeshVertex::get_binding_description();
-
-        let instance_attribute_descriptions = InstanceVertex::get_attribute_descriptions();
-        let instance_binding_description = InstanceVertex::get_binding_description();
-
-        let attribute_descriptions: Vec<vk::VertexInputAttributeDescription> =
-            vertex_attribute_descriptions
-                .iter()
-                .chain(instance_attribute_descriptions.iter())
-                .cloned()
-                .collect();
-
-        let binding_descriptions = [vertex_binding_description, instance_binding_description];
-
-        let vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default()
-            .vertex_attribute_descriptions(&attribute_descriptions)
-            .vertex_binding_descriptions(&binding_descriptions);
-
-        let input_assembly_state_info = vk::PipelineInputAssemblyStateCreateInfo::default()
-            .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
-            .primitive_restart_enable(false);
-
-        let rasterization_info = vk::PipelineRasterizationStateCreateInfo::default()
-            .depth_clamp_enable(false)
-            .polygon_mode(vk::PolygonMode::FILL)
-            .line_width(1.0)
-            .cull_mode(vk::CullModeFlags::BACK)
-            .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
-            .depth_bias_enable(false);
-
-        let multisample_info = vk::PipelineMultisampleStateCreateInfo::default()
-            .sample_shading_enable(false)
-            .rasterization_samples(vk::SampleCountFlags::TYPE_1);
-
-        let color_blend_attachment_states = &[vk::PipelineColorBlendAttachmentState::default()
-            .color_write_mask(vk::ColorComponentFlags::RGBA)
-            .blend_enable(true)
-            .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
-            .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
-            .color_blend_op(vk::BlendOp::ADD)
-            .src_alpha_blend_factor(vk::BlendFactor::ONE)
-            .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-            .alpha_blend_op(vk::BlendOp::ADD)];
-
-        let color_blender_state_info = vk::PipelineColorBlendStateCreateInfo::default()
-            .attachments(color_blend_attachment_states);
-
-        let depth_stencil_state_info = vk::PipelineDepthStencilStateCreateInfo::default()
-            .depth_test_enable(true)
-            .depth_write_enable(false)
-            .depth_compare_op(vk::CompareOp::GREATER);
-
-        let color_attachment_formats = [surface_format.format];
-        let mut rendering_create_info = vk::PipelineRenderingCreateInfo::default()
-            .color_attachment_formats(&color_attachment_formats)
-            .depth_attachment_format(vk::Format::D32_SFLOAT);
-
-        let graphics_pipeline_create_info = &[vk::GraphicsPipelineCreateInfo::default()
-            .stages(shader_stages)
-            .vertex_input_state(&vertex_input_state_info)
-            .input_assembly_state(&input_assembly_state_info)
-            .dynamic_state(&dynamic_state_info)
-            .viewport_state(&viewport_state_info)
-            .rasterization_state(&rasterization_info)
-            .multisample_state(&multisample_info)
-            .color_blend_state(&color_blender_state_info)
-            .layout(pipeline_layout)
-            .depth_stencil_state(&depth_stencil_state_info)
-            .subpass(0)
-            .push_next(&mut rendering_create_info)];
-
-        let graphics_pipeline = unsafe {
-            device
-                .create_graphics_pipelines(
-                    vk::PipelineCache::null(),
-                    graphics_pipeline_create_info,
-                    None,
-                )
-                .unwrap()[0]
-        };
-
-        graphics_pipeline
-    }
-
-    fn create_sky_graphics_pipeline(
-        device: &ash::Device,
-        pipeline_layout: vk::PipelineLayout,
-        surface_format: vk::SurfaceFormatKHR,
-    ) -> vk::Pipeline {
-        let dynamic_states = &[vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
-
-        let dynamic_state_info =
-            vk::PipelineDynamicStateCreateInfo::default().dynamic_states(dynamic_states);
-
-        let viewports = &[vk::Viewport::default()];
-        let scissors = &[vk::Rect2D::default()];
-
-        let viewport_state_info = vk::PipelineViewportStateCreateInfo::default()
-            .viewports(viewports)
-            .scissors(scissors);
-
-        let vert_shader_code = fs::read(format!("{}/skybox.vert.spv", ASSET_PATH)).unwrap();
-        let frag_shader_code = fs::read(format!("{}/skybox.frag.spv", ASSET_PATH)).unwrap();
-
-        let vertex_shader = create_shader_module(device, &vert_shader_code);
-        let fragment_shader = create_shader_module(device, &frag_shader_code);
-
-        let vert_stage_info = vk::PipelineShaderStageCreateInfo::default()
-            .stage(vk::ShaderStageFlags::VERTEX)
-            .module(vertex_shader)
-            .name(c"main");
-
-        let frag_stage_info = vk::PipelineShaderStageCreateInfo::default()
-            .stage(vk::ShaderStageFlags::FRAGMENT)
-            .module(fragment_shader)
-            .name(c"main");
-
-        let shader_stages = &[vert_stage_info, frag_stage_info];
-
-        let vertex_attribute_descriptions = MeshVertex::get_attribute_descriptions();
-        let vertex_binding_descriptions = [MeshVertex::get_binding_description()];
-
-        let vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default()
-            .vertex_attribute_descriptions(&vertex_attribute_descriptions)
-            .vertex_binding_descriptions(&vertex_binding_descriptions);
-
-        let input_assembly_state_info = vk::PipelineInputAssemblyStateCreateInfo::default()
-            .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
-            .primitive_restart_enable(false);
-
-        let rasterization_info = vk::PipelineRasterizationStateCreateInfo::default()
-            .depth_clamp_enable(false)
-            .polygon_mode(vk::PolygonMode::FILL)
-            .line_width(1.0)
-            .cull_mode(vk::CullModeFlags::FRONT)
-            .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
-            .depth_bias_enable(false);
-
-        let multisample_info = vk::PipelineMultisampleStateCreateInfo::default()
-            .sample_shading_enable(false)
-            .rasterization_samples(vk::SampleCountFlags::TYPE_1);
-
-        let color_blend_attachment_states = &[vk::PipelineColorBlendAttachmentState::default()
-            .blend_enable(false)
-            .color_write_mask(vk::ColorComponentFlags::RGBA)
-            .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
-            .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
-            .color_blend_op(vk::BlendOp::ADD)
-            .src_alpha_blend_factor(vk::BlendFactor::ONE)
-            .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-            .alpha_blend_op(vk::BlendOp::ADD)];
-
-        let color_blender_state_info = vk::PipelineColorBlendStateCreateInfo::default()
-            .attachments(color_blend_attachment_states);
-
-        let depth_stencil_state_info = vk::PipelineDepthStencilStateCreateInfo::default()
-            .depth_test_enable(false)
-            .depth_write_enable(false)
-            .depth_compare_op(vk::CompareOp::GREATER);
-
-        let color_attachment_formats = [surface_format.format];
-        let mut rendering_create_info = vk::PipelineRenderingCreateInfo::default()
-            .color_attachment_formats(&color_attachment_formats)
-            .depth_attachment_format(vk::Format::D32_SFLOAT);
-
-        let graphics_pipeline_create_info = &[vk::GraphicsPipelineCreateInfo::default()
-            .stages(shader_stages)
-            .vertex_input_state(&vertex_input_state_info)
-            .input_assembly_state(&input_assembly_state_info)
-            .dynamic_state(&dynamic_state_info)
-            .viewport_state(&viewport_state_info)
-            .rasterization_state(&rasterization_info)
-            .multisample_state(&multisample_info)
-            .color_blend_state(&color_blender_state_info)
-            .layout(pipeline_layout)
-            .depth_stencil_state(&depth_stencil_state_info)
-            .subpass(0)
-            .push_next(&mut rendering_create_info)];
-
-        let graphics_pipeline = unsafe {
-            device
-                .create_graphics_pipelines(
-                    vk::PipelineCache::null(),
-                    graphics_pipeline_create_info,
-                    None,
-                )
-                .unwrap()[0]
-        };
-
-        graphics_pipeline
-    }
-
-    fn create_shadow_graphics_pipeline(
-        device: &ash::Device,
-        pipeline_layout: vk::PipelineLayout,
-    ) -> vk::Pipeline {
-        let dynamic_states = &[vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
-
-        let dynamic_state_info =
-            vk::PipelineDynamicStateCreateInfo::default().dynamic_states(dynamic_states);
-
-        let viewports = &[vk::Viewport::default()];
-        let scissors = &[vk::Rect2D::default()];
-
-        let viewport_state_info = vk::PipelineViewportStateCreateInfo::default()
-            .viewports(viewports)
-            .scissors(scissors);
-
-        let vert_shader_code = fs::read(format!("{}/shadow.vert.spv", ASSET_PATH)).unwrap();
-        let frag_shader_code = fs::read(format!("{}/shadow.frag.spv", ASSET_PATH)).unwrap();
-
-        let vertex_shader = create_shader_module(device, &vert_shader_code);
-        let fragment_shader = create_shader_module(device, &frag_shader_code);
-
-        let vert_stage_info = vk::PipelineShaderStageCreateInfo::default()
-            .stage(vk::ShaderStageFlags::VERTEX)
-            .module(vertex_shader)
-            .name(c"main");
-
-        let frag_stage_info = vk::PipelineShaderStageCreateInfo::default()
-            .stage(vk::ShaderStageFlags::FRAGMENT)
-            .module(fragment_shader)
-            .name(c"main");
-
-        let shader_stages = &[vert_stage_info, frag_stage_info];
-
-        let vertex_attribute_descriptions = MeshVertex::get_attribute_descriptions();
-        let vertex_binding_description = MeshVertex::get_binding_description();
-
-        let instance_attribute_descriptions = InstanceVertex::get_attribute_descriptions();
-        let instance_binding_description = InstanceVertex::get_binding_description();
-
-        let attribute_descriptions: Vec<vk::VertexInputAttributeDescription> =
-            vertex_attribute_descriptions
-                .iter()
-                .chain(instance_attribute_descriptions.iter())
-                .cloned()
-                .collect();
-
-        let binding_descriptions = [vertex_binding_description, instance_binding_description];
-
-        let vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default()
-            .vertex_attribute_descriptions(&attribute_descriptions)
-            .vertex_binding_descriptions(&binding_descriptions);
-
-        let input_assembly_state_info = vk::PipelineInputAssemblyStateCreateInfo::default()
-            .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
-            .primitive_restart_enable(false);
-
-        let rasterization_info = vk::PipelineRasterizationStateCreateInfo::default()
-            .depth_clamp_enable(false)
-            .polygon_mode(vk::PolygonMode::FILL)
-            .line_width(1.0)
-            .cull_mode(vk::CullModeFlags::BACK)
-            .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
-            .depth_bias_enable(false);
-
-        let multisample_info = vk::PipelineMultisampleStateCreateInfo::default()
-            .sample_shading_enable(false)
-            .rasterization_samples(vk::SampleCountFlags::TYPE_1);
-
-        let depth_stencil_state_info = vk::PipelineDepthStencilStateCreateInfo::default()
-            .depth_test_enable(true)
-            .depth_write_enable(true)
-            .depth_compare_op(vk::CompareOp::GREATER);
-
-        let mut rendering_create_info = vk::PipelineRenderingCreateInfo::default()
-            .depth_attachment_format(vk::Format::D32_SFLOAT);
-
-        let graphics_pipeline_create_info = &[vk::GraphicsPipelineCreateInfo::default()
-            .stages(shader_stages)
-            .vertex_input_state(&vertex_input_state_info)
-            .input_assembly_state(&input_assembly_state_info)
-            .dynamic_state(&dynamic_state_info)
-            .viewport_state(&viewport_state_info)
-            .rasterization_state(&rasterization_info)
-            .multisample_state(&multisample_info)
-            .layout(pipeline_layout)
-            .depth_stencil_state(&depth_stencil_state_info)
-            .subpass(0)
-            .push_next(&mut rendering_create_info)];
-
-        let graphics_pipeline = unsafe {
-            device
-                .create_graphics_pipelines(
-                    vk::PipelineCache::null(),
-                    graphics_pipeline_create_info,
-                    None,
-                )
-                .unwrap()[0]
-        };
-
-        graphics_pipeline
     }
 
     fn create_descriptor_pool(device: &ash::Device, set_count: u32) -> vk::DescriptorPool {
