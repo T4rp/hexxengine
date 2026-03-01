@@ -27,6 +27,7 @@ impl RendererPipelineObjects {
     pub fn new(
         device: &ash::Device,
         pipeline_layout_3d: vk::PipelineLayout,
+        pipeline_layout_2d: vk::PipelineLayout,
         surface_format: vk::SurfaceFormatKHR,
     ) -> Self {
         let main_graphics_pipeline =

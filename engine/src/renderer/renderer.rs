@@ -9,7 +9,7 @@ use winit::window::Window;
 
 use crate::renderer::images::{ImageTransition, transition_images};
 use crate::renderer::mesh::{
-    CameraUniform, InstanceVertex, MaterialFlags, MaterialUniform, MeshVertex, SceneUniform,
+    Global3DUniform, InstanceVertex, MaterialFlags, MaterialUniform, MeshVertex, SceneUniform,
 };
 use crate::renderer::pipelines::RendererPipelineObjects;
 use crate::scene::RenderScene;
@@ -98,7 +98,7 @@ impl GlobalDescriptors {
 
         let camera_uniform_buffer_info = vk::BufferCreateInfo::default()
             .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
-            .size(mem::size_of::<CameraUniform>() as u64);
+            .size(mem::size_of::<Global3DUniform>() as u64);
 
         let scene_uniform_buffer_info = vk::BufferCreateInfo::default()
             .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
@@ -126,7 +126,7 @@ impl GlobalDescriptors {
 
         let camera_buffer_info = [vk::DescriptorBufferInfo::default()
             .offset(0)
-            .range(mem::size_of::<CameraUniform>() as u64)
+            .range(mem::size_of::<Global3DUniform>() as u64)
             .buffer(camera_buffer.0)];
 
         let scene_buffer_info = [vk::DescriptorBufferInfo::default()
@@ -475,9 +475,10 @@ impl RenderFrame {
 }
 
 struct DescriptorSetLayouts {
-    global_layout: vk::DescriptorSetLayout,
+    global_3d_layout: vk::DescriptorSetLayout,
     texture_layout: vk::DescriptorSetLayout,
     material_layout: vk::DescriptorSetLayout,
+    global_2d_layout: vk::DescriptorSetLayout,
 }
 
 struct TextureDescriptors {
@@ -1194,6 +1195,7 @@ pub struct VulkanContext {
     skybox_textures: Vec<Texture>,
     current_skybox: Option<u32>,
     pipeline_objects: RendererPipelineObjects,
+    pipeline_layout_2d: vk::PipelineLayout,
 }
 
 pub struct SkyboxImageData<'a> {
@@ -1579,17 +1581,22 @@ impl VulkanContext {
             &allocator,
             graphics_queue,
             descriptor_pool,
-            descriptor_set_layouts.global_layout,
+            descriptor_set_layouts.global_3d_layout,
             swapchain_extent,
             graphics_queue_family_index,
         );
 
         let submit_semaphores = create_submit_semaphores(&device, swapchain_images.len());
 
-        let pipeline_layout = Self::create_pipeline_layout(&device, &descriptor_set_layouts);
+        let pipeline_layout_3d = Self::create_3d_pipeline_layout(&device, &descriptor_set_layouts);
+        let pipeline_layout_2d = Self::create_2d_pipeline_layout(&device, &descriptor_set_layouts);
 
-        let pipeline_objects =
-            RendererPipelineObjects::new(&device, pipeline_layout, surface_format);
+        let pipeline_objects = RendererPipelineObjects::new(
+            &device,
+            pipeline_layout_3d,
+            pipeline_layout_2d,
+            surface_format,
+        );
 
         let current_frame: usize = 0;
         let should_resize = false;
@@ -1672,7 +1679,8 @@ impl VulkanContext {
             render_frames,
             submit_semaphores,
             current_frame,
-            pipeline_layout_3d: pipeline_layout,
+            pipeline_layout_3d,
+            pipeline_layout_2d,
             allocator,
             descriptor_set_layouts,
             descriptor_pool,
@@ -1750,7 +1758,7 @@ impl VulkanContext {
         let mut light_proj = Mat4::orthographic_rh(min.x, max.x, min.y, max.y, min.z, max.z);
         light_proj.y_axis *= vec4(1.0, -1.0, 1.0, 1.0);
 
-        let camera_ubo = CameraUniform {
+        let camera_ubo = Global3DUniform {
             proj,
             view,
             camera_position: vec4(camera_position.x, camera_position.y, camera_position.z, 0.0),
@@ -2518,14 +2526,32 @@ impl VulkanContext {
         (self.skybox_textures.len() - 1) as u32
     }
 
-    fn create_pipeline_layout(
+    fn create_3d_pipeline_layout(
         device: &ash::Device,
         descriptor_set_layouts: &DescriptorSetLayouts,
     ) -> vk::PipelineLayout {
         let layouts = &[
-            descriptor_set_layouts.global_layout,
+            descriptor_set_layouts.global_3d_layout,
             descriptor_set_layouts.texture_layout,
             descriptor_set_layouts.material_layout,
+        ];
+
+        let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default().set_layouts(layouts);
+
+        unsafe {
+            device
+                .create_pipeline_layout(&pipeline_layout_info, None)
+                .unwrap()
+        }
+    }
+
+    fn create_2d_pipeline_layout(
+        device: &ash::Device,
+        descriptor_set_layouts: &DescriptorSetLayouts,
+    ) -> vk::PipelineLayout {
+        let layouts = &[
+            descriptor_set_layouts.global_2d_layout,
+            descriptor_set_layouts.texture_layout,
         ];
 
         let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default().set_layouts(layouts);
@@ -2565,7 +2591,7 @@ impl VulkanContext {
     }
 
     fn create_descriptor_layouts(device: &ash::Device) -> DescriptorSetLayouts {
-        let global_bindings = [
+        let global_3d_bindings = [
             vk::DescriptorSetLayoutBinding::default()
                 .binding(0)
                 .descriptor_count(1)
@@ -2588,12 +2614,12 @@ impl VulkanContext {
                 .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
         ];
 
-        let global_layout_info =
-            vk::DescriptorSetLayoutCreateInfo::default().bindings(&global_bindings);
+        let global_3d_layout_info =
+            vk::DescriptorSetLayoutCreateInfo::default().bindings(&global_3d_bindings);
 
-        let global_layout = unsafe {
+        let global_3d_layout = unsafe {
             device
-                .create_descriptor_set_layout(&global_layout_info, None)
+                .create_descriptor_set_layout(&global_3d_layout_info, None)
                 .unwrap()
         };
 
@@ -2627,8 +2653,24 @@ impl VulkanContext {
                 .unwrap()
         };
 
+        let global_2d_bindings = [vk::DescriptorSetLayoutBinding::default()
+            .binding(0)
+            .descriptor_count(1)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)];
+
+        let global_2d_layout_info =
+            vk::DescriptorSetLayoutCreateInfo::default().bindings(&global_2d_bindings);
+
+        let global_2d_layout = unsafe {
+            device
+                .create_descriptor_set_layout(&global_2d_layout_info, None)
+                .unwrap()
+        };
+
         DescriptorSetLayouts {
-            global_layout,
+            global_2d_layout,
+            global_3d_layout,
             texture_layout,
             material_layout,
         }

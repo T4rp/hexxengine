@@ -159,7 +159,7 @@ impl InstanceVertex {
 
 #[derive(Clone, Copy)]
 #[repr(C)]
-pub struct CameraUniform {
+pub struct Global3DUniform {
     pub proj: Mat4,
     pub view: Mat4,
     pub camera_position: Vec4,
@@ -177,6 +177,13 @@ pub struct SceneUniform {
 
 #[derive(Clone, Copy)]
 #[repr(C)]
+pub enum MaterialFlags {
+    Uv = 1,
+    ModelSpace = 2,
+}
+
+#[derive(Clone, Copy)]
+#[repr(C)]
 pub struct MaterialUniform {
     pub uv_scale: Vec2,
     pub shininess: f32,
@@ -185,7 +192,7 @@ pub struct MaterialUniform {
 
 #[derive(Clone, Copy)]
 #[repr(C)]
-pub enum MaterialFlags {
-    Uv = 1,
-    ModelSpace = 2,
+pub struct Global2DUniform {
+    pub proj: Mat4,
+    pub view: Mat4,
 }
