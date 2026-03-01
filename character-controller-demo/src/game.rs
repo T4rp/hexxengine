@@ -1,6 +1,7 @@
 use std::time::Instant;
 
 use hexxengine::{
+    assets::ASSET_PATH,
     glam, rand,
     rapier3d::{
         self,
@@ -36,7 +37,6 @@ use hexxengine::{
 
 const CAMERA_SPEED: f32 = 100.0;
 const STEP_HZ: f32 = 1.0 / 60.0;
-const ASSET_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../assets");
 const CHARACTER_HEIGHT: f32 = 10.0;
 const CHARACTER_RADIUS: f32 = 2.0;
 

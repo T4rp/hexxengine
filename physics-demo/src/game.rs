@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use hexxengine::{glam, rand, rapier3d, thunderdome, winit};
+use hexxengine::{assets::ASSET_PATH, glam, rand, rapier3d, thunderdome, winit};
 
 use glam::{EulerRot, Quat, Vec3, vec3};
 use rapier3d::{
@@ -143,15 +143,19 @@ impl Game {
     pub fn new(window: &Window) -> Self {
         let mut vk_ctx = VulkanContext::new(&window);
 
-        let cube_mesh = get_first_gltf_mesh("./assets/cube.gltf");
-        let sphere_mesh = get_first_gltf_mesh("./assets/sphere.gltf");
+        let cube_mesh = get_first_gltf_mesh(format!("{}/cube.gltf", ASSET_PATH).as_str());
+        let sphere_mesh = get_first_gltf_mesh(format!("{}/sphere.gltf", ASSET_PATH).as_str());
 
         let cube_mesh = vk_ctx.load_mesh(&cube_mesh.vertices, &cube_mesh.indices);
         let sphere_mesh = vk_ctx.load_mesh(&sphere_mesh.vertices, &sphere_mesh.indices);
 
         let skybox1_id = load_skybox(
             &mut vk_ctx,
-            "assets/cloudy-skyboxes/Cubemap/Cubemap_Sky_04-512x512.png",
+            format!(
+                "{}/cloudy-skyboxes/Cubemap/Cubemap_Sky_04-512x512.png",
+                ASSET_PATH
+            )
+            .as_str(),
         );
 
         let skybox2_id = load_skybox(

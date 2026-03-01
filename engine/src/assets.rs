@@ -10,6 +10,8 @@ use crate::{
     scene::MeshData,
 };
 
+pub const ASSET_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../assets");
+
 pub fn process_gltf_mesh(mesh: &gltf::Mesh, buffers: &[gltf::buffer::Data]) -> MeshData {
     let mut mesh_vertices = Vec::new();
     let mut mesh_indices = Vec::new();
