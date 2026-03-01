@@ -129,11 +129,12 @@ fn create_main_2d_graphics_pipeline(
     let depth_stencil_state_info = vk::PipelineDepthStencilStateCreateInfo::default()
         .depth_test_enable(false)
         .depth_write_enable(false)
-        .depth_compare_op(vk::CompareOp::NEVER);
+        .depth_compare_op(vk::CompareOp::GREATER);
 
     let color_attachment_formats = [surface_format.format];
     let mut rendering_create_info = vk::PipelineRenderingCreateInfo::default()
-        .color_attachment_formats(&color_attachment_formats);
+        .color_attachment_formats(&color_attachment_formats)
+        .depth_attachment_format(vk::Format::D32_SFLOAT);
 
     let graphics_pipeline_create_info = &[vk::GraphicsPipelineCreateInfo::default()
         .stages(shader_stages)

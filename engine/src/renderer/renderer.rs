@@ -19,6 +19,7 @@ const USE_VALIDATION_LAYERS: bool = true;
 const MAX_FRAMES: usize = 1;
 const SHADOW_MAP_RESOLUTION: u32 = 1024;
 const MAX_INSTANCE_COUNT: usize = 10000;
+const MAX_VERTICES_2D: usize = 50000;
 
 const DESCRIPTOR_RATIOS: &[(vk::DescriptorType, u32)] = &[
     (vk::DescriptorType::COMBINED_IMAGE_SAMPLER, 1),
@@ -71,6 +72,7 @@ struct GlobalDescriptors {
     shadow_pass_descriptor_set: vk::DescriptorSet,
     shadow_map_sampler: vk::Sampler,
     skybox_dirty: bool,
+    main_2d_pass_descriptor_set: vk::DescriptorSet,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -226,6 +228,7 @@ impl GlobalDescriptors {
             scene_buffer,
             main_pass_descriptor_set,
             shadow_pass_descriptor_set,
+            main_2d_pass_descriptor_set,
             shadow_map_sampler,
             skybox_dirty: true,
         }
@@ -270,6 +273,7 @@ struct RenderFrame {
     depth_image: (vk::Image, vk_mem::Allocation),
     instance_buffer: (vk::Buffer, vk_mem::Allocation),
     vertex2d_buffer: (vk::Buffer, vk_mem::Allocation),
+    vertex2d_index_buffer: (vk::Buffer, vk_mem::Allocation),
     shadow_map: (vk::Image, vk_mem::Allocation),
     shadow_map_view: vk::ImageView,
 }
@@ -342,7 +346,7 @@ impl RenderFrame {
         );
 
         let instance_buffer = create_instance_buffer(allocator);
-        let vertex2d_buffer = create_vertex2d_buffer(allocator);
+        let (vertex2d_buffer, vertex2d_index_buffer) = create_vertex2d_buffer(allocator);
 
         RenderFrame {
             command_pool,
@@ -356,6 +360,7 @@ impl RenderFrame {
             shadow_map_view,
             instance_buffer,
             vertex2d_buffer,
+            vertex2d_index_buffer,
         }
     }
 
@@ -504,6 +509,12 @@ impl RenderFrame {
         unsafe { allocator.destroy_image(self.shadow_map.0, &mut self.shadow_map.1) };
         unsafe { allocator.destroy_buffer(self.instance_buffer.0, &mut self.instance_buffer.1) };
         unsafe { allocator.destroy_buffer(self.vertex2d_buffer.0, &mut self.vertex2d_buffer.1) };
+        unsafe {
+            allocator.destroy_buffer(
+                self.vertex2d_index_buffer.0,
+                &mut self.vertex2d_index_buffer.1,
+            )
+        };
     }
 }
 
@@ -1455,10 +1466,19 @@ fn create_instance_buffer(allocator: &vk_mem::Allocator) -> (vk::Buffer, vk_mem:
     instance_buffer
 }
 
-fn create_vertex2d_buffer(allocator: &vk_mem::Allocator) -> (vk::Buffer, vk_mem::Allocation) {
-    let instance_buffer_info = vk::BufferCreateInfo::default()
-        .size((mem::size_of::<Vertex2d>() * 50000) as u64)
+fn create_vertex2d_buffer(
+    allocator: &vk_mem::Allocator,
+) -> (
+    (vk::Buffer, vk_mem::Allocation),
+    (vk::Buffer, vk_mem::Allocation),
+) {
+    let vertex_buffer_info = vk::BufferCreateInfo::default()
+        .size((mem::size_of::<u16>() * MAX_VERTICES_2D) as u64)
         .usage(vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
+
+    let index_buffer_info = vk::BufferCreateInfo::default()
+        .size((mem::size_of::<Vertex2d>() * MAX_VERTICES_2D) as u64)
+        .usage(vk::BufferUsageFlags::INDEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
 
     let alloc_info = vk_mem::AllocationCreateInfo {
         usage: vk_mem::MemoryUsage::AutoPreferHost,
@@ -1467,13 +1487,19 @@ fn create_vertex2d_buffer(allocator: &vk_mem::Allocator) -> (vk::Buffer, vk_mem:
         ..Default::default()
     };
 
-    let instance_buffer = unsafe {
+    let vertex_buffer = unsafe {
         allocator
-            .create_buffer(&instance_buffer_info, &alloc_info)
+            .create_buffer(&vertex_buffer_info, &alloc_info)
             .unwrap()
     };
 
-    instance_buffer
+    let index_buffer = unsafe {
+        allocator
+            .create_buffer(&index_buffer_info, &alloc_info)
+            .unwrap()
+    };
+
+    (vertex_buffer, index_buffer)
 }
 
 impl VulkanContext {
@@ -1753,10 +1779,11 @@ impl VulkanContext {
         let current_frame = &mut self.render_frames[self.current_frame % MAX_FRAMES];
         let camera_buffer_allocation = current_frame.per_frame_descriptor_data.camera_buffer.1;
         let scene_buffer_allocation = current_frame.per_frame_descriptor_data.scene_buffer.1;
+        let global2d_buffer_allocation = current_frame.per_frame_descriptor_data.global2d_buffer.1;
 
         let aspect_ratio = self.swapchain_extent.width as f32 / self.swapchain_extent.height as f32;
 
-        let (proj, view) = scene.camera.calc_perspective_matrices(aspect_ratio);
+        let (proj_3d, view_3d) = scene.camera.calc_perspective_matrices(aspect_ratio);
 
         let corners = scene
             .camera
@@ -1813,8 +1840,8 @@ impl VulkanContext {
         light_proj.y_axis *= vec4(1.0, -1.0, 1.0, 1.0);
 
         let camera_ubo = Global3DUniform {
-            proj,
-            view,
+            proj: proj_3d,
+            view: view_3d,
             camera_position: vec4(camera_position.x, camera_position.y, camera_position.z, 0.0),
             light_proj,
             light_view,
@@ -1841,15 +1868,36 @@ impl VulkanContext {
             ),
         };
 
+        let mut proj_2d = Mat4::orthographic_rh(
+            0.0,
+            self.swapchain_extent.width as f32,
+            0.0,
+            self.swapchain_extent.height as f32,
+            -0.1,
+            2.0,
+        );
+
+        proj_2d.y_axis *= vec4(1.0, -1.0, 1.0, 1.0);
+
+        let global2d_ubo = Global2DUniform {
+            proj: Mat4::IDENTITY,
+            view: Mat4::IDENTITY,
+        };
+
         let camera_alloc_info = self
             .allocator
             .get_allocation_info(&camera_buffer_allocation);
 
         let scene_alloc_info = self.allocator.get_allocation_info(&scene_buffer_allocation);
 
+        let global2d_alloc_info = self
+            .allocator
+            .get_allocation_info(&global2d_buffer_allocation);
+
         unsafe {
             std::ptr::copy_nonoverlapping(&camera_ubo, camera_alloc_info.mapped_data.cast(), 1);
             std::ptr::copy_nonoverlapping(&scene_ubo, scene_alloc_info.mapped_data.cast(), 1);
+            std::ptr::copy_nonoverlapping(&global2d_ubo, global2d_alloc_info.mapped_data.cast(), 1);
         };
 
         if current_frame.per_frame_descriptor_data.skybox_dirty {
@@ -1863,6 +1911,49 @@ impl VulkanContext {
     fn set_global_descriptor_dirty(&mut self) {
         for render_frame in self.render_frames.iter_mut() {
             render_frame.per_frame_descriptor_data.skybox_dirty = true;
+        }
+    }
+
+    fn update_vertex2d_buffer(
+        &mut self,
+        vertex2d_buffer: &(vk::Buffer, vk_mem::Allocation),
+        vertex2d_index_buffer: &(vk::Buffer, vk_mem::Allocation),
+    ) {
+        let vertices: [Vertex2d; 3] = [
+            Vertex2d {
+                pos: Vec2::new(0.5, -0.5),
+                uv: Vec2::new(1.0, 1.0),
+                color: Vec4::new(0.0, 0.0, 1.0, 1.0),
+            },
+            Vertex2d {
+                pos: Vec2::new(-0.5, -0.5),
+                uv: Vec2::new(0.0, 1.0),
+                color: Vec4::new(0.0, 1.0, 0.0, 1.0),
+            },
+            Vertex2d {
+                pos: Vec2::new(0.0, 0.5),
+                uv: Vec2::new(0.5, 0.0),
+                color: Vec4::new(1.0, 0.0, 0.0, 1.0),
+            },
+        ];
+
+        let indices: &[u16] = &[0, 1, 2];
+
+        let vertex_alloc_info = self.allocator.get_allocation_info(&vertex2d_buffer.1);
+        let index_alloc_info = self.allocator.get_allocation_info(&vertex2d_index_buffer.1);
+
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                vertices.as_ptr(),
+                vertex_alloc_info.mapped_data.cast(),
+                vertices.len().min(MAX_VERTICES_2D),
+            );
+
+            std::ptr::copy_nonoverlapping(
+                indices.as_ptr(),
+                index_alloc_info.mapped_data.cast(),
+                indices.len().min(MAX_VERTICES_2D),
+            );
         }
     }
 
@@ -2173,6 +2264,45 @@ impl VulkanContext {
         }
     }
 
+    fn draw_2d(
+        &mut self,
+        command_buffer: vk::CommandBuffer,
+        global2d_descriptor_set: vk::DescriptorSet,
+        vertex_buffer: vk::Buffer,
+        index_buffer: vk::Buffer,
+    ) {
+        unsafe {
+            let descriptor_sets = [global2d_descriptor_set, self.textures[1].descriptor_set];
+
+            self.device.cmd_bind_descriptor_sets(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline_layout_2d,
+                0,
+                &descriptor_sets,
+                &[],
+            );
+
+            self.device.cmd_bind_pipeline(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline_objects.main_2d_graphics_pipeline,
+            );
+
+            self.device
+                .cmd_bind_vertex_buffers(command_buffer, 0, &[vertex_buffer], &[0]);
+
+            self.device.cmd_bind_index_buffer(
+                command_buffer,
+                index_buffer,
+                0,
+                vk::IndexType::UINT16,
+            );
+
+            self.device.cmd_draw_indexed(command_buffer, 3, 1, 0, 0, 0);
+        }
+    }
+
     pub fn draw(&mut self, scene: &RenderScene) {
         if self.should_resize {
             // self.handle_resize();
@@ -2191,10 +2321,15 @@ impl VulkanContext {
         let shadow_per_frame_descriptor_set = current_frame
             .per_frame_descriptor_data
             .shadow_pass_descriptor_set;
+        let global2d_descriptor_set = current_frame
+            .per_frame_descriptor_data
+            .main_2d_pass_descriptor_set;
         let depth_image_view = current_frame.depth_image_view;
         let shadow_image = current_frame.shadow_map;
         let shadow_image_view = current_frame.shadow_map_view;
         let instance_buffer = current_frame.instance_buffer;
+        let vertex2d_buffer = current_frame.vertex2d_buffer;
+        let vertex2d_index_buffer = current_frame.vertex2d_index_buffer;
 
         unsafe {
             self.device
@@ -2226,6 +2361,7 @@ impl VulkanContext {
 
             self.update_per_frame_descriptors(scene);
 
+            self.update_vertex2d_buffer(&vertex2d_buffer, &vertex2d_index_buffer);
             let batch_info = self.update_instance_buffer(&instance_buffer, scene);
 
             let submit_semaphore = self.submit_semaphores[image_index as usize];
@@ -2403,6 +2539,12 @@ impl VulkanContext {
 
             self.draw_skybox(command_buffer, main_per_frame_descriptor_set);
             self.draw_main_scene(&batch_info, command_buffer, instance_buffer.0);
+            self.draw_2d(
+                command_buffer,
+                global2d_descriptor_set,
+                vertex2d_buffer.0,
+                vertex2d_index_buffer.0,
+            );
 
             self.device.cmd_end_rendering(command_buffer);
 
