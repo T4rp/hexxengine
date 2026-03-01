@@ -9,7 +9,8 @@ use winit::window::Window;
 
 use crate::renderer::images::{ImageTransition, transition_images};
 use crate::renderer::mesh::{
-    Global3DUniform, InstanceVertex, MaterialFlags, MaterialUniform, MeshVertex, SceneUniform,
+    Global2DUniform, Global3DUniform, InstanceVertex, MaterialFlags, MaterialUniform, MeshVertex,
+    SceneUniform, Vertex2d,
 };
 use crate::renderer::pipelines::RendererPipelineObjects;
 use crate::scene::RenderScene;
@@ -63,6 +64,7 @@ unsafe extern "system" fn debug_messager_callback(
 }
 
 struct GlobalDescriptors {
+    global2d_buffer: (vk::Buffer, vk_mem::Allocation),
     camera_buffer: (vk::Buffer, vk_mem::Allocation),
     scene_buffer: (vk::Buffer, vk_mem::Allocation),
     main_pass_descriptor_set: vk::DescriptorSet,
@@ -79,10 +81,11 @@ impl GlobalDescriptors {
         device: &ash::Device,
         allocator: &vk_mem::Allocator,
         descriptor_pool: vk::DescriptorPool,
-        per_frame_layout: vk::DescriptorSetLayout,
+        frame_layout_3d: vk::DescriptorSetLayout,
+        frame_layout_2d: vk::DescriptorSetLayout,
         shadow_map_view: vk::ImageView,
     ) -> Self {
-        let layouts = [per_frame_layout, per_frame_layout];
+        let layouts = [frame_layout_3d, frame_layout_3d, frame_layout_2d];
         let descriptor_set_alloc_info = vk::DescriptorSetAllocateInfo::default()
             .descriptor_pool(descriptor_pool)
             .set_layouts(&layouts);
@@ -95,10 +98,15 @@ impl GlobalDescriptors {
 
         let main_pass_descriptor_set = descriptor_sets[0];
         let shadow_pass_descriptor_set = descriptor_sets[1];
+        let main_2d_pass_descriptor_set = descriptor_sets[2];
 
         let camera_uniform_buffer_info = vk::BufferCreateInfo::default()
             .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
             .size(mem::size_of::<Global3DUniform>() as u64);
+
+        let global2d_uniform_buffer_info = vk::BufferCreateInfo::default()
+            .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
+            .size(mem::size_of::<Global2DUniform>() as u64);
 
         let scene_uniform_buffer_info = vk::BufferCreateInfo::default()
             .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
@@ -124,6 +132,12 @@ impl GlobalDescriptors {
                 .unwrap()
         };
 
+        let global2d_buffer = unsafe {
+            allocator
+                .create_buffer(&global2d_uniform_buffer_info, &uniform_alloc_info)
+                .unwrap()
+        };
+
         let camera_buffer_info = [vk::DescriptorBufferInfo::default()
             .offset(0)
             .range(mem::size_of::<Global3DUniform>() as u64)
@@ -133,6 +147,11 @@ impl GlobalDescriptors {
             .offset(0)
             .range(mem::size_of::<SceneUniform>() as u64)
             .buffer(scene_buffer.0)];
+
+        let global2d_buffer_info = [vk::DescriptorBufferInfo::default()
+            .offset(0)
+            .range(mem::size_of::<Global2DUniform>() as u64)
+            .buffer(global2d_buffer.0)];
 
         let shadow_map_sampler_info = vk::SamplerCreateInfo::default()
             .mag_filter(vk::Filter::LINEAR)
@@ -190,11 +209,19 @@ impl GlobalDescriptors {
                 .descriptor_count(1)
                 .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                 .image_info(&shadow_map_image_info),
+            vk::WriteDescriptorSet::default()
+                .dst_set(main_2d_pass_descriptor_set)
+                .dst_binding(0)
+                .dst_array_element(0)
+                .descriptor_count(1)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .buffer_info(&global2d_buffer_info),
         ];
 
         unsafe { device.update_descriptor_sets(&descriptor_write, &[]) };
 
         GlobalDescriptors {
+            global2d_buffer,
             camera_buffer,
             scene_buffer,
             main_pass_descriptor_set,
@@ -228,6 +255,7 @@ impl GlobalDescriptors {
     fn destroy(&mut self, device: &ash::Device, allocator: &vk_mem::Allocator) {
         unsafe { allocator.destroy_buffer(self.camera_buffer.0, &mut self.camera_buffer.1) };
         unsafe { allocator.destroy_buffer(self.scene_buffer.0, &mut self.scene_buffer.1) };
+        unsafe { allocator.destroy_buffer(self.global2d_buffer.0, &mut self.global2d_buffer.1) };
         unsafe { device.destroy_sampler(self.shadow_map_sampler, None) };
     }
 }
@@ -241,6 +269,7 @@ struct RenderFrame {
     depth_image_view: vk::ImageView,
     depth_image: (vk::Image, vk_mem::Allocation),
     instance_buffer: (vk::Buffer, vk_mem::Allocation),
+    vertex2d_buffer: (vk::Buffer, vk_mem::Allocation),
     shadow_map: (vk::Image, vk_mem::Allocation),
     shadow_map_view: vk::ImageView,
 }
@@ -251,7 +280,7 @@ impl RenderFrame {
         allocator: &vk_mem::Allocator,
         queue: vk::Queue,
         descriptor_pool: vk::DescriptorPool,
-        per_frame_layout: vk::DescriptorSetLayout,
+        descriptor_layouts: &DescriptorSetLayouts,
         window_extent: vk::Extent2D,
         queue_family_index: u32,
     ) -> Self {
@@ -307,11 +336,13 @@ impl RenderFrame {
             device,
             allocator,
             descriptor_pool,
-            per_frame_layout,
+            descriptor_layouts.global_3d_layout,
+            descriptor_layouts.global_2d_layout,
             shadow_map_view,
         );
 
         let instance_buffer = create_instance_buffer(allocator);
+        let vertex2d_buffer = create_vertex2d_buffer(allocator);
 
         RenderFrame {
             command_pool,
@@ -324,6 +355,7 @@ impl RenderFrame {
             shadow_map,
             shadow_map_view,
             instance_buffer,
+            vertex2d_buffer,
         }
     }
 
@@ -471,6 +503,7 @@ impl RenderFrame {
         unsafe { allocator.destroy_image(self.depth_image.0, &mut self.depth_image.1) };
         unsafe { allocator.destroy_image(self.shadow_map.0, &mut self.shadow_map.1) };
         unsafe { allocator.destroy_buffer(self.instance_buffer.0, &mut self.instance_buffer.1) };
+        unsafe { allocator.destroy_buffer(self.vertex2d_buffer.0, &mut self.vertex2d_buffer.1) };
     }
 }
 
@@ -1422,6 +1455,27 @@ fn create_instance_buffer(allocator: &vk_mem::Allocator) -> (vk::Buffer, vk_mem:
     instance_buffer
 }
 
+fn create_vertex2d_buffer(allocator: &vk_mem::Allocator) -> (vk::Buffer, vk_mem::Allocation) {
+    let instance_buffer_info = vk::BufferCreateInfo::default()
+        .size((mem::size_of::<Vertex2d>() * 50000) as u64)
+        .usage(vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
+
+    let alloc_info = vk_mem::AllocationCreateInfo {
+        usage: vk_mem::MemoryUsage::AutoPreferHost,
+        flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE
+            | vk_mem::AllocationCreateFlags::MAPPED,
+        ..Default::default()
+    };
+
+    let instance_buffer = unsafe {
+        allocator
+            .create_buffer(&instance_buffer_info, &alloc_info)
+            .unwrap()
+    };
+
+    instance_buffer
+}
+
 impl VulkanContext {
     pub fn new(window: &Window) -> Self {
         let raw_window_handle = window.window_handle().unwrap().as_raw();
@@ -1581,7 +1635,7 @@ impl VulkanContext {
             &allocator,
             graphics_queue,
             descriptor_pool,
-            descriptor_set_layouts.global_3d_layout,
+            &descriptor_set_layouts,
             swapchain_extent,
             graphics_queue_family_index,
         );
@@ -2681,7 +2735,7 @@ impl VulkanContext {
         allocator: &vk_mem::Allocator,
         queue: vk::Queue,
         descriptor_pool: vk::DescriptorPool,
-        per_frame_layout: vk::DescriptorSetLayout,
+        descriptor_layouts: &DescriptorSetLayouts,
         window_extent: vk::Extent2D,
         queue_family_index: u32,
     ) -> Vec<RenderFrame> {
@@ -2692,7 +2746,7 @@ impl VulkanContext {
                     allocator,
                     queue,
                     descriptor_pool,
-                    per_frame_layout,
+                    descriptor_layouts,
                     window_extent,
                     queue_family_index,
                 )
