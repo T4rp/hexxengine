@@ -1,6 +1,12 @@
 use std::time::Instant;
 
-use hexxengine::{assets::ASSET_PATH, glam, rand, rapier3d, thunderdome, winit};
+use hexxengine::{
+    assets::ASSET_PATH,
+    glam::{self, vec2},
+    rand, rapier3d,
+    scene::UiFrame,
+    thunderdome, winit,
+};
 
 use glam::{EulerRot, Quat, Vec3, vec3};
 use rapier3d::{
@@ -173,21 +179,26 @@ impl Game {
         let start_time = Instant::now();
         let last_frame = start_time;
 
-        let scene = RenderScene {
-            camera: Camera::new(
+        let mut scene = RenderScene::new(
+            Camera::new(
                 vec3(0.0, 100.0, 100.0),
                 Quat::from_euler(EulerRot::ZXY, 0.0, f32::to_radians(-45.0), 0.0),
                 90.0,
             ),
-            meshes: Vec::new(),
-            lighting: Lighting {
+            Lighting {
                 sun_direction: vec3(0.0, -1.0, -1.0).normalize(),
                 sun_color: vec3(1.0, 0.95, 0.85),
                 sun_power: 0.5,
                 ambient_color: vec3(0.9, 0.95, 1.0) * 0.2,
                 skybox_id: skybox1_id,
             },
-        };
+        );
+
+        scene
+            .ui
+            .push(UiFrame::new(vec2(0.0, 0.0), vec2(600.0, 300.0), 1));
+
+        scene.ui_dirty = true;
 
         let mut rng = SmallRng::from_os_rng();
 
@@ -425,6 +436,8 @@ impl Game {
         }
 
         self.vk_ctx.draw(&self.scene);
+
+        self.scene.ui_dirty = false;
     }
 
     pub fn handle_device_event(&mut self, event: &DeviceEvent) {

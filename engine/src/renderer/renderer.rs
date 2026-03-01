@@ -1775,7 +1775,7 @@ impl VulkanContext {
         }
     }
 
-    fn update_per_frame_descriptors(&mut self, scene: &RenderScene) {
+    fn update_global_descriptors(&mut self, scene: &RenderScene) {
         let current_frame = &mut self.render_frames[self.current_frame % MAX_FRAMES];
         let camera_buffer_allocation = current_frame.per_frame_descriptor_data.camera_buffer.1;
         let scene_buffer_allocation = current_frame.per_frame_descriptor_data.scene_buffer.1;
@@ -1877,8 +1877,6 @@ impl VulkanContext {
             1.0,
         );
 
-        proj_2d.y_axis *= vec4(1.0, -1.0, 1.0, 1.0);
-
         let global2d_ubo = Global2DUniform {
             proj: proj_2d,
             view: Mat4::IDENTITY,
@@ -1918,17 +1916,18 @@ impl VulkanContext {
         &mut self,
         vertex2d_buffer: &(vk::Buffer, vk_mem::Allocation),
         vertex2d_index_buffer: &(vk::Buffer, vk_mem::Allocation),
+        scene: &RenderScene,
     ) -> u32 {
-        let color = vec4(1.0, 1.0, 1.0, 1.0);
-        let size = 100.0;
-        let vertices: [Vertex2d; 4] = [
-            Vertex2d::new_solid(vec2(0.0, 0.0), color),
-            Vertex2d::new_solid(vec2(0.0, -size), color),
-            Vertex2d::new_solid(vec2(size, -size), color),
-            Vertex2d::new_solid(vec2(size, 0.0), color),
-        ];
+        if !scene.ui_dirty {
+            return scene.ui.len() as u32 * 6;
+        }
 
-        let indices: &[u16; 6] = &[0, 1, 2, 2, 3, 0];
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+
+        for ui_frame in scene.ui.iter() {
+            ui_frame.push_verts(&mut vertices, &mut indices);
+        }
 
         let vertex_alloc_info = self.allocator.get_allocation_info(&vertex2d_buffer.1);
         let index_alloc_info = self.allocator.get_allocation_info(&vertex2d_index_buffer.1);
@@ -2266,7 +2265,7 @@ impl VulkanContext {
         count: u32,
     ) {
         unsafe {
-            let descriptor_sets = [global2d_descriptor_set, self.textures[0].descriptor_set];
+            let descriptor_sets = [global2d_descriptor_set, self.textures[1].descriptor_set];
 
             self.device.cmd_bind_descriptor_sets(
                 command_buffer,
@@ -2354,10 +2353,11 @@ impl VulkanContext {
                 self.set_global_descriptor_dirty();
             }
 
-            self.update_per_frame_descriptors(scene);
+            self.update_global_descriptors(scene);
 
             let vertex2d_count =
-                self.update_vertex2d_buffer(&vertex2d_buffer, &vertex2d_index_buffer);
+                self.update_vertex2d_buffer(&vertex2d_buffer, &vertex2d_index_buffer, scene);
+
             let batch_info = self.update_instance_buffer(&instance_buffer, scene);
 
             let submit_semaphore = self.submit_semaphores[image_index as usize];

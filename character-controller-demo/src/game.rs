@@ -336,21 +336,20 @@ impl Game {
         let start_time = Instant::now();
         let last_frame = start_time;
 
-        let scene = RenderScene {
-            camera: Camera::new(
+        let scene = RenderScene::new(
+            Camera::new(
                 vec3(0.0, 100.0, 100.0),
                 Quat::from_euler(EulerRot::ZXY, 0.0, f32::to_radians(-45.0), 0.0),
                 120.0,
             ),
-            meshes: Vec::new(),
-            lighting: Lighting {
+            Lighting {
                 sun_direction: vec3(0.0, -1.0, -1.0).normalize(),
                 sun_color: vec3(1.0, 0.95, 0.85),
                 sun_power: 0.5,
                 ambient_color: vec3(0.9, 0.95, 1.0) * 0.2,
                 skybox_id: skybox1_id,
             },
-        };
+        );
 
         let mut rng = SmallRng::from_os_rng();
         let mut physics_context = PhysicsContext::new();
