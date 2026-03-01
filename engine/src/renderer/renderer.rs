@@ -1,8 +1,7 @@
 use std::borrow::Cow;
-use std::io::{Cursor, Write};
-use std::{array, ffi, fs, mem, ptr};
+use std::{array, ffi, mem, ptr};
 
-use ash::vk;
+use ash::{khr, vk};
 use glam::{Mat3, Mat4, Quat, Vec2, Vec3, Vec4, vec4};
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
@@ -19,7 +18,6 @@ const USE_VALIDATION_LAYERS: bool = true;
 const MAX_FRAMES: usize = 1;
 const SHADOW_MAP_RESOLUTION: u32 = 1024;
 const MAX_INSTANCE_COUNT: usize = 10000;
-const ASSET_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../assets");
 
 const DESCRIPTOR_RATIOS: &[(vk::DescriptorType, u32)] = &[
     (vk::DescriptorType::COMBINED_IMAGE_SAMPLER, 1),
@@ -1169,6 +1167,8 @@ impl MaterialDescriptor {
 pub struct VulkanContext {
     entry: ash::Entry,
     instance: ash::Instance,
+    surface_loader: khr::surface::Instance,
+    swapchain_loader: khr::swapchain::Device,
     physical_device: vk::PhysicalDevice,
     device: ash::Device,
     allocator: vk_mem::Allocator,
@@ -1255,9 +1255,9 @@ fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> 
 }
 
 fn create_swapchain(
-    entry: &ash::Entry,
-    instance: &ash::Instance,
     device: &ash::Device,
+    surface_fn: &khr::surface::Instance,
+    swapchain_fn: &khr::swapchain::Device,
     physical_device: vk::PhysicalDevice,
     surface: vk::SurfaceKHR,
     surface_format: vk::SurfaceFormatKHR,
@@ -1272,9 +1272,6 @@ fn create_swapchain(
     ),
     vk::Result,
 > {
-    let surface_fn = ash::khr::surface::Instance::new(entry, instance);
-    let swapchain_fn = ash::khr::swapchain::Device::new(instance, device);
-
     let surface_capabilities = unsafe {
         surface_fn
             .get_physical_device_surface_capabilities(physical_device, surface)
@@ -1430,7 +1427,7 @@ impl VulkanContext {
 
         let entry = unsafe { ash::Entry::load().unwrap() };
         let instance = create_instance(&entry, raw_display_handle);
-        let surface_fn = ash::khr::surface::Instance::new(&entry, &instance);
+        let surface_loader = ash::khr::surface::Instance::new(&entry, &instance);
 
         let surface = unsafe {
             ash_window::create_surface(
@@ -1455,7 +1452,7 @@ impl VulkanContext {
             .enumerate()
             .find_map(|(i, &props)| {
                 let surface_support = unsafe {
-                    surface_fn
+                    surface_loader
                         .get_physical_device_surface_support(physical_device, i as u32, surface)
                         .unwrap_or(false)
                 };
@@ -1501,6 +1498,8 @@ impl VulkanContext {
                 .unwrap()
         };
 
+        let swapchain_loader = ash::khr::swapchain::Device::new(&instance, &device);
+
         let allocator_create_info =
             vk_mem::AllocatorCreateInfo::new(&instance, &device, physical_device);
 
@@ -1512,7 +1511,7 @@ impl VulkanContext {
         let descriptor_set_layouts = Self::create_descriptor_layouts(&device);
 
         let all_surface_formats = unsafe {
-            surface_fn
+            surface_loader
                 .get_physical_device_surface_formats(physical_device, surface)
                 .unwrap()
         };
@@ -1528,9 +1527,9 @@ impl VulkanContext {
         let window_size = window.inner_size();
         let (swapchain, swapchain_images, swapchain_image_views, swapchain_extent) =
             create_swapchain(
-                &entry,
-                &instance,
                 &device,
+                &surface_loader,
+                &swapchain_loader,
                 physical_device,
                 surface,
                 surface_format,
@@ -1683,6 +1682,8 @@ impl VulkanContext {
             skybox_textures,
             current_skybox: None,
             pipeline_objects,
+            surface_loader,
+            swapchain_loader,
         }
     }
 
@@ -2116,8 +2117,6 @@ impl VulkanContext {
             return;
         }
 
-        let swapchain_fn = ash::khr::swapchain::Device::new(&self.instance, &self.device);
-
         let current_frame_index = self.current_frame % MAX_FRAMES;
         let current_frame = &mut self.render_frames[current_frame_index];
         let command_pool = current_frame.command_pool;
@@ -2140,7 +2139,7 @@ impl VulkanContext {
                 .wait_for_fences(&[in_flight_fence], true, 1000000000)
                 .unwrap();
 
-            let (image_index, should_recreate) = match swapchain_fn.acquire_next_image(
+            let (image_index, should_recreate) = match self.swapchain_loader.acquire_next_image(
                 self.swapchain,
                 u64::MAX,
                 swapchain_semaphore,
@@ -2396,12 +2395,14 @@ impl VulkanContext {
                 .wait_semaphores(wait_semaphores)
                 .image_indices(image_indices);
 
-            let should_recreate =
-                match swapchain_fn.queue_present(self.graphics_queue, &present_info) {
-                    Ok(r) => r,
-                    Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => true,
-                    Err(err) => panic!("{}", err),
-                };
+            let should_recreate = match self
+                .swapchain_loader
+                .queue_present(self.graphics_queue, &present_info)
+            {
+                Ok(r) => r,
+                Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => true,
+                Err(err) => panic!("{}", err),
+            };
 
             if should_recreate {
                 self.should_resize = true;
@@ -2414,13 +2415,11 @@ impl VulkanContext {
     pub fn handle_resize(&mut self, window_size: (u32, u32)) {
         unsafe { self.device.device_wait_idle().unwrap() };
 
-        let swapchain_fn = ash::khr::swapchain::Device::new(&self.instance, &self.device);
-
         let (swapchain, swapchain_images, swapchain_image_views, swapchain_extent) =
             match create_swapchain(
-                &self.entry,
-                &self.instance,
                 &self.device,
+                &self.surface_loader,
+                &self.swapchain_loader,
                 self.physical_device,
                 self.surface,
                 self.surface_format,
@@ -2438,7 +2437,10 @@ impl VulkanContext {
             unsafe { self.device.destroy_image_view(image_view, None) };
         }
 
-        unsafe { swapchain_fn.destroy_swapchain(self.swapchain, None) };
+        unsafe {
+            self.swapchain_loader
+                .destroy_swapchain(self.swapchain, None)
+        };
 
         self.swapchain = swapchain;
         self.swapchain_images = swapchain_images;
