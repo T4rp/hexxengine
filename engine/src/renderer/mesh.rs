@@ -8,7 +8,7 @@ use glam::{Mat3, Mat4, Quat, Vec2, Vec3, Vec4};
 pub struct Vertex2d {
     pub pos: Vec2,
     pub uv: Vec2,
-    pub color: Vec3,
+    pub color: Vec4,
 }
 
 impl Vertex2d {
@@ -27,7 +27,7 @@ impl Vertex2d {
             vk::VertexInputAttributeDescription::default()
                 .binding(0)
                 .location(2)
-                .format(vk::Format::R32G32B32_SFLOAT)
+                .format(vk::Format::R32G32B32A32_SFLOAT)
                 .offset(mem::offset_of!(Vertex2d, color) as u32),
         ]
     }
