@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::io::Cursor;
+use std::io::{Cursor, Write};
 use std::{array, ffi, fs, mem, ptr};
 
 use ash::vk;
@@ -8,6 +8,7 @@ use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
 
+use crate::renderer::images::{ImageTransition, transition_images};
 use crate::renderer::mesh::{
     CameraUniform, InstanceVertex, MaterialFlags, MaterialUniform, MeshVertex, SceneUniform,
 };
@@ -32,6 +33,12 @@ unsafe extern "system" fn debug_messager_callback(
     _userdata: *mut std::os::raw::c_void,
 ) -> vk::Bool32 {
     unsafe {
+        if !message_severity.contains(vk::DebugUtilsMessageSeverityFlagsEXT::ERROR)
+            && !message_severity.contains(vk::DebugUtilsMessageSeverityFlagsEXT::WARNING)
+        {
+            return vk::FALSE;
+        }
+
         let callback_data = *callback_data;
         let message_id_number = callback_data.message_id_number;
 
@@ -47,12 +54,11 @@ unsafe extern "system" fn debug_messager_callback(
             ffi::CStr::from_ptr(callback_data.p_message).to_string_lossy()
         };
 
-        println!(
-            "{message_severity:?}:\n{message_type:?} [{message_id_name} ({message_id_number})] : {message}\n",
-        );
-
         let bt = std::backtrace::Backtrace::capture();
-        println!("Backtrace:\n{bt}");
+
+        println!(
+            "{message_severity:?}:\n{message_type:?} [{message_id_name} ({message_id_number})]: {message}\n{bt}",
+        );
 
         vk::FALSE
     }
@@ -2202,13 +2208,19 @@ impl VulkanContext {
                 .render_area(shadow_render_area)
                 .layer_count(1);
 
-            transition_image(
+            transition_images(
                 &self.device,
                 command_buffer,
-                shadow_image.0,
-                vk::ImageLayout::UNDEFINED,
-                vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                vk::ImageAspectFlags::DEPTH,
+                &[ImageTransition {
+                    image: shadow_image.0,
+                    current_layout: vk::ImageLayout::UNDEFINED,
+                    new_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                    src_stage: vk::PipelineStageFlags2::TOP_OF_PIPE,
+                    src_access: vk::AccessFlags2::empty(),
+                    dst_stage: vk::PipelineStageFlags2::EARLY_FRAGMENT_TESTS,
+                    dst_access: vk::AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE,
+                    aspect_mask: vk::ImageAspectFlags::DEPTH,
+                }],
             );
 
             self.device
@@ -2273,22 +2285,40 @@ impl VulkanContext {
                 .render_area(main_render_area)
                 .layer_count(1);
 
-            transition_image(
-                &self.device,
-                command_buffer,
-                swapchain_image,
-                vk::ImageLayout::UNDEFINED,
-                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                vk::ImageAspectFlags::COLOR,
-            );
+            // transition_image(
+            //     &self.device,
+            //     command_buffer,
+            //     swapchain_image,
+            //     vk::ImageLayout::UNDEFINED,
+            //     vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            //     vk::ImageAspectFlags::COLOR,
+            // );
 
-            transition_image(
+            transition_images(
                 &self.device,
                 command_buffer,
-                shadow_image.0,
-                vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-                vk::ImageAspectFlags::DEPTH,
+                &[
+                    ImageTransition {
+                        image: swapchain_image,
+                        current_layout: vk::ImageLayout::UNDEFINED,
+                        new_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        src_stage: vk::PipelineStageFlags2::NONE,
+                        src_access: vk::AccessFlags2::NONE,
+                        dst_stage: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+                        dst_access: vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
+                        aspect_mask: vk::ImageAspectFlags::COLOR,
+                    },
+                    ImageTransition {
+                        image: shadow_image.0,
+                        current_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                        new_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                        src_stage: vk::PipelineStageFlags2::EARLY_FRAGMENT_TESTS,
+                        src_access: vk::AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE,
+                        dst_stage: vk::PipelineStageFlags2::FRAGMENT_SHADER,
+                        dst_access: vk::AccessFlags2::SHADER_SAMPLED_READ,
+                        aspect_mask: vk::ImageAspectFlags::DEPTH,
+                    },
+                ],
             );
 
             self.device
@@ -2315,13 +2345,19 @@ impl VulkanContext {
 
             self.device.cmd_end_rendering(command_buffer);
 
-            transition_image(
+            transition_images(
                 &self.device,
                 command_buffer,
-                swapchain_image,
-                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                vk::ImageLayout::PRESENT_SRC_KHR,
-                vk::ImageAspectFlags::COLOR,
+                &[ImageTransition {
+                    image: swapchain_image,
+                    current_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                    new_layout: vk::ImageLayout::PRESENT_SRC_KHR,
+                    src_stage: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+                    src_access: vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
+                    dst_stage: vk::PipelineStageFlags2::NONE,
+                    dst_access: vk::AccessFlags2::NONE,
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                }],
             );
 
             self.device.end_command_buffer(command_buffer).unwrap();
