@@ -11,36 +11,34 @@ pub struct ImageTransition {
     pub aspect_mask: vk::ImageAspectFlags,
 }
 
-pub fn transition_images(
-    device: &ash::Device,
-    command_buffer: vk::CommandBuffer,
-    transitions: &[ImageTransition],
-) {
-    let mut image_barriers = Vec::with_capacity(transitions.len());
-
-    for image_transition in transitions {
-        let image_barrier = vk::ImageMemoryBarrier2::default()
-            .src_stage_mask(image_transition.src_stage)
-            .src_access_mask(image_transition.src_access)
-            .dst_stage_mask(image_transition.dst_stage)
-            .dst_access_mask(image_transition.dst_access)
+impl ImageTransition {
+    pub fn as_barrier(&self) -> vk::ImageMemoryBarrier2<'_> {
+        vk::ImageMemoryBarrier2::default()
+            .src_stage_mask(self.src_stage)
+            .src_access_mask(self.src_access)
+            .dst_stage_mask(self.dst_stage)
+            .dst_access_mask(self.dst_access)
             .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
             .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .old_layout(image_transition.current_layout)
-            .new_layout(image_transition.new_layout)
+            .old_layout(self.current_layout)
+            .new_layout(self.new_layout)
             .subresource_range(vk::ImageSubresourceRange {
-                aspect_mask: image_transition.aspect_mask,
+                aspect_mask: self.aspect_mask,
                 base_mip_level: 0,
                 level_count: vk::REMAINING_MIP_LEVELS,
                 base_array_layer: 0,
                 layer_count: vk::REMAINING_ARRAY_LAYERS,
             })
-            .image(image_transition.image);
-
-        image_barriers.push(image_barrier)
+            .image(self.image)
     }
+}
 
-    let dep_info = vk::DependencyInfo::default().image_memory_barriers(&image_barriers);
+pub fn transition_images(
+    device: &ash::Device,
+    command_buffer: vk::CommandBuffer,
+    barriers: &[vk::ImageMemoryBarrier2],
+) {
+    let dep_info = vk::DependencyInfo::default().image_memory_barriers(&barriers);
 
     unsafe { device.cmd_pipeline_barrier2(command_buffer, &dep_info) };
 }

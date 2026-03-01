@@ -2417,7 +2417,8 @@ impl VulkanContext {
                     dst_stage: vk::PipelineStageFlags2::EARLY_FRAGMENT_TESTS,
                     dst_access: vk::AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE,
                     aspect_mask: vk::ImageAspectFlags::DEPTH,
-                }],
+                }
+                .as_barrier()],
             );
 
             self.device
@@ -2504,7 +2505,8 @@ impl VulkanContext {
                         dst_stage: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
                         dst_access: vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
                         aspect_mask: vk::ImageAspectFlags::COLOR,
-                    },
+                    }
+                    .as_barrier(),
                     ImageTransition {
                         image: shadow_image.0,
                         current_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
@@ -2514,7 +2516,8 @@ impl VulkanContext {
                         dst_stage: vk::PipelineStageFlags2::FRAGMENT_SHADER,
                         dst_access: vk::AccessFlags2::SHADER_SAMPLED_READ,
                         aspect_mask: vk::ImageAspectFlags::DEPTH,
-                    },
+                    }
+                    .as_barrier(),
                 ],
             );
 
@@ -2560,7 +2563,8 @@ impl VulkanContext {
                     dst_stage: vk::PipelineStageFlags2::NONE,
                     dst_access: vk::AccessFlags2::NONE,
                     aspect_mask: vk::ImageAspectFlags::COLOR,
-                }],
+                }
+                .as_barrier()],
             );
 
             self.device.end_command_buffer(command_buffer).unwrap();
