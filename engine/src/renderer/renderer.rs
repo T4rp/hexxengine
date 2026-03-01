@@ -1903,6 +1903,7 @@ impl VulkanContext {
                 &self.device,
                 &self.skybox_textures[scene.lighting.skybox_id as usize],
             );
+            current_frame.per_frame_descriptor_data.skybox_dirty = false;
         }
     }
 
