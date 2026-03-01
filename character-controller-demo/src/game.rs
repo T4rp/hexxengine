@@ -134,12 +134,13 @@ impl Part {
 struct Character {
     position: Vec3,
     orientation: Quat,
-    vertical_vel: f32,
     rigid_body: RigidBodyHandle,
     collider: ColliderHandle,
     character_controller: KinematicCharacterController,
     move_dir: Vec3,
+    velocity: Vec3,
     jump: bool,
+    grounded: bool,
 }
 
 impl Character {
@@ -164,16 +165,88 @@ impl Character {
             position,
             orientation: Quat::IDENTITY,
             rigid_body: rigid_body_handle,
-            vertical_vel: 0.0,
+            velocity: Vec3::ZERO,
             collider: collider_handle,
             character_controller,
             move_dir: Vec3::ZERO,
             jump: false,
+            grounded: false,
         }
     }
 
+    fn accel(&mut self, dt: f32, wish_dir: Vec3, wish_speed: f32, accel: f32) {
+        let mut vel = self.velocity;
+        vel.y = 0.0;
+
+        let current_speed = vel.dot(wish_dir);
+        let mut add_speed = wish_speed - current_speed;
+
+        if add_speed <= 0.0 {
+            add_speed = 0.0
+        }
+
+        let mut accel_speed = accel * wish_speed * dt;
+
+        if accel_speed > add_speed {
+            accel_speed = add_speed;
+        }
+
+        self.velocity += wish_dir * accel_speed;
+    }
+
+    fn friction(&mut self, dt: f32, friction: f32) {
+        let mut vel = self.velocity;
+
+        if self.grounded {
+            vel.y = 0.0;
+        }
+
+        let speed = vel.length();
+
+        if speed < 0.1 {
+            return;
+        }
+
+        let control = speed.max(30.0);
+        let drop = control * friction * dt;
+
+        let mut new_speed = speed - drop;
+        if new_speed < 0.0 {
+            new_speed = 0.0;
+        }
+
+        new_speed /= speed;
+
+        self.velocity *= new_speed;
+    }
+
     fn move_dir(&mut self, phys_ctx: &mut PhysicsContext, dt: f32) {
-        self.vertical_vel += phys_ctx.gravity.y * dt;
+        if !self.grounded {
+            self.velocity += phys_ctx.gravity * dt;
+        }
+
+        if self.grounded {
+            self.velocity.y = 0.0;
+            if self.jump {
+                self.velocity.y = 75.0;
+                self.grounded = false;
+            }
+        }
+
+        let wish_dir = self.move_dir.normalize_or_zero();
+
+        if self.grounded {
+            self.friction(dt, 6.0);
+            self.accel(dt, wish_dir, 48.0, 5.0);
+        } else {
+            self.accel(dt, wish_dir, 48.0, 10.0);
+        }
+
+        let mut xy = self.velocity * Vec3::new(1.0, 0.0, 1.0);
+        xy = xy.clamp_length_max(150.0);
+        self.velocity.x = xy.x;
+        self.velocity.z = xy.z;
+
         let shape = phys_ctx.collider_set.get(self.collider).unwrap().shape();
 
         let filter = QueryFilter::new().exclude_rigid_body(self.rigid_body);
@@ -196,22 +269,18 @@ impl Character {
             &query_pipeline,
             shape,
             current_rigid_body_position,
-            self.move_dir * dt + Vec3::new(0.0, self.vertical_vel * dt, 0.0),
+            self.velocity * dt,
             |_| {},
         );
 
-        if movement.grounded {
-            self.vertical_vel = 0.0;
-            if self.jump {
-                self.vertical_vel += 75.0;
-            }
-        }
+        self.grounded = movement.grounded;
+        self.velocity = movement.translation / dt;
 
         self.jump = false;
 
         let rigid_body = phys_ctx.rigid_body_set.get_mut(self.rigid_body).unwrap();
 
-        rigid_body.set_linvel(movement.translation / dt, true);
+        rigid_body.set_linvel(self.velocity, true);
 
         let body_pos = rigid_body.position();
         self.position = body_pos.translation;
@@ -271,7 +340,7 @@ impl Game {
             camera: Camera::new(
                 vec3(0.0, 100.0, 100.0),
                 Quat::from_euler(EulerRot::ZXY, 0.0, f32::to_radians(-45.0), 0.0),
-                90.0,
+                120.0,
             ),
             meshes: Vec::new(),
             lighting: Lighting {
@@ -284,32 +353,8 @@ impl Game {
         };
 
         let mut rng = SmallRng::from_os_rng();
-
         let mut physics_context = PhysicsContext::new();
-
         let mut cubes = Arena::new();
-
-        for _ in 0..200 {
-            let cuboid = Part::new_cube(
-                &mut physics_context,
-                RigidBodyType::Dynamic,
-                vec3(
-                    rng.random_range(-50.0..50.0),
-                    rng.random_range(1.0..50.0),
-                    rng.random_range(-50.0..50.0),
-                ) * 5.0,
-                Quat::from_euler(
-                    EulerRot::XYZ,
-                    rng.random::<f32>() * std::f32::consts::PI * 2.0,
-                    rng.random::<f32>() * std::f32::consts::PI * 2.0,
-                    rng.random::<f32>() * std::f32::consts::PI * 2.0,
-                ),
-                vec3(4.0, 4.0, 4.0) * rng.random_range(1.0..5.0),
-                hsv_to_rgb(rng.random::<f32>() * 360.0, 0.8, 1.0),
-            );
-
-            cubes.insert(cuboid);
-        }
 
         cubes.insert(Part::new_cube(
             &mut physics_context,
@@ -370,16 +415,13 @@ impl Game {
         let mut world_move = self.scene.camera.orientation * move_dir;
         world_move.y = 0.0;
 
-        world_move = world_move.normalize_or_zero() * 64.0;
+        world_move = world_move.normalize_or_zero();
 
         self.character.move_dir = world_move;
     }
 
-    fn update_camera(&mut self, dt: f32, window: &Window) {
+    fn update_camera(&mut self, _dt: f32, window: &Window) {
         let camera = &mut self.scene.camera;
-
-        let camera_forward = camera.orientation * Vec3::NEG_Z;
-        let camera_right = camera.orientation * Vec3::X;
 
         if self.input_state.right_mouse_down {
             let _ = window
@@ -470,7 +512,7 @@ impl Game {
                         color: part.color,
                         opacity: 1.0,
                         mesh_id: self.resources.cube_mesh,
-                        material_id: 1,
+                        material_id: 0,
                     });
                 }
                 PartShape::Sphere(radius) => {
