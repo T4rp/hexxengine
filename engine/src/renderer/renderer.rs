@@ -1919,7 +1919,7 @@ impl VulkanContext {
         vertex2d_buffer: &(vk::Buffer, vk_mem::Allocation),
         vertex2d_index_buffer: &(vk::Buffer, vk_mem::Allocation),
     ) -> u32 {
-        let color = vec4(0.0, 0.0, 0.0, 1.0);
+        let color = vec4(1.0, 1.0, 1.0, 1.0);
         let size = 100.0;
         let vertices: [Vertex2d; 4] = [
             Vertex2d::new_solid(vec2(0.0, 0.0), color),
@@ -2266,7 +2266,7 @@ impl VulkanContext {
         count: u32,
     ) {
         unsafe {
-            let descriptor_sets = [global2d_descriptor_set, self.textures[1].descriptor_set];
+            let descriptor_sets = [global2d_descriptor_set, self.textures[0].descriptor_set];
 
             self.device.cmd_bind_descriptor_sets(
                 command_buffer,
