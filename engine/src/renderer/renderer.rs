@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::{array, ffi, mem, ptr};
 
 use ash::{khr, vk};
-use glam::{Mat3, Mat4, Quat, Vec2, Vec3, Vec4, vec4};
+use glam::{Mat3, Mat4, Quat, Vec2, Vec3, Vec4, vec2, vec4};
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
@@ -1873,14 +1873,14 @@ impl VulkanContext {
             self.swapchain_extent.width as f32,
             0.0,
             self.swapchain_extent.height as f32,
-            -0.1,
-            2.0,
+            0.0,
+            1.0,
         );
 
         proj_2d.y_axis *= vec4(1.0, -1.0, 1.0, 1.0);
 
         let global2d_ubo = Global2DUniform {
-            proj: Mat4::IDENTITY,
+            proj: proj_2d,
             view: Mat4::IDENTITY,
         };
 
@@ -1918,26 +1918,17 @@ impl VulkanContext {
         &mut self,
         vertex2d_buffer: &(vk::Buffer, vk_mem::Allocation),
         vertex2d_index_buffer: &(vk::Buffer, vk_mem::Allocation),
-    ) {
-        let vertices: [Vertex2d; 3] = [
-            Vertex2d {
-                pos: Vec2::new(0.5, -0.5),
-                uv: Vec2::new(1.0, 1.0),
-                color: Vec4::new(0.0, 0.0, 1.0, 1.0),
-            },
-            Vertex2d {
-                pos: Vec2::new(-0.5, -0.5),
-                uv: Vec2::new(0.0, 1.0),
-                color: Vec4::new(0.0, 1.0, 0.0, 1.0),
-            },
-            Vertex2d {
-                pos: Vec2::new(0.0, 0.5),
-                uv: Vec2::new(0.5, 0.0),
-                color: Vec4::new(1.0, 0.0, 0.0, 1.0),
-            },
+    ) -> u32 {
+        let color = vec4(0.0, 0.0, 0.0, 1.0);
+        let size = 100.0;
+        let vertices: [Vertex2d; 4] = [
+            Vertex2d::new_solid(vec2(0.0, 0.0), color),
+            Vertex2d::new_solid(vec2(0.0, -size), color),
+            Vertex2d::new_solid(vec2(size, -size), color),
+            Vertex2d::new_solid(vec2(size, 0.0), color),
         ];
 
-        let indices: &[u16] = &[0, 1, 2];
+        let indices: &[u16; 6] = &[0, 1, 2, 2, 3, 0];
 
         let vertex_alloc_info = self.allocator.get_allocation_info(&vertex2d_buffer.1);
         let index_alloc_info = self.allocator.get_allocation_info(&vertex2d_index_buffer.1);
@@ -1954,7 +1945,9 @@ impl VulkanContext {
                 index_alloc_info.mapped_data.cast(),
                 indices.len().min(MAX_VERTICES_2D),
             );
-        }
+        };
+
+        indices.len() as u32
     }
 
     fn update_instance_buffer(
@@ -2270,6 +2263,7 @@ impl VulkanContext {
         global2d_descriptor_set: vk::DescriptorSet,
         vertex_buffer: vk::Buffer,
         index_buffer: vk::Buffer,
+        count: u32,
     ) {
         unsafe {
             let descriptor_sets = [global2d_descriptor_set, self.textures[1].descriptor_set];
@@ -2299,7 +2293,8 @@ impl VulkanContext {
                 vk::IndexType::UINT16,
             );
 
-            self.device.cmd_draw_indexed(command_buffer, 3, 1, 0, 0, 0);
+            self.device
+                .cmd_draw_indexed(command_buffer, count, 1, 0, 0, 0);
         }
     }
 
@@ -2361,7 +2356,8 @@ impl VulkanContext {
 
             self.update_per_frame_descriptors(scene);
 
-            self.update_vertex2d_buffer(&vertex2d_buffer, &vertex2d_index_buffer);
+            let vertex2d_count =
+                self.update_vertex2d_buffer(&vertex2d_buffer, &vertex2d_index_buffer);
             let batch_info = self.update_instance_buffer(&instance_buffer, scene);
 
             let submit_semaphore = self.submit_semaphores[image_index as usize];
@@ -2547,6 +2543,7 @@ impl VulkanContext {
                 global2d_descriptor_set,
                 vertex2d_buffer.0,
                 vertex2d_index_buffer.0,
+                vertex2d_count,
             );
 
             self.device.cmd_end_rendering(command_buffer);

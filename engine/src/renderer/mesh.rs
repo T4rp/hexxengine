@@ -12,6 +12,14 @@ pub struct Vertex2d {
 }
 
 impl Vertex2d {
+    pub fn new_solid(pos: Vec2, color: Vec4) -> Vertex2d {
+        Self {
+            pos,
+            uv: Vec2::ZERO,
+            color,
+        }
+    }
+
     pub fn get_attribute_descriptions() -> [vk::VertexInputAttributeDescription; 3] {
         [
             vk::VertexInputAttributeDescription::default()
