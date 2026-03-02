@@ -166,7 +166,11 @@ impl Game {
 
         let skybox2_id = load_skybox(
             &mut vk_ctx,
-            "assets/cloudy-skyboxes/Cubemap/Cubemap_Sky_02-512x512.png",
+            format!(
+                "{}/cloudy-skyboxes/Cubemap/Cubemap_Sky_02-512x512.png",
+                ASSET_PATH
+            )
+            .as_str(),
         );
 
         let resources = GameResources {
