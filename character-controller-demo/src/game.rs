@@ -207,7 +207,7 @@ impl Character {
             return;
         }
 
-        let control = speed.max(30.0);
+        let control = speed.max(19.0);
         let drop = control * friction * dt;
 
         let mut new_speed = speed - drop;
@@ -217,7 +217,8 @@ impl Character {
 
         new_speed /= speed;
 
-        self.velocity *= new_speed;
+        self.velocity.x *= new_speed;
+        self.velocity.z *= new_speed;
     }
 
     fn move_dir(&mut self, phys_ctx: &mut PhysicsContext, dt: f32) {
@@ -228,7 +229,7 @@ impl Character {
         if self.grounded {
             self.velocity.y = 0.0;
             if self.jump {
-                self.velocity.y = 75.0;
+                self.velocity.y = 70.0;
                 self.grounded = false;
             }
         }
@@ -236,14 +237,14 @@ impl Character {
         let wish_dir = self.move_dir.normalize_or_zero();
 
         if self.grounded {
-            self.friction(dt, 6.0);
-            self.accel(dt, wish_dir, 48.0, 5.0);
+            self.friction(dt, 4.0);
+            self.accel(dt, wish_dir, 47.0, 10.0);
         } else {
-            self.accel(dt, wish_dir, 48.0, 10.0);
+            self.accel(dt, wish_dir, 6.0, 150.0);
         }
 
         let mut xy = self.velocity * Vec3::new(1.0, 0.0, 1.0);
-        xy = xy.clamp_length_max(150.0);
+        // xy = xy.clamp_length_max(150.0);
         self.velocity.x = xy.x;
         self.velocity.z = xy.z;
 
@@ -363,6 +364,28 @@ impl Game {
             vec3(2048.0, 50.0, 2048.0),
             vec3(0.8, 0.8, 0.8),
         ));
+
+        for _ in 0..200 {
+            let cuboid = Part::new_cube(
+                &mut physics_context,
+                RigidBodyType::Dynamic,
+                vec3(
+                    rng.random_range(-50.0..50.0),
+                    rng.random_range(1.0..50.0),
+                    rng.random_range(-50.0..50.0),
+                ) * 5.0,
+                Quat::from_euler(
+                    EulerRot::XYZ,
+                    rng.random::<f32>() * std::f32::consts::PI * 2.0,
+                    rng.random::<f32>() * std::f32::consts::PI * 2.0,
+                    rng.random::<f32>() * std::f32::consts::PI * 2.0,
+                ),
+                vec3(4.0, 4.0, 4.0) * rng.random_range(1.0..5.0),
+                hsv_to_rgb(rng.random::<f32>() * 360.0, 0.8, 1.0),
+            );
+
+            cubes.insert(cuboid);
+        }
 
         let character = Character::new(&mut physics_context, vec3(0.0, 25.0, 0.0));
 
@@ -511,7 +534,7 @@ impl Game {
                         color: part.color,
                         opacity: 1.0,
                         mesh_id: self.resources.cube_mesh,
-                        material_id: 0,
+                        material_id: 1,
                     });
                 }
                 PartShape::Sphere(radius) => {
@@ -522,7 +545,7 @@ impl Game {
                         color: part.color,
                         opacity: 1.0,
                         mesh_id: self.resources.sphere_mesh,
-                        material_id: 0,
+                        material_id: 1,
                     });
                 }
             }
