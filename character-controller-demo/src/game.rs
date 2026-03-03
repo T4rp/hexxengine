@@ -157,7 +157,9 @@ struct Character {
 
 impl Character {
     fn new(phys_ctx: &mut PhysicsContext, position: Vec3) -> Self {
-        let character_controller = KinematicCharacterController::default();
+        let mut character_controller = KinematicCharacterController::default();
+        character_controller.max_slope_climb_angle = 45.5_f32.to_radians();
+        character_controller.min_slope_slide_angle = 45.5_f32.to_radians();
 
         let capsule_shape = SharedShape::capsule_y(CHARACTER_HEIGHT / 2.0, CHARACTER_RADIUS);
         let mass_properties = capsule_shape.mass_properties(1.0);
