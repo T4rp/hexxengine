@@ -40,6 +40,15 @@ const STEP_HZ: f32 = 1.0 / 60.0;
 const CHARACTER_HEIGHT: f32 = 10.0;
 const CHARACTER_RADIUS: f32 = 2.0;
 
+const JUMP_POWER: f32 = 70.0;
+const GROUND_SPEED: f32 = 47.0;
+const AIR_SPEED: f32 = 6.0;
+const STOP_SPEED: f32 = 19.0;
+const CAMERA_SENSITIVITY: f32 = 0.38;
+const GROUND_ACCEL: f32 = 10.0;
+const AIR_ACCEL: f32 = 100.0;
+const FRICTION: f32 = 6.0;
+
 enum PartShape {
     Cube(Vec3),
     Sphere(f32),
@@ -207,7 +216,7 @@ impl Character {
             return;
         }
 
-        let control = speed.max(19.0);
+        let control = speed.max(STOP_SPEED);
         let drop = control * friction * dt;
 
         let mut new_speed = speed - drop;
@@ -229,7 +238,7 @@ impl Character {
         if self.grounded {
             self.velocity.y = 0.0;
             if self.jump {
-                self.velocity.y = 70.0;
+                self.velocity.y = JUMP_POWER;
                 self.grounded = false;
             }
         }
@@ -237,16 +246,11 @@ impl Character {
         let wish_dir = self.move_dir.normalize_or_zero();
 
         if self.grounded {
-            self.friction(dt, 4.0);
-            self.accel(dt, wish_dir, 47.0, 10.0);
+            self.friction(dt, FRICTION);
+            self.accel(dt, wish_dir, GROUND_SPEED, GROUND_ACCEL);
         } else {
-            self.accel(dt, wish_dir, 6.0, 150.0);
+            self.accel(dt, wish_dir, AIR_SPEED, AIR_ACCEL);
         }
-
-        let mut xy = self.velocity * Vec3::new(1.0, 0.0, 1.0);
-        // xy = xy.clamp_length_max(150.0);
-        self.velocity.x = xy.x;
-        self.velocity.z = xy.z;
 
         let shape = phys_ctx.collider_set.get(self.collider).unwrap().shape();
 
@@ -458,7 +462,7 @@ impl Game {
         let mouse_delta = self.input_state.mouse_delta;
 
         if mouse_delta.z == 0.0 && self.input_state.right_mouse_down {
-            let sensitivity = 0.001;
+            let sensitivity = 0.002 * CAMERA_SENSITIVITY;
 
             let yaw = Quat::from_rotation_y(-mouse_delta.x * sensitivity);
             let pitch = Quat::from_rotation_x(-mouse_delta.y * sensitivity);
