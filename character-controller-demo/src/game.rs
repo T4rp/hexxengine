@@ -7,7 +7,7 @@ use hexxengine::{
         self,
         control::CharacterCollision,
         parry::shape::Capsule,
-        prelude::{QueryFilter, QueryPipeline, Shape, ShapeType, SharedShape},
+        prelude::{MassProperties, QueryFilter, QueryPipeline, Shape, ShapeType, SharedShape},
     },
     thunderdome, winit,
 };
@@ -144,8 +144,8 @@ impl Part {
 struct Character {
     position: Vec3,
     orientation: Quat,
-    rigid_body: RigidBodyHandle,
     collider: ColliderHandle,
+    mass_properties: MassProperties,
     character_controller: KinematicCharacterController,
     move_dir: Vec3,
     velocity: Vec3,
@@ -160,25 +160,16 @@ impl Character {
         let character_controller = KinematicCharacterController::default();
 
         let capsule_shape = SharedShape::capsule_y(CHARACTER_HEIGHT / 2.0, CHARACTER_RADIUS);
+        let mass_properties = capsule_shape.mass_properties(1.0);
+
         let collider = ColliderBuilder::new(capsule_shape.clone()).build();
 
-        let rigid_body = RigidBodyBuilder::new(RigidBodyType::KinematicVelocityBased)
-            .pose(Pose3::from_parts(position, Quat::IDENTITY))
-            .build();
-
-        let rigid_body_handle = phys_ctx.rigid_body_set.insert(rigid_body);
-
-        let collider_handle = phys_ctx.collider_set.insert_with_parent(
-            collider,
-            rigid_body_handle,
-            &mut phys_ctx.rigid_body_set,
-        );
+        let collider_handle = phys_ctx.collider_set.insert(collider);
 
         Self {
             position,
             orientation: Quat::IDENTITY,
             shape: capsule_shape,
-            rigid_body: rigid_body_handle,
             velocity: Vec3::ZERO,
             collider: collider_handle,
             character_controller,
@@ -186,6 +177,7 @@ impl Character {
             jump: false,
             grounded: false,
             collisions: Vec::new(),
+            mass_properties,
         }
     }
 
@@ -237,9 +229,7 @@ impl Character {
     }
 
     fn solve_colisions(&mut self, phys_ctx: &mut PhysicsContext, dt: f32) {
-        let filter = QueryFilter::new().exclude_rigid_body(self.rigid_body);
-
-        let mass = phys_ctx.rigid_body_set.get(self.rigid_body).unwrap().mass();
+        let filter = QueryFilter::new().exclude_collider(self.collider);
 
         let mut query_pipeline = phys_ctx.broad_phase.as_query_pipeline_mut(
             phys_ctx.narrow_phase.query_dispatcher(),
@@ -248,22 +238,14 @@ impl Character {
             filter,
         );
 
-        let shape = self.shape.clone_dyn();
-
         self.character_controller
             .solve_character_collision_impulses(
                 dt,
                 &mut query_pipeline,
-                shape.as_ref(),
-                mass,
+                self.shape.clone_dyn().as_ref(),
+                self.mass_properties.mass(),
                 &self.collisions,
             );
-
-        let rigid_body = phys_ctx.rigid_body_set.get_mut(self.rigid_body).unwrap();
-
-        let body_pos = rigid_body.position();
-        self.position = body_pos.translation;
-        self.orientation = body_pos.rotation;
     }
 
     fn move_dir(&mut self, phys_ctx: &mut PhysicsContext, dt: f32) {
@@ -290,9 +272,7 @@ impl Character {
             self.accel(dt, wish_dir, AIR_SPEED, AIR_ACCEL);
         }
 
-        let shape = phys_ctx.collider_set.get(self.collider).unwrap().shape();
-
-        let filter = QueryFilter::new().exclude_rigid_body(self.rigid_body);
+        let filter = QueryFilter::new().exclude_collider(self.collider);
 
         let query_pipeline = phys_ctx.broad_phase.as_query_pipeline(
             phys_ctx.narrow_phase.query_dispatcher(),
@@ -301,36 +281,24 @@ impl Character {
             filter,
         );
 
-        let current_rigid_body_position = phys_ctx
-            .rigid_body_set
-            .get(self.rigid_body)
-            .unwrap()
-            .position();
-
         let movement = self.character_controller.move_shape(
             dt,
             &query_pipeline,
-            shape,
-            current_rigid_body_position,
+            self.shape.clone_dyn().as_ref(),
+            &Pose3 {
+                rotation: self.orientation,
+                translation: self.position,
+            },
             self.velocity * dt,
             |collision| self.collisions.push(collision),
         );
 
         self.grounded = movement.grounded;
         self.velocity = movement.translation / dt;
-
+        self.position += self.velocity * dt;
         self.jump = false;
 
-        {
-            let rigid_body = phys_ctx.rigid_body_set.get_mut(self.rigid_body).unwrap();
-            rigid_body.set_linvel(self.velocity, true);
-        }
-
         self.solve_colisions(phys_ctx, dt);
-
-        // let body_pos = rigid_body.position();
-        // self.position = body_pos.translation;
-        // self.orientation = body_pos.rotation;
     }
 }
 
