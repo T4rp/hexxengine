@@ -297,7 +297,7 @@ impl Character {
 
         self.grounded = movement.grounded;
         self.velocity = movement.translation / dt;
-        self.position += self.velocity * dt;
+        self.position += movement.translation;
         self.jump = false;
 
         self.solve_colisions(phys_ctx, dt);
