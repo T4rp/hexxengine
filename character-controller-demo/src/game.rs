@@ -5,8 +5,9 @@ use hexxengine::{
     glam, rand,
     rapier3d::{
         self,
+        control::CharacterCollision,
         parry::shape::Capsule,
-        prelude::{QueryFilter, QueryPipeline, Shape, ShapeType},
+        prelude::{QueryFilter, QueryPipeline, Shape, ShapeType, SharedShape},
     },
     thunderdome, winit,
 };
@@ -150,13 +151,16 @@ struct Character {
     velocity: Vec3,
     jump: bool,
     grounded: bool,
+    collisions: Vec<CharacterCollision>,
+    shape: SharedShape,
 }
 
 impl Character {
     fn new(phys_ctx: &mut PhysicsContext, position: Vec3) -> Self {
         let character_controller = KinematicCharacterController::default();
 
-        let collider = ColliderBuilder::capsule_y(CHARACTER_HEIGHT / 2.0, CHARACTER_RADIUS).build();
+        let capsule_shape = SharedShape::capsule_y(CHARACTER_HEIGHT / 2.0, CHARACTER_RADIUS);
+        let collider = ColliderBuilder::new(capsule_shape.clone()).build();
 
         let rigid_body = RigidBodyBuilder::new(RigidBodyType::KinematicVelocityBased)
             .pose(Pose3::from_parts(position, Quat::IDENTITY))
@@ -173,6 +177,7 @@ impl Character {
         Self {
             position,
             orientation: Quat::IDENTITY,
+            shape: capsule_shape,
             rigid_body: rigid_body_handle,
             velocity: Vec3::ZERO,
             collider: collider_handle,
@@ -180,6 +185,7 @@ impl Character {
             move_dir: Vec3::ZERO,
             jump: false,
             grounded: false,
+            collisions: Vec::new(),
         }
     }
 
@@ -230,7 +236,39 @@ impl Character {
         self.velocity.z *= new_speed;
     }
 
+    fn solve_colisions(&mut self, phys_ctx: &mut PhysicsContext, dt: f32) {
+        let filter = QueryFilter::new().exclude_rigid_body(self.rigid_body);
+
+        let mass = phys_ctx.rigid_body_set.get(self.rigid_body).unwrap().mass();
+
+        let mut query_pipeline = phys_ctx.broad_phase.as_query_pipeline_mut(
+            phys_ctx.narrow_phase.query_dispatcher(),
+            &mut phys_ctx.rigid_body_set,
+            &mut phys_ctx.collider_set,
+            filter,
+        );
+
+        let shape = self.shape.clone_dyn();
+
+        self.character_controller
+            .solve_character_collision_impulses(
+                dt,
+                &mut query_pipeline,
+                shape.as_ref(),
+                mass,
+                &self.collisions,
+            );
+
+        let rigid_body = phys_ctx.rigid_body_set.get_mut(self.rigid_body).unwrap();
+
+        let body_pos = rigid_body.position();
+        self.position = body_pos.translation;
+        self.orientation = body_pos.rotation;
+    }
+
     fn move_dir(&mut self, phys_ctx: &mut PhysicsContext, dt: f32) {
+        self.collisions.clear();
+
         if !self.grounded {
             self.velocity += phys_ctx.gravity * dt;
         }
@@ -256,12 +294,6 @@ impl Character {
 
         let filter = QueryFilter::new().exclude_rigid_body(self.rigid_body);
 
-        let current_rigid_body_position = phys_ctx
-            .rigid_body_set
-            .get(self.rigid_body)
-            .unwrap()
-            .position();
-
         let query_pipeline = phys_ctx.broad_phase.as_query_pipeline(
             phys_ctx.narrow_phase.query_dispatcher(),
             &phys_ctx.rigid_body_set,
@@ -269,13 +301,19 @@ impl Character {
             filter,
         );
 
+        let current_rigid_body_position = phys_ctx
+            .rigid_body_set
+            .get(self.rigid_body)
+            .unwrap()
+            .position();
+
         let movement = self.character_controller.move_shape(
             dt,
             &query_pipeline,
             shape,
             current_rigid_body_position,
             self.velocity * dt,
-            |_| {},
+            |collision| self.collisions.push(collision),
         );
 
         self.grounded = movement.grounded;
@@ -283,13 +321,16 @@ impl Character {
 
         self.jump = false;
 
-        let rigid_body = phys_ctx.rigid_body_set.get_mut(self.rigid_body).unwrap();
+        {
+            let rigid_body = phys_ctx.rigid_body_set.get_mut(self.rigid_body).unwrap();
+            rigid_body.set_linvel(self.velocity, true);
+        }
 
-        rigid_body.set_linvel(self.velocity, true);
+        self.solve_colisions(phys_ctx, dt);
 
-        let body_pos = rigid_body.position();
-        self.position = body_pos.translation;
-        self.orientation = body_pos.rotation;
+        // let body_pos = rigid_body.position();
+        // self.position = body_pos.translation;
+        // self.orientation = body_pos.rotation;
     }
 }
 
