@@ -5,7 +5,7 @@ use hexxengine::{
     glam, rand,
     rapier3d::{
         self,
-        control::CharacterCollision,
+        control::{CharacterCollision, CharacterLength},
         parry::shape::Capsule,
         prelude::{MassProperties, QueryFilter, QueryPipeline, Shape, ShapeType, SharedShape},
     },
@@ -160,6 +160,8 @@ impl Character {
         let mut character_controller = KinematicCharacterController::default();
         character_controller.max_slope_climb_angle = 45.5_f32.to_radians();
         character_controller.min_slope_slide_angle = 45.5_f32.to_radians();
+        character_controller.offset = CharacterLength::Absolute(0.2);
+        character_controller.normal_nudge_factor = 1.0e-3;
 
         let capsule_shape = SharedShape::capsule_y(CHARACTER_HEIGHT / 2.0, CHARACTER_RADIUS);
         let mass_properties = capsule_shape.mass_properties(1.0);
