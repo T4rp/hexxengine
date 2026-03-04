@@ -1,4 +1,4 @@
-use std::{error::Error, ffi::CStr, fmt::Display};
+use std::{error::Error, ffi::CStr, fmt::Display, sync::Arc};
 
 use paidtype::freetype::{
     FT_Bitmap_Size, FT_Done_Face, FT_Done_FreeType, FT_Err_Ok, FT_Error_String, FT_Face,
@@ -7,7 +7,7 @@ use paidtype::freetype::{
 };
 
 #[derive(Debug)]
-struct FreetypeError(u32);
+pub struct FreetypeError(pub u32);
 
 macro_rules! ft_check {
     ($error_code:ident) => {
@@ -36,12 +36,82 @@ impl Error for FreetypeError {
     }
 }
 
-struct Face<'a> {
-    face: FT_Face,
-    _phantom_data: std::marker::PhantomData<&'a FreetypeLibrary>,
+struct FreetypeLibraryInner {
+    raw: FT_Library,
 }
 
-impl<'a> Face<'a> {
+impl FreetypeLibraryInner {
+    fn inner(&self) -> FT_Library {
+        self.raw
+    }
+}
+
+impl Drop for FreetypeLibraryInner {
+    fn drop(&mut self) {
+        unsafe { FT_Done_FreeType(self.raw.cast()) };
+    }
+}
+
+#[derive(Clone)]
+pub struct FreetypeLibrary {
+    // Arc :(
+    library: Arc<FreetypeLibraryInner>,
+}
+
+impl FreetypeLibrary {
+    pub fn new() -> Result<Self, FreetypeError> {
+        let mut library = FreetypeLibraryInner {
+            raw: std::ptr::null_mut(),
+        };
+
+        let error_code = unsafe { FT_Init_FreeType(&mut library.raw) };
+        ft_check!(error_code);
+
+        Ok(Self {
+            library: Arc::new(library),
+        })
+    }
+
+    pub fn raw(&self) -> FT_Library {
+        self.library.raw
+    }
+
+    pub fn version(&self) -> (i32, i32, i32) {
+        let (mut major, mut minor, mut patch) = (0, 0, 0);
+        unsafe { FT_Library_Version(self.raw(), &mut major, &mut minor, &mut patch) };
+        (major, minor, patch)
+    }
+
+    pub fn new_memory_face(
+        &self,
+        font_data: &[u8],
+        face_index: usize,
+    ) -> Result<Face, FreetypeError> {
+        let mut face = std::ptr::null_mut();
+        let error_code = unsafe {
+            FT_New_Memory_Face(
+                self.raw(),
+                font_data.as_ptr(),
+                font_data.len() as i64,
+                face_index as i64,
+                &mut face,
+            )
+        };
+        ft_check!(error_code);
+
+        Ok(Face {
+            face,
+            _lib: self.clone(),
+        })
+    }
+}
+
+pub struct Face {
+    face: FT_Face,
+    _lib: FreetypeLibrary,
+}
+
+impl Face {
     pub fn raw_rec(&self) -> &FT_FaceRec {
         unsafe { &*self.face }
     }
@@ -118,54 +188,9 @@ impl<'a> Face<'a> {
     }
 }
 
-impl<'a> Drop for Face<'a> {
+impl Drop for Face {
     fn drop(&mut self) {
         unsafe { FT_Done_Face(self.face) };
-    }
-}
-
-struct FreetypeLibrary {
-    library: FT_Library,
-}
-
-impl FreetypeLibrary {
-    fn new() -> Result<Self, FreetypeError> {
-        let mut library = FT_Library::default();
-        let error_code = unsafe { FT_Init_FreeType(&mut library) };
-        ft_check!(error_code);
-
-        Ok(Self { library })
-    }
-
-    fn version(&self) -> (i32, i32, i32) {
-        let (mut major, mut minor, mut patch) = (0, 0, 0);
-        unsafe { FT_Library_Version(self.library, &mut major, &mut minor, &mut patch) };
-        (major, minor, patch)
-    }
-
-    fn new_memory_face(&self, font_data: &[u8], face_index: usize) -> Result<Face, FreetypeError> {
-        let mut face = FT_Face::default();
-        let error_code = unsafe {
-            FT_New_Memory_Face(
-                self.library,
-                font_data.as_ptr(),
-                font_data.len() as i64,
-                face_index as i64,
-                &mut face,
-            )
-        };
-        ft_check!(error_code);
-
-        Ok(Face {
-            face,
-            _phantom_data: std::marker::PhantomData::default(),
-        })
-    }
-}
-
-impl Drop for FreetypeLibrary {
-    fn drop(&mut self) {
-        unsafe { FT_Done_FreeType(self.library) };
     }
 }
 
@@ -184,6 +209,7 @@ mod tests {
 
     #[test]
     fn library_version() {
+        println!("loading library");
         let freetype = FreetypeLibrary::new().unwrap();
 
         let version = freetype.version();
@@ -192,8 +218,10 @@ mod tests {
 
     #[test]
     fn face_creation() {
+        println!("loading library");
         let freetype = FreetypeLibrary::new().unwrap();
 
+        println!("loading font");
         let face = freetype.new_memory_face(FONT_FILE, 0).unwrap();
         let family = face.family_name().unwrap();
         let style = face.style_name().unwrap();
@@ -202,8 +230,10 @@ mod tests {
 
     #[test]
     fn render_glyph() {
+        println!("loading library");
         let freetype = FreetypeLibrary::new().unwrap();
 
+        println!("loading font");
         let face = freetype.new_memory_face(FONT_FILE, 0).unwrap();
         face.set_pixel_sizes(0, 16).unwrap();
 

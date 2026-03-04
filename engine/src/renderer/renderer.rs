@@ -7,12 +7,14 @@ use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
 
+use crate::renderer::freetype::FreetypeLibrary;
 use crate::renderer::images::{ImageTransition, transition_images};
 use crate::renderer::mesh::{
     Global2DUniform, Global3DUniform, InstanceVertex, MaterialFlags, MaterialUniform, MeshVertex,
     SceneUniform, Vertex2d,
 };
 use crate::renderer::pipelines::RendererPipelineObjects;
+use crate::renderer::text::GlyphAtlas;
 use crate::scene::RenderScene;
 
 const USE_VALIDATION_LAYERS: bool = true;
@@ -1213,13 +1215,17 @@ pub struct VulkanContext {
     entry: ash::Entry,
     instance: ash::Instance,
     surface_loader: khr::surface::Instance,
-    swapchain_loader: khr::swapchain::Device,
     physical_device: vk::PhysicalDevice,
     device: ash::Device,
+    swapchain_loader: khr::swapchain::Device,
     allocator: vk_mem::Allocator,
+    graphics_queue: vk::Queue,
+    graphics_queue_family_index: u32,
     command_pool: vk::CommandPool,
+
     current_frame: usize,
     should_resize: bool,
+
     surface: vk::SurfaceKHR,
     surface_format: vk::SurfaceFormatKHR,
     swapchain_extent: vk::Extent2D,
@@ -1228,18 +1234,20 @@ pub struct VulkanContext {
     swapchain_image_views: Vec<vk::ImageView>,
     submit_semaphores: Vec<vk::Semaphore>,
     render_frames: Vec<RenderFrame>,
-    graphics_queue: vk::Queue,
-    graphics_queue_family_index: u32,
+
     descriptor_set_layouts: DescriptorSetLayouts,
+    material_descriptors: Vec<MaterialDescriptor>,
     descriptor_pool: vk::DescriptorPool,
     pipeline_layout_3d: vk::PipelineLayout,
-    mesh_buffers: Vec<MeshBuffer>,
-    textures: Vec<TextureDescriptors>,
-    material_descriptors: Vec<MaterialDescriptor>,
-    skybox_textures: Vec<Texture>,
-    current_skybox: Option<u32>,
     pipeline_objects: RendererPipelineObjects,
     pipeline_layout_2d: vk::PipelineLayout,
+
+    mesh_buffers: Vec<MeshBuffer>,
+    textures: Vec<TextureDescriptors>,
+    skybox_textures: Vec<Texture>,
+    current_skybox: Option<u32>,
+
+    glyph_atlas: GlyphAtlas,
 }
 
 pub struct SkyboxImageData<'a> {
@@ -1507,6 +1515,8 @@ impl VulkanContext {
         let raw_window_handle = window.window_handle().unwrap().as_raw();
         let raw_display_handle = window.display_handle().unwrap().as_raw();
 
+        let freetype = FreetypeLibrary::new().unwrap();
+
         let entry = unsafe { ash::Entry::load().unwrap() };
         let instance = create_instance(&entry, raw_display_handle);
         let surface_loader = ash::khr::surface::Instance::new(&entry, &instance);
@@ -1741,6 +1751,8 @@ impl VulkanContext {
 
         materials.push(base_material);
 
+        let glyph_atlas = GlyphAtlas::new(1024, 1024);
+
         Self {
             entry,
             instance,
@@ -1772,6 +1784,7 @@ impl VulkanContext {
             pipeline_objects,
             surface_loader,
             swapchain_loader,
+            glyph_atlas,
         }
     }
 
