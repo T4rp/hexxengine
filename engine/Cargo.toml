@@ -18,4 +18,6 @@ rapier3d = "0.32.0"
 thunderdome = "0.6.1"
 vk-mem = "0.5.0"
 winit = "0.30.12"
+paidtype = { git = "https://github.com/T4rp/paidtype2" }
+
 
