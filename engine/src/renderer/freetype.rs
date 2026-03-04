@@ -171,7 +171,7 @@ impl Drop for FreetypeLibrary {
 
 #[cfg(test)]
 mod tests {
-    use paidtype::freetype::{FT_LOAD_RENDER, FT_Render_Mode__FT_RENDER_MODE_MONO};
+    use paidtype::freetype::{FT_LOAD_DEFAULT, FT_Render_Mode__FT_RENDER_MODE_MONO};
 
     use super::FreetypeLibrary;
 
@@ -205,10 +205,10 @@ mod tests {
         let freetype = FreetypeLibrary::new().unwrap();
 
         let face = freetype.new_memory_face(FONT_FILE, 0).unwrap();
-        face.set_pixel_sizes(0, 16);
+        face.set_pixel_sizes(0, 16).unwrap();
 
         let glyph_index = face.get_char_index(0x40).unwrap();
-        face.load_glyph(glyph_index, FT_LOAD_RENDER).unwrap();
+        face.load_glyph(glyph_index, FT_LOAD_DEFAULT).unwrap();
         face.render_glyph(FT_Render_Mode__FT_RENDER_MODE_MONO)
             .unwrap();
 
