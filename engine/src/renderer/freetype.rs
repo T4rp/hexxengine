@@ -30,12 +30,6 @@ impl Display for FreetypeError {
     }
 }
 
-impl Error for FreetypeError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        None
-    }
-}
-
 struct FreetypeLibraryInner {
     raw: FT_Library,
 }
@@ -87,7 +81,10 @@ impl FreetypeLibrary {
         font_data: &[u8],
         face_index: usize,
     ) -> Result<Face, FreetypeError> {
+        let font_data = font_data.to_vec();
+
         let mut face = std::ptr::null_mut();
+
         let error_code = unsafe {
             FT_New_Memory_Face(
                 self.raw(),
@@ -99,16 +96,26 @@ impl FreetypeLibrary {
         };
         ft_check!(error_code);
 
+        let lib = self.clone();
+
         Ok(Face {
             face,
-            _lib: self.clone(),
+            _font_data: font_data,
+            _lib: lib,
         })
     }
 }
 
 pub struct Face {
     face: FT_Face,
+    _font_data: Vec<u8>,
     _lib: FreetypeLibrary,
+}
+
+pub struct GlyphBitmap<'a> {
+    pub width: u32,
+    pub rows: u32,
+    pub buffer: &'a [u8],
 }
 
 impl Face {
@@ -186,6 +193,20 @@ impl Face {
         ft_check!(error_code);
         Ok(())
     }
+
+    pub fn get_bitmap_data(&self) -> GlyphBitmap<'_> {
+        let bitmap = unsafe { (*self.raw_rec().glyph).bitmap };
+        let width = bitmap.width;
+        let rows = bitmap.rows;
+        let buffer =
+            unsafe { std::slice::from_raw_parts(bitmap.buffer, width as usize * rows as usize) };
+
+        GlyphBitmap {
+            width,
+            rows,
+            buffer,
+        }
+    }
 }
 
 impl Drop for Face {
@@ -244,5 +265,32 @@ mod tests {
 
         let loaded_index = unsafe { (*face.raw_rec().glyph).glyph_index };
         assert_eq!(loaded_index, glyph_index);
+
+        let bitmap_data = face.get_bitmap_data();
+        assert_eq!(bitmap_data.width > 0, true);
+        assert_eq!(bitmap_data.rows > 0, true);
+    }
+
+    #[test]
+    fn library_dropping() {
+        let ft1 = FreetypeLibrary::new().unwrap();
+        let ft2 = ft1.clone();
+        drop(ft2);
+        drop(ft1);
+    }
+
+    #[test]
+    fn face_dropping() {
+        let freetype = FreetypeLibrary::new().unwrap();
+        let face = freetype.new_memory_face(FONT_FILE, 0).unwrap();
+
+        face.set_pixel_sizes(0, 16).unwrap();
+
+        let glyph_index = face.get_char_index(0x40).unwrap();
+        face.load_glyph(glyph_index, FT_LOAD_DEFAULT).unwrap();
+        face.render_glyph(FT_Render_Mode__FT_RENDER_MODE_MONO)
+            .unwrap();
+
+        drop(freetype);
     }
 }
