@@ -1,4 +1,3 @@
-mod freetype;
 mod images;
 mod pipelines;
 mod text;

@@ -7,7 +7,7 @@ use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
 
-use crate::renderer::freetype::FreetypeLibrary;
+use crate::freetype::FreetypeLibrary;
 use crate::renderer::images::{ImageTransition, transition_images};
 use crate::renderer::mesh::{
     Global2DUniform, Global3DUniform, InstanceVertex, MaterialFlags, MaterialUniform, MeshVertex,

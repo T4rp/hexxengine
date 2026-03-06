@@ -6,7 +6,7 @@ use paidtype::freetype::{
 
 use crate::{
     assets::ASSET_PATH,
-    renderer::freetype::{self, Face, FreetypeLibrary},
+    freetype::{Face, FreetypeLibrary},
 };
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
@@ -205,7 +205,7 @@ impl GlyphAtlas {
 mod tests {
     use image::{ImageBuffer, RgbaImage};
 
-    use crate::renderer::{freetype::FreetypeLibrary, text::GlyphAtlas};
+    use crate::renderer::text::GlyphAtlas;
 
     #[test]
     fn creation() {
