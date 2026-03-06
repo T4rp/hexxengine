@@ -1,9 +1,15 @@
-use std::{error::Error, ffi::CStr, fmt::Display, sync::Arc};
+use std::{
+    error::Error,
+    ffi::{self, CStr},
+    fmt::Display,
+    sync::Arc,
+};
 
 use paidtype::freetype::{
-    FT_Bitmap_Size, FT_Done_Face, FT_Done_FreeType, FT_Err_Ok, FT_Error_String, FT_Face,
-    FT_FaceRec, FT_Get_Char_Index, FT_Init_FreeType, FT_Library, FT_Library_Version, FT_Load_Glyph,
-    FT_New_Memory_Face, FT_Render_Glyph, FT_Render_Mode, FT_Set_Char_Size, FT_Set_Pixel_Sizes,
+    _bindgen_ty_2, FT_Bitmap_Size, FT_Done_Face, FT_Done_FreeType, FT_Err_Ok, FT_Error,
+    FT_Error_String, FT_F26Dot6, FT_Face, FT_FaceRec, FT_Get_Char_Index, FT_Init_FreeType,
+    FT_Int32, FT_Library, FT_Library_Version, FT_Load_Glyph, FT_Long, FT_New_Memory_Face,
+    FT_Render_Glyph, FT_Render_Mode, FT_Set_Char_Size, FT_Set_Pixel_Sizes, FT_UInt, FT_ULong,
 };
 
 #[derive(Debug)]
@@ -11,7 +17,7 @@ pub struct FreetypeError(pub u32);
 
 macro_rules! ft_check {
     ($error_code:ident) => {
-        if $error_code as u32 != FT_Err_Ok {
+        if $error_code as _bindgen_ty_2 != FT_Err_Ok {
             return Err(FreetypeError($error_code as u32));
         }
     };
@@ -19,7 +25,7 @@ macro_rules! ft_check {
 
 impl Display for FreetypeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let raw_error_str = unsafe { FT_Error_String(self.0 as i32) };
+        let raw_error_str = unsafe { FT_Error_String(self.0 as FT_Error) };
         if raw_error_str.is_null() {
             write!(f, "Unknown freetype error: FreetypeError({})", self.0)
         } else {
@@ -89,8 +95,8 @@ impl FreetypeLibrary {
             FT_New_Memory_Face(
                 self.raw(),
                 font_data.as_ptr(),
-                font_data.len() as i64,
-                face_index as i64,
+                font_data.len() as FT_Long,
+                face_index as FT_Long,
                 &mut face,
             )
         };
@@ -155,10 +161,10 @@ impl Face {
         let error_code = unsafe {
             FT_Set_Char_Size(
                 self.face,
-                width as i64,
-                height as i64,
-                horizontal_res,
-                vertical_res,
+                width as FT_F26Dot6,
+                height as FT_F26Dot6,
+                horizontal_res as FT_UInt,
+                vertical_res as FT_UInt,
             )
         };
         ft_check!(error_code);
@@ -167,13 +173,14 @@ impl Face {
     }
 
     pub fn set_pixel_sizes(&self, width: u32, height: u32) -> Result<(), FreetypeError> {
-        let error_code = unsafe { FT_Set_Pixel_Sizes(self.face, width, height) };
+        let error_code =
+            unsafe { FT_Set_Pixel_Sizes(self.face, width as FT_UInt, height as FT_UInt) };
         ft_check!(error_code);
         Ok(())
     }
 
     pub fn get_char_index(&self, char_code: u64) -> Option<u32> {
-        let glyph_index = unsafe { FT_Get_Char_Index(self.face, char_code) };
+        let glyph_index = unsafe { FT_Get_Char_Index(self.face, char_code as FT_ULong) };
         if glyph_index == 0 {
             return None;
         }
@@ -182,7 +189,8 @@ impl Face {
     }
 
     pub fn load_glyph(&self, glyph_index: u32, load_flags: u32) -> Result<(), FreetypeError> {
-        let error_code = unsafe { FT_Load_Glyph(self.face, glyph_index, load_flags as i32) };
+        let error_code =
+            unsafe { FT_Load_Glyph(self.face, glyph_index as FT_UInt, load_flags as FT_Int32) };
         ft_check!(error_code);
 
         Ok(())
