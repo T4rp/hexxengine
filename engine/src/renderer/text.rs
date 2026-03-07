@@ -2,12 +2,12 @@ use std::{collections::HashMap, fs};
 
 use image::{ImageBuffer, RgbaImage};
 use paidtype::freetype::{
-    FT_LOAD_DEFAULT, FT_Render_Mode__FT_RENDER_MODE_LCD, FT_Render_Mode__FT_RENDER_MODE_NORMAL,
+    FT_LOAD_DEFAULT, FT_Render_Mode__FT_RENDER_MODE_NORMAL, FT_Render_Mode__FT_RENDER_MODE_SDF,
 };
 
 use crate::{
     assets::ASSET_PATH,
-    freetype::{Face, FreetypeLibrary, GlyphBitmap},
+    freetype::{Face, FreetypeLibrary},
 };
 
 const MIN_BIN_LENGTH: u32 = 8;
@@ -55,7 +55,7 @@ impl GlyphKey {
 
 pub enum GlyphRenderMode {
     Normal,
-    Lcd,
+    Sdf,
 }
 
 pub struct GlyphAtlas {
@@ -74,11 +74,7 @@ impl GlyphAtlas {
         let font_data = fs::read(format!("{}/unifont-17.0.03.otf", ASSET_PATH)).unwrap();
         let face = library.new_memory_face(&font_data, 0).unwrap();
 
-        let pixel_width = match render_mode {
-            GlyphRenderMode::Normal => width,
-            GlyphRenderMode::Lcd => width * 3,
-        };
-
+        let pixel_width = width;
         let bitmap: Vec<u8> = vec![0; (pixel_width * height) as usize];
 
         let bins = vec![Rect {
@@ -261,9 +257,11 @@ impl GlyphAtlas {
 
         for y in 0..glyph_bounds.height {
             for x in 0..glyph_bounds.width {
-                let buffer_offset = x + y * glyph_bounds.width;
-                let bitmap_offset = glyph_bounds.x + x + (glyph_bounds.y + y) * self.width;
-                self.bitmap[bitmap_offset as usize] = bitmap_data.buffer[buffer_offset as usize]
+                let buffer_offset = (x + y * glyph_bounds.width) as usize;
+                let bitmap_offset =
+                    (glyph_bounds.x + x + (glyph_bounds.y + y) * self.width) as usize;
+
+                self.bitmap[bitmap_offset] = bitmap_data.buffer[buffer_offset]
             }
         }
 
@@ -289,13 +287,15 @@ impl GlyphAtlas {
                 self.face
                     .render_glyph(FT_Render_Mode__FT_RENDER_MODE_NORMAL)
                     .unwrap();
-
-                self.push_glyph(glyph_key)
             }
-            GlyphRenderMode::Lcd => {
-                unimplemented!()
+            GlyphRenderMode::Sdf => {
+                self.face
+                    .render_glyph(FT_Render_Mode__FT_RENDER_MODE_SDF)
+                    .unwrap();
             }
         }
+
+        self.push_glyph(glyph_key)
     }
 
     pub fn load_glyph(&mut self, glyph: u64, font_heigth: u32) -> Option<&GlyphBounds> {
@@ -311,20 +311,13 @@ impl GlyphAtlas {
     pub fn debug_render(&self) -> RgbaImage {
         let mut bitmap_rgba = vec![0; (self.width * self.height * 4) as usize];
 
-        match self.render_mode {
-            GlyphRenderMode::Normal => {
-                for (i, col) in self.bitmap.iter().enumerate() {
-                    let r = i * 4;
-                    bitmap_rgba[r] = *col;
-                    bitmap_rgba[r + 1] = *col;
-                    bitmap_rgba[r + 2] = *col;
-                    bitmap_rgba[r + 3] = 255;
-                }
-            }
-            GlyphRenderMode::Lcd => {
-                unimplemented!()
-            }
-        };
+        for (i, col) in self.bitmap.iter().enumerate() {
+            let r = i * 4;
+            bitmap_rgba[r] = *col;
+            bitmap_rgba[r + 1] = *col;
+            bitmap_rgba[r + 2] = *col;
+            bitmap_rgba[r + 3] = 255;
+        }
 
         for bin in self.bins.iter() {
             for i in 0..bin.width {
@@ -361,7 +354,7 @@ mod tests {
     }
 
     #[test]
-    fn load_glyph() {
+    fn load_glyph_normal() {
         let mut atlas = GlyphAtlas::new(GlyphRenderMode::Normal, 256, 256);
 
         for height in [32, 24, 18, 16, 12] {
@@ -371,5 +364,19 @@ mod tests {
         }
 
         atlas.debug_render().save("glyph_atlas_test.png").unwrap();
+    }
+
+    #[test]
+    fn load_glyph_sdf() {
+        let mut atlas = GlyphAtlas::new(GlyphRenderMode::Sdf, 512, 512);
+
+        for i in 65..123 {
+            atlas.load_glyph(i as u64, 48);
+        }
+
+        atlas
+            .debug_render()
+            .save("sdf_glyph_atlas_test.png")
+            .unwrap();
     }
 }
