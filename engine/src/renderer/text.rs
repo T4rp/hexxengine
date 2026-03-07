@@ -1,12 +1,13 @@
 use std::{collections::HashMap, fs};
 
+use image::{ImageBuffer, RgbaImage};
 use paidtype::freetype::{
     FT_LOAD_DEFAULT, FT_Render_Mode__FT_RENDER_MODE_LCD, FT_Render_Mode__FT_RENDER_MODE_NORMAL,
 };
 
 use crate::{
     assets::ASSET_PATH,
-    freetype::{Face, FreetypeLibrary},
+    freetype::{Face, FreetypeLibrary, GlyphBitmap},
 };
 
 const MIN_BIN_LENGTH: u32 = 8;
@@ -73,7 +74,12 @@ impl GlyphAtlas {
         let font_data = fs::read(format!("{}/unifont-17.0.03.otf", ASSET_PATH)).unwrap();
         let face = library.new_memory_face(&font_data, 0).unwrap();
 
-        let bitmap: Vec<u8> = vec![0; (width * height) as usize];
+        let pixel_width = match render_mode {
+            GlyphRenderMode::Normal => width,
+            GlyphRenderMode::Lcd => width * 3,
+        };
+
+        let bitmap: Vec<u8> = vec![0; (pixel_width * height) as usize];
 
         let bins = vec![Rect {
             x: 0,
@@ -157,28 +163,28 @@ impl GlyphAtlas {
         let bin = &self.bins[bin_index];
 
         let bin_right = Rect {
-            x: bin.x + rect.width,
+            x: rect.x + rect.width,
             y: bin.y,
-            width: bin.width - rect.width,
+            width: (bin.x + bin.width).saturating_sub(rect.x + rect.width),
             height: bin.height,
         };
 
         let bin_down = Rect {
             x: bin.x,
-            y: bin.y + rect.height,
+            y: rect.y + rect.height,
             width: bin.width,
-            height: bin.height - rect.height,
+            height: (bin.y + bin.height).saturating_sub(rect.y + rect.height),
         };
 
         self.bins.swap_remove(bin_index);
 
         let initial_len = self.bins.len();
 
-        if bin_right.width >= MIN_BIN_LENGTH && bin_right.height >= MIN_BIN_LENGTH {
+        if bin_right.width > MIN_BIN_LENGTH && bin_right.height > MIN_BIN_LENGTH {
             self.bins.push(bin_right);
         }
 
-        if bin_down.width >= MIN_BIN_LENGTH && bin_down.height >= MIN_BIN_LENGTH {
+        if bin_down.width > MIN_BIN_LENGTH && bin_down.height > MIN_BIN_LENGTH {
             self.bins.push(bin_down);
         }
 
@@ -206,11 +212,7 @@ impl GlyphAtlas {
             let right = Rect {
                 x: rect.x + rect.width,
                 y: bin.y,
-                width: bin
-                    .width
-                    .saturating_sub(rect.x)
-                    .saturating_sub(bin.x)
-                    .saturating_sub(rect.width),
+                width: (bin.x + bin.width).saturating_sub(rect.x + rect.width),
                 height: bin.height,
             };
 
@@ -218,15 +220,11 @@ impl GlyphAtlas {
                 x: bin.x,
                 y: rect.y + rect.height,
                 width: bin.width,
-                height: bin
-                    .height
-                    .saturating_sub(rect.y)
-                    .saturating_sub(bin.y)
-                    .saturating_sub(rect.height),
+                height: (bin.y + bin.height).saturating_sub(rect.y + rect.height),
             };
 
             for rect in [right, down, left, up] {
-                if rect.width >= MIN_BIN_LENGTH && rect.height >= MIN_BIN_LENGTH {
+                if rect.width > MIN_BIN_LENGTH && rect.height > MIN_BIN_LENGTH {
                     self.bins.push(rect);
                 }
             }
@@ -245,22 +243,7 @@ impl GlyphAtlas {
         self.prune_bins();
     }
 
-    fn insert_glyph(&mut self, glyph_key: GlyphKey) -> Option<&GlyphBounds> {
-        let Some(glyph_index) = self.face.get_char_index(glyph_key.glyph) else {
-            return None;
-        };
-
-        self.face.set_pixel_sizes(0, glyph_key.font_height).unwrap();
-
-        self.face.load_glyph(glyph_index, FT_LOAD_DEFAULT).unwrap();
-
-        let ft_render_mode = match self.render_mode {
-            GlyphRenderMode::Normal => FT_Render_Mode__FT_RENDER_MODE_NORMAL,
-            GlyphRenderMode::Lcd => FT_Render_Mode__FT_RENDER_MODE_LCD,
-        };
-
-        self.face.render_glyph(ft_render_mode).unwrap();
-
+    fn push_glyph(&mut self, glyph_key: GlyphKey) -> Option<&GlyphBounds> {
         let bitmap_data = self.face.get_bitmap_data();
 
         let chosen_bin_index = self
@@ -276,14 +259,10 @@ impl GlyphAtlas {
             height: bitmap_data.rows,
         };
 
-        println!("{:#?}", glyph_bounds);
-
         for y in 0..glyph_bounds.height {
             for x in 0..glyph_bounds.width {
                 let buffer_offset = x + y * glyph_bounds.width;
                 let bitmap_offset = glyph_bounds.x + x + (glyph_bounds.y + y) * self.width;
-                println!("{}", buffer_offset);
-                println!("{}", buffer_offset);
                 self.bitmap[bitmap_offset as usize] = bitmap_data.buffer[buffer_offset as usize]
             }
         }
@@ -296,6 +275,29 @@ impl GlyphAtlas {
         self.glyphs.get(&glyph_key)
     }
 
+    fn insert_glyph(&mut self, glyph_key: GlyphKey) -> Option<&GlyphBounds> {
+        let Some(glyph_index) = self.face.get_char_index(glyph_key.glyph) else {
+            return None;
+        };
+
+        self.face.set_pixel_sizes(0, glyph_key.font_height).unwrap();
+
+        self.face.load_glyph(glyph_index, FT_LOAD_DEFAULT).unwrap();
+
+        match self.render_mode {
+            GlyphRenderMode::Normal => {
+                self.face
+                    .render_glyph(FT_Render_Mode__FT_RENDER_MODE_NORMAL)
+                    .unwrap();
+
+                self.push_glyph(glyph_key)
+            }
+            GlyphRenderMode::Lcd => {
+                unimplemented!()
+            }
+        }
+    }
+
     pub fn load_glyph(&mut self, glyph: u64, font_heigth: u32) -> Option<&GlyphBounds> {
         let key = GlyphKey::new(glyph, font_heigth);
 
@@ -305,12 +307,52 @@ impl GlyphAtlas {
 
         self.insert_glyph(key)
     }
+
+    pub fn debug_render(&self) -> RgbaImage {
+        let mut bitmap_rgba = vec![0; (self.width * self.height * 4) as usize];
+
+        match self.render_mode {
+            GlyphRenderMode::Normal => {
+                for (i, col) in self.bitmap.iter().enumerate() {
+                    let r = i * 4;
+                    bitmap_rgba[r] = *col;
+                    bitmap_rgba[r + 1] = *col;
+                    bitmap_rgba[r + 2] = *col;
+                    bitmap_rgba[r + 3] = 255;
+                }
+            }
+            GlyphRenderMode::Lcd => {
+                unimplemented!()
+            }
+        };
+
+        for bin in self.bins.iter() {
+            for i in 0..bin.width {
+                let top = (bin.x + i + bin.y * self.width) as usize * 4;
+                let bottom = (bin.x + i + (bin.y + bin.height - 1) * self.width) as usize * 4;
+
+                bitmap_rgba[top + 1] = 255;
+                bitmap_rgba[bottom + 1] = 255;
+            }
+
+            for i in 0..bin.height {
+                let left = (bin.x + (bin.y + i) * self.width) as usize * 4;
+                let right = ((bin.x + bin.width - 1) + (bin.y + i) * self.width) as usize * 4;
+
+                bitmap_rgba[left + 1] = 255;
+                bitmap_rgba[right + 1] = 255;
+            }
+        }
+
+        let img_buff: RgbaImage =
+            ImageBuffer::from_raw(self.width, self.height, bitmap_rgba).unwrap();
+
+        img_buff
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use image::{ImageBuffer, RgbaImage};
-
     use crate::renderer::text::{GlyphAtlas, GlyphRenderMode};
 
     #[test]
@@ -320,35 +362,14 @@ mod tests {
 
     #[test]
     fn load_glyph() {
-        let mut atlas = GlyphAtlas::new(GlyphRenderMode::Normal, 512, 512);
+        let mut atlas = GlyphAtlas::new(GlyphRenderMode::Normal, 256, 256);
 
-        for i in 65..123 {
-            atlas.load_glyph(i as u64, 32);
+        for height in [32, 24, 18, 16, 12] {
+            for i in 65..123 {
+                atlas.load_glyph(i as u64, height);
+            }
         }
 
-        for i in 65..123 {
-            atlas.load_glyph(i as u64, 16);
-        }
-
-        for i in 65..123 {
-            atlas.load_glyph(i as u64, 8);
-        }
-
-        let mut bitmap_rgba = vec![0; (atlas.width * atlas.height * 4) as usize];
-
-        let marked_bitmap = atlas.bitmap;
-
-        for (i, col) in marked_bitmap.iter().enumerate() {
-            let r = i * 4;
-            bitmap_rgba[r] = *col;
-            bitmap_rgba[r + 1] = *col;
-            bitmap_rgba[r + 2] = *col;
-            bitmap_rgba[r + 3] = 255;
-        }
-
-        let img_buff: RgbaImage =
-            ImageBuffer::from_raw(atlas.width, atlas.height, bitmap_rgba).unwrap();
-
-        img_buff.save("glyph_atlas_test.png").unwrap();
+        atlas.debug_render().save("glyph_atlas_test.png").unwrap();
     }
 }
