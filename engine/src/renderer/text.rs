@@ -9,6 +9,8 @@ use crate::{
     freetype::{Face, FreetypeLibrary},
 };
 
+const MIN_BIN_LENGTH: u32 = 8;
+
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
 pub struct Rect {
     x: u32,
@@ -23,6 +25,13 @@ impl Rect {
             && rect.x + rect.width <= self.x + self.width
             && rect.y >= self.y
             && rect.y + rect.height <= self.y + self.height
+    }
+
+    pub fn intersects(&self, rect: &Rect) -> bool {
+        self.x + self.width >= rect.x
+            && rect.x + rect.width >= self.x
+            && self.y + self.height >= rect.y
+            && rect.y + rect.height >= self.y
     }
 }
 
@@ -43,6 +52,11 @@ impl GlyphKey {
     }
 }
 
+pub enum GlyphRenderMode {
+    Normal,
+    Lcd,
+}
+
 pub struct GlyphAtlas {
     pub bitmap: Vec<u8>,
     pub width: u32,
@@ -50,10 +64,11 @@ pub struct GlyphAtlas {
     pub face: Face,
     pub bins: Vec<Rect>,
     pub glyphs: HashMap<GlyphKey, GlyphBounds>,
+    pub render_mode: GlyphRenderMode,
 }
 
 impl GlyphAtlas {
-    pub fn new(width: u32, height: u32) -> GlyphAtlas {
+    pub fn new(render_mode: GlyphRenderMode, width: u32, height: u32) -> GlyphAtlas {
         let library = FreetypeLibrary::new().unwrap();
         let font_data = fs::read(format!("{}/unifont-17.0.03.otf", ASSET_PATH)).unwrap();
         let face = library.new_memory_face(&font_data, 0).unwrap();
@@ -76,17 +91,32 @@ impl GlyphAtlas {
             face,
             bins,
             glyphs,
+            render_mode,
         }
     }
 
     pub fn choose_bin(&self, width: u32, height: u32) -> Option<usize> {
-        self.bins.iter().enumerate().find_map(|(i, r)| {
-            let fits = r.width >= width && r.height >= height;
-            match fits {
-                true => Some(i),
-                false => None,
+        let mut chosen_bin = None;
+        let mut chosen_bin_rating: Option<i32> = None;
+
+        for i in 0..self.bins.len() {
+            let bin = &self.bins[i];
+            let rating_x: i32 = bin.width as i32 - width as i32;
+            let rating_y = bin.height as i32 - height as i32;
+
+            if rating_x < 0 || rating_y < 0 {
+                continue;
             }
-        })
+
+            let rating = rating_x + rating_y;
+
+            if chosen_bin_rating.map_or(true, |f| f > rating) {
+                chosen_bin_rating = Some(rating);
+                chosen_bin = Some(i);
+            }
+        }
+
+        chosen_bin
     }
 
     fn prune_bins(&mut self) {
@@ -98,6 +128,8 @@ impl GlyphAtlas {
                 continue;
             }
 
+            let i_bin = &self.bins[i];
+
             for j in 0..bins_count {
                 if i == j {
                     continue;
@@ -107,7 +139,9 @@ impl GlyphAtlas {
                     continue;
                 }
 
-                if self.bins[i].contains(&self.bins[j]) {
+                let j_bin = &self.bins[j];
+
+                if i_bin.contains(j_bin) {
                     to_remove[j] = true;
                 }
             }
@@ -118,6 +152,8 @@ impl GlyphAtlas {
     }
 
     fn break_bin(&mut self, bin_index: usize, rect: Rect) {
+        // TODO: fix bug where bins are unoptimally split
+
         let bin = &self.bins[bin_index];
 
         let bin_right = Rect {
@@ -135,10 +171,76 @@ impl GlyphAtlas {
         };
 
         self.bins.swap_remove(bin_index);
-        self.bins.push(bin_right);
-        self.bins.push(bin_down);
 
-        // TODO: break up all other rects
+        let initial_len = self.bins.len();
+
+        if bin_right.width >= MIN_BIN_LENGTH && bin_right.height >= MIN_BIN_LENGTH {
+            self.bins.push(bin_right);
+        }
+
+        if bin_down.width >= MIN_BIN_LENGTH && bin_down.height >= MIN_BIN_LENGTH {
+            self.bins.push(bin_down);
+        }
+
+        for i in 0..initial_len {
+            let bin = &self.bins[i];
+            if !bin.intersects(&rect) {
+                self.bins.push(bin.clone());
+                continue;
+            };
+
+            let left = Rect {
+                x: bin.x,
+                y: bin.y,
+                width: rect.x.saturating_sub(bin.x),
+                height: bin.height,
+            };
+
+            let up = Rect {
+                x: bin.x,
+                y: bin.y,
+                width: bin.width,
+                height: rect.y.saturating_sub(bin.y),
+            };
+
+            let right = Rect {
+                x: rect.x + rect.width,
+                y: bin.y,
+                width: bin
+                    .width
+                    .saturating_sub(rect.x)
+                    .saturating_sub(bin.x)
+                    .saturating_sub(rect.width),
+                height: bin.height,
+            };
+
+            let down = Rect {
+                x: bin.x,
+                y: rect.y + rect.height,
+                width: bin.width,
+                height: bin
+                    .height
+                    .saturating_sub(rect.y)
+                    .saturating_sub(bin.y)
+                    .saturating_sub(rect.height),
+            };
+
+            for rect in [right, down, left, up] {
+                if rect.width >= MIN_BIN_LENGTH && rect.height >= MIN_BIN_LENGTH {
+                    self.bins.push(rect);
+                }
+            }
+        }
+
+        let new_len = self.bins.len();
+
+        let new_size = new_len - initial_len;
+
+        for i in 0..new_size {
+            self.bins[i] = self.bins[initial_len + i];
+        }
+
+        self.bins.truncate(new_size);
 
         self.prune_bins();
     }
@@ -151,9 +253,13 @@ impl GlyphAtlas {
         self.face.set_pixel_sizes(0, glyph_key.font_height).unwrap();
 
         self.face.load_glyph(glyph_index, FT_LOAD_DEFAULT).unwrap();
-        self.face
-            .render_glyph(FT_Render_Mode__FT_RENDER_MODE_LCD)
-            .unwrap();
+
+        let ft_render_mode = match self.render_mode {
+            GlyphRenderMode::Normal => FT_Render_Mode__FT_RENDER_MODE_NORMAL,
+            GlyphRenderMode::Lcd => FT_Render_Mode__FT_RENDER_MODE_LCD,
+        };
+
+        self.face.render_glyph(ft_render_mode).unwrap();
 
         let bitmap_data = self.face.get_bitmap_data();
 
@@ -190,8 +296,8 @@ impl GlyphAtlas {
         self.glyphs.get(&glyph_key)
     }
 
-    pub fn load_glyph(&mut self, glyph: u64) -> Option<&GlyphBounds> {
-        let key = GlyphKey::new(glyph, 16);
+    pub fn load_glyph(&mut self, glyph: u64, font_heigth: u32) -> Option<&GlyphBounds> {
+        let key = GlyphKey::new(glyph, font_heigth);
 
         if self.glyphs.contains_key(&key) {
             return self.glyphs.get(&key);
@@ -205,24 +311,34 @@ impl GlyphAtlas {
 mod tests {
     use image::{ImageBuffer, RgbaImage};
 
-    use crate::renderer::text::GlyphAtlas;
+    use crate::renderer::text::{GlyphAtlas, GlyphRenderMode};
 
     #[test]
     fn creation() {
-        GlyphAtlas::new(256, 256);
+        GlyphAtlas::new(GlyphRenderMode::Normal, 256, 256);
     }
 
     #[test]
     fn load_glyph() {
-        let mut atlas = GlyphAtlas::new(256, 256);
+        let mut atlas = GlyphAtlas::new(GlyphRenderMode::Normal, 512, 512);
 
         for i in 65..123 {
-            atlas.load_glyph(i as u64);
+            atlas.load_glyph(i as u64, 32);
+        }
+
+        for i in 65..123 {
+            atlas.load_glyph(i as u64, 16);
+        }
+
+        for i in 65..123 {
+            atlas.load_glyph(i as u64, 8);
         }
 
         let mut bitmap_rgba = vec![0; (atlas.width * atlas.height * 4) as usize];
 
-        for (i, col) in atlas.bitmap.iter().enumerate() {
+        let marked_bitmap = atlas.bitmap;
+
+        for (i, col) in marked_bitmap.iter().enumerate() {
             let r = i * 4;
             bitmap_rgba[r] = *col;
             bitmap_rgba[r + 1] = *col;

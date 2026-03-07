@@ -14,7 +14,7 @@ use crate::renderer::mesh::{
     SceneUniform, Vertex2d,
 };
 use crate::renderer::pipelines::RendererPipelineObjects;
-use crate::renderer::text::GlyphAtlas;
+use crate::renderer::text::{GlyphAtlas, GlyphRenderMode};
 use crate::scene::RenderScene;
 
 const USE_VALIDATION_LAYERS: bool = true;
@@ -1751,7 +1751,7 @@ impl VulkanContext {
 
         materials.push(base_material);
 
-        let glyph_atlas = GlyphAtlas::new(1024, 1024);
+        let glyph_atlas = GlyphAtlas::new(GlyphRenderMode::Normal, 1024, 1024);
 
         Self {
             entry,
