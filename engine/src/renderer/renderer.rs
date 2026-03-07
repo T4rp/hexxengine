@@ -1334,7 +1334,7 @@ fn create_swapchain(
 
     let surface_max_image_extent = surface_capabilities.max_image_extent;
 
-    let image_extent = if surface_max_image_extent.width != u32::MAX {
+    let mut image_extent = if surface_max_image_extent.width != u32::MAX {
         surface_max_image_extent
     } else {
         vk::Extent2D {
@@ -1342,6 +1342,9 @@ fn create_swapchain(
             height: window_size.1,
         }
     };
+
+    image_extent.height = image_extent.height.max(1);
+    image_extent.width = image_extent.width.max(1);
 
     let create_swapchain_info = vk::SwapchainCreateInfoKHR::default()
         .surface(surface)
