@@ -38,7 +38,9 @@ impl Rect {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct GlyphBounds {
-    rect: Rect,
+    pub rect: Rect,
+    pub advance: (i32, i32),
+    pub is_empty: bool,
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
@@ -239,8 +241,49 @@ impl GlyphAtlas {
         self.prune_bins();
     }
 
-    fn push_glyph(&mut self, glyph_key: GlyphKey) -> Option<&GlyphBounds> {
-        let bitmap_data = self.face.get_bitmap_data();
+    pub fn load_glyph(&mut self, glyph: u64, font_heigth: u32) -> Option<&GlyphBounds> {
+        let glyph_key = GlyphKey::new(glyph, font_heigth);
+
+        if self.glyphs.contains_key(&glyph_key) {
+            return self.glyphs.get(&glyph_key);
+        }
+
+        let Some(glyph_index) = self.face.get_char_index(glyph_key.glyph) else {
+            return None;
+        };
+
+        self.face.set_pixel_sizes(0, glyph_key.font_height).unwrap();
+        self.face.load_glyph(glyph_index, FT_LOAD_DEFAULT).unwrap();
+
+        let render_result = match self.render_mode {
+            GlyphRenderMode::Normal => self
+                .face
+                .render_glyph(FT_Render_Mode__FT_RENDER_MODE_NORMAL),
+            GlyphRenderMode::Sdf => self.face.render_glyph(FT_Render_Mode__FT_RENDER_MODE_SDF),
+        };
+
+        if render_result.is_err() {
+            return None;
+        }
+
+        let (advance_x, advance_y) = self.face.get_glyph_advance();
+
+        let Some(bitmap_data) = self.face.get_bitmap_data() else {
+            let glyph = GlyphBounds {
+                rect: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 0,
+                    height: 0,
+                },
+                advance: (advance_x, advance_y),
+                is_empty: true,
+            };
+
+            self.glyphs.insert(glyph_key, glyph);
+
+            return self.glyphs.get(&glyph_key);
+        };
 
         let chosen_bin_index = self
             .choose_bin(bitmap_data.width, bitmap_data.rows)
@@ -265,47 +308,16 @@ impl GlyphAtlas {
             }
         }
 
-        let glyph = GlyphBounds { rect: glyph_bounds };
+        let glyph = GlyphBounds {
+            rect: glyph_bounds,
+            advance: (advance_x, advance_y),
+            is_empty: false,
+        };
 
         self.glyphs.insert(glyph_key, glyph);
         self.break_bin(chosen_bin_index, glyph_bounds);
 
         self.glyphs.get(&glyph_key)
-    }
-
-    fn insert_glyph(&mut self, glyph_key: GlyphKey) -> Option<&GlyphBounds> {
-        let Some(glyph_index) = self.face.get_char_index(glyph_key.glyph) else {
-            return None;
-        };
-
-        self.face.set_pixel_sizes(0, glyph_key.font_height).unwrap();
-
-        self.face.load_glyph(glyph_index, FT_LOAD_DEFAULT).unwrap();
-
-        match self.render_mode {
-            GlyphRenderMode::Normal => {
-                self.face
-                    .render_glyph(FT_Render_Mode__FT_RENDER_MODE_NORMAL)
-                    .unwrap();
-            }
-            GlyphRenderMode::Sdf => {
-                self.face
-                    .render_glyph(FT_Render_Mode__FT_RENDER_MODE_SDF)
-                    .unwrap();
-            }
-        }
-
-        self.push_glyph(glyph_key)
-    }
-
-    pub fn load_glyph(&mut self, glyph: u64, font_heigth: u32) -> Option<&GlyphBounds> {
-        let key = GlyphKey::new(glyph, font_heigth);
-
-        if self.glyphs.contains_key(&key) {
-            return self.glyphs.get(&key);
-        }
-
-        self.insert_glyph(key)
     }
 
     pub fn debug_render(&self) -> RgbaImage {
@@ -358,7 +370,7 @@ mod tests {
         let mut atlas = GlyphAtlas::new(GlyphRenderMode::Normal, 256, 256);
 
         for height in [32, 24, 18, 16, 12] {
-            for i in 65..123 {
+            for i in 32..128 {
                 atlas.load_glyph(i as u64, height);
             }
         }
@@ -370,7 +382,7 @@ mod tests {
     fn load_glyph_sdf() {
         let mut atlas = GlyphAtlas::new(GlyphRenderMode::Sdf, 512, 512);
 
-        for i in 65..123 {
+        for i in 32..128 {
             atlas.load_glyph(i as u64, 48);
         }
 

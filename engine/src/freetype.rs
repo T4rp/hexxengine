@@ -202,18 +202,33 @@ impl Face {
         Ok(())
     }
 
-    pub fn get_bitmap_data(&self) -> GlyphBitmap<'_> {
+    pub fn get_bitmap_data(&self) -> Option<GlyphBitmap<'_>> {
         let bitmap = unsafe { (*self.raw_rec().glyph).bitmap };
         let width = bitmap.width;
         let rows = bitmap.rows;
-        let buffer =
-            unsafe { std::slice::from_raw_parts(bitmap.buffer, width as usize * rows as usize) };
 
-        GlyphBitmap {
+        let bitmap_size = (width * rows) as usize;
+
+        if bitmap_size == 0 {
+            return None;
+        }
+
+        let buffer = unsafe { std::slice::from_raw_parts(bitmap.buffer, bitmap_size) };
+
+        Some(GlyphBitmap {
             width,
             rows,
             buffer,
-        }
+        })
+    }
+
+    pub fn get_glyph_advance(&self) -> (i32, i32) {
+        let glyph_slot = unsafe { *self.raw_rec().glyph };
+
+        let advance_x = (glyph_slot.advance.x >> 6) as i32;
+        let advance_y = (glyph_slot.advance.y >> 6) as i32;
+
+        (advance_x, advance_y)
     }
 }
 
@@ -274,7 +289,7 @@ mod tests {
         let loaded_index = unsafe { (*face.raw_rec().glyph).glyph_index };
         assert_eq!(loaded_index, glyph_index);
 
-        let bitmap_data = face.get_bitmap_data();
+        let bitmap_data = face.get_bitmap_data().unwrap();
         assert_eq!(bitmap_data.width > 0, true);
         assert_eq!(bitmap_data.rows > 0, true);
     }
