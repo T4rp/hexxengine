@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs};
+use std::{collections::HashMap, error::Error, fmt::Display, fs};
 
 use image::{ImageBuffer, RgbaImage};
 use paidtype::freetype::{
@@ -7,7 +7,7 @@ use paidtype::freetype::{
 
 use crate::{
     assets::ASSET_PATH,
-    freetype::{Face, FreetypeLibrary},
+    freetype::{Face, FreetypeError, FreetypeLibrary},
 };
 
 const MIN_BIN_LENGTH: u32 = 8;
@@ -37,7 +37,7 @@ impl Rect {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct GlyphBounds {
+pub struct GlyphData {
     pub rect: Rect,
     pub advance: (i32, i32),
     pub is_empty: bool,
@@ -66,8 +66,36 @@ pub struct GlyphAtlas {
     pub height: u32,
     pub face: Face,
     pub bins: Vec<Rect>,
-    pub glyphs: HashMap<GlyphKey, GlyphBounds>,
+    pub glyphs: HashMap<GlyphKey, GlyphData>,
     pub render_mode: GlyphRenderMode,
+}
+
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum GlyphAtlasError {
+    Freetype(FreetypeError),
+    NoGlyphIndex(u64),
+    NoBinFit,
+}
+
+impl Display for GlyphAtlasError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GlyphAtlasError::Freetype(freetype_error) => {
+                write!(f, "freetype error: {}", freetype_error)
+            }
+            GlyphAtlasError::NoGlyphIndex(glyph) => {
+                write!(f, "failed to load glyph '': {}", glyph)
+            }
+            GlyphAtlasError::NoBinFit => {
+                write!(f, "couldnt fit glyph render into bitmap")
+            }
+
+            err => {
+                write!(f, "{:?}", err)
+            }
+        }
+    }
 }
 
 impl GlyphAtlas {
@@ -241,35 +269,38 @@ impl GlyphAtlas {
         self.prune_bins();
     }
 
-    pub fn load_glyph(&mut self, glyph: u64, font_heigth: u32) -> Option<&GlyphBounds> {
+    pub fn load_glyph(&mut self, glyph: u64, font_heigth: u32) -> Result<(), GlyphAtlasError> {
         let glyph_key = GlyphKey::new(glyph, font_heigth);
 
         if self.glyphs.contains_key(&glyph_key) {
-            return self.glyphs.get(&glyph_key);
+            return Ok(());
         }
 
-        let Some(glyph_index) = self.face.get_char_index(glyph_key.glyph) else {
-            return None;
-        };
+        let glyph_index = self
+            .face
+            .get_char_index(glyph_key.glyph)
+            .ok_or(GlyphAtlasError::NoGlyphIndex(glyph_key.glyph))?;
 
-        self.face.set_pixel_sizes(0, glyph_key.font_height).unwrap();
-        self.face.load_glyph(glyph_index, FT_LOAD_DEFAULT).unwrap();
+        self.face
+            .set_pixel_sizes(0, glyph_key.font_height)
+            .map_err(|err| GlyphAtlasError::Freetype(err))?;
 
-        let render_result = match self.render_mode {
+        self.face
+            .load_glyph(glyph_index, FT_LOAD_DEFAULT)
+            .map_err(|err| GlyphAtlasError::Freetype(err))?;
+
+        match self.render_mode {
             GlyphRenderMode::Normal => self
                 .face
                 .render_glyph(FT_Render_Mode__FT_RENDER_MODE_NORMAL),
             GlyphRenderMode::Sdf => self.face.render_glyph(FT_Render_Mode__FT_RENDER_MODE_SDF),
-        };
-
-        if render_result.is_err() {
-            return None;
         }
+        .map_err(|err| GlyphAtlasError::Freetype(err))?;
 
         let (advance_x, advance_y) = self.face.get_glyph_advance();
 
         let Some(bitmap_data) = self.face.get_bitmap_data() else {
-            let glyph = GlyphBounds {
+            let glyph = GlyphData {
                 rect: Rect {
                     x: 0,
                     y: 0,
@@ -282,12 +313,12 @@ impl GlyphAtlas {
 
             self.glyphs.insert(glyph_key, glyph);
 
-            return self.glyphs.get(&glyph_key);
+            return Ok(());
         };
 
         let chosen_bin_index = self
             .choose_bin(bitmap_data.width, bitmap_data.rows)
-            .expect("couldnt find suitable bin");
+            .ok_or(GlyphAtlasError::NoBinFit)?;
 
         let chosen_bin = self.bins[chosen_bin_index];
 
@@ -308,7 +339,7 @@ impl GlyphAtlas {
             }
         }
 
-        let glyph = GlyphBounds {
+        let glyph = GlyphData {
             rect: glyph_bounds,
             advance: (advance_x, advance_y),
             is_empty: false,
@@ -317,7 +348,7 @@ impl GlyphAtlas {
         self.glyphs.insert(glyph_key, glyph);
         self.break_bin(chosen_bin_index, glyph_bounds);
 
-        self.glyphs.get(&glyph_key)
+        Ok(())
     }
 
     pub fn debug_render(&self) -> RgbaImage {
@@ -354,6 +385,47 @@ impl GlyphAtlas {
 
         img_buff
     }
+
+    pub fn get_glyph(&self, glyph: u64, font_height: u32) -> Option<&GlyphData> {
+        let glyph_key = GlyphKey::new(glyph, font_height);
+        self.glyphs.get(&glyph_key)
+    }
+
+    pub fn get_glyphs(&self, text: &str, font_height: u32) -> Vec<&GlyphData> {
+        let mut glyphs = Vec::with_capacity(text.chars().count());
+
+        for character in text.chars() {
+            let glyph_data = self
+                .get_glyph(character as u64, font_height)
+                .unwrap_or(&GlyphData {
+                    rect: Rect {
+                        x: 0,
+                        y: 0,
+                        width: 0,
+                        height: 0,
+                    },
+                    advance: (0, 0),
+                    is_empty: true,
+                });
+
+            glyphs.push(glyph_data)
+        }
+
+        glyphs
+    }
+
+    pub fn has_glyph(&self, glyph: u64, font_height: u32) -> bool {
+        let glyph_key = GlyphKey::new(glyph, font_height);
+        self.glyphs.contains_key(&glyph_key)
+    }
+
+    pub fn load_glyphs(&mut self, text: &str, font_height: u32) -> Result<(), GlyphAtlasError> {
+        for char in text.chars() {
+            self.load_glyph(char as u64, font_height)?;
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -371,7 +443,7 @@ mod tests {
 
         for height in [32, 24, 18, 16, 12] {
             for i in 32..128 {
-                atlas.load_glyph(i as u64, height);
+                atlas.load_glyph(i as u64, height).unwrap();
             }
         }
 
@@ -383,12 +455,25 @@ mod tests {
         let mut atlas = GlyphAtlas::new(GlyphRenderMode::Sdf, 512, 512);
 
         for i in 32..128 {
-            atlas.load_glyph(i as u64, 48);
+            atlas.load_glyph(i as u64, 48).unwrap();
         }
 
         atlas
             .debug_render()
             .save("sdf_glyph_atlas_test.png")
             .unwrap();
+    }
+
+    #[test]
+    fn get_glyphs() {
+        let mut atlas = GlyphAtlas::new(GlyphRenderMode::Normal, 128, 128);
+
+        for height in [18] {
+            for i in 32..128 {
+                atlas.load_glyph(i as u64, height).unwrap();
+            }
+        }
+
+        atlas.get_glyphs("the quick brown fox jumps over the lazy dog", 18);
     }
 }
