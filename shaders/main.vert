@@ -20,6 +20,13 @@ layout (location = 5) out vec3 outObjNorm;
 layout (location = 6) out vec4 outPosLightSpace;
 layout (location = 7) out float outOpacity;
 
+const mat4 bias = mat4(
+	0.5, 0.0, 0.0, 0.0,
+	0.0, 0.5, 0.0, 0.0,
+	0.0, 0.0, 1.0, 0.0,
+	0.5, 0.5, 0.0, 1.0
+);
+
 void main() {
 	vec3 scale;
 	scale.x = length(inModel[0].xyz);
@@ -33,7 +40,7 @@ void main() {
 	outPos = vec3(inModel * vec4(inPos, 1.0));
 	outScale = scale;
 	outObjNorm = inNorm;
-	outPosLightSpace = cameraUbo.lightProj * cameraUbo.lightView * inModel * vec4(inPos, 1.0f);
+	outPosLightSpace = bias * cameraUbo.lightProj * cameraUbo.lightView * inModel * vec4(inPos, 1.0f);
 	outOpacity = inOpacity;
 }
 

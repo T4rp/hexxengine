@@ -202,8 +202,6 @@ impl Game {
             .ui
             .push(UiFrame::new(vec2(0.0, 0.0), vec2(600.0, 300.0), 1));
 
-        scene.ui_dirty = true;
-
         let mut rng = SmallRng::from_os_rng();
 
         let mut physics_context = PhysicsContext::new();
@@ -440,8 +438,6 @@ impl Game {
         }
 
         self.vk_ctx.draw(&self.scene);
-
-        self.scene.ui_dirty = false;
     }
 
     pub fn handle_device_event(&mut self, event: &DeviceEvent) {

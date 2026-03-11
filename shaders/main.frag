@@ -17,9 +17,8 @@ float getShadow(vec4 shadowCoord, vec2 off) {
 	float shadow = 1.0;
 	vec4 shadowCoordNdc = shadowCoord / shadowCoord.w;
 
-	if (shadowCoordNdc.z > -1.0 && shadowCoordNdc.z < 1.0) {
+	if (shadowCoordNdc.z > -1.0 || shadowCoordNdc.z < 1.0) {
 		vec2 shadowUv = shadowCoordNdc.xy;
-		shadowUv = shadowUv * 0.5 + 0.5;
 
 		float closestDepth = texture(shadowMapText, shadowUv + off).r;
 		float currentDepth = shadowCoordNdc.z;
@@ -34,13 +33,13 @@ float getShadow(vec4 shadowCoord, vec2 off) {
 
 float shadowFilterPcf(vec4 shadowCoord) {
 	ivec2 texDim = textureSize(shadowMapText, 0);
-	float scale = 1.0;
+	float scale = 0.5;
 	float dx = scale * 1.0 / float(texDim.x);
 	float dy = scale * 1.0 / float(texDim.y);
 
 	float shadowFactor = 0.0;
-	int count = 0;
-	int range = 1;
+	int count = 16;
+	int range = 2;
 
 	for (int x = -range; x <= range; x++) {
 		for (int y = -range; y <= range; y++) {

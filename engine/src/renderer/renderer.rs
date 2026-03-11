@@ -160,8 +160,8 @@ impl GlobalDescriptors {
         let shadow_map_sampler_info = vk::SamplerCreateInfo::default()
             .mag_filter(vk::Filter::NEAREST)
             .min_filter(vk::Filter::NEAREST)
-            .compare_enable(true)
-            .compare_op(vk::CompareOp::GREATER)
+            // .compare_enable(false)
+            // .compare_op(vk::CompareOp::GREATER)
             .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_BORDER)
             .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_BORDER)
             .border_color(vk::BorderColor::FLOAT_OPAQUE_BLACK);
@@ -1851,6 +1851,16 @@ impl VulkanContext {
             max.z *= z_mult
         }
 
+        let shadow_snap = 1.0 / SHADOW_MAP_RESOLUTION as f32;
+
+        min /= shadow_snap;
+        min = min.floor();
+        min *= shadow_snap;
+
+        max /= shadow_snap;
+        max = max.floor();
+        max *= shadow_snap;
+
         let mut light_proj = Mat4::orthographic_rh(min.x, max.x, min.y, max.y, min.z, max.z);
         light_proj.y_axis *= vec4(1.0, -1.0, 1.0, 1.0);
 
@@ -1934,10 +1944,6 @@ impl VulkanContext {
         vertex2d_index_buffer: &(vk::Buffer, vk_mem::Allocation),
         scene: &RenderScene,
     ) -> u32 {
-        if !scene.ui_dirty {
-            return scene.ui.len() as u32 * 6;
-        }
-
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
 

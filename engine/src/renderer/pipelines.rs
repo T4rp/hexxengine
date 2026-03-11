@@ -574,7 +574,7 @@ fn create_shadow_graphics_pipeline(
         .line_width(1.0)
         .cull_mode(vk::CullModeFlags::BACK)
         .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
-        .depth_bias_enable(false);
+        .depth_bias_enable(true);
 
     let multisample_info = vk::PipelineMultisampleStateCreateInfo::default()
         .sample_shading_enable(false)

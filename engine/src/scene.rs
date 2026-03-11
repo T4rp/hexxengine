@@ -149,7 +149,6 @@ pub struct RenderScene {
     pub camera: Camera,
     pub meshes: Vec<MeshNode>,
     pub ui: Vec<UiFrame>,
-    pub ui_dirty: bool,
     pub lighting: Lighting,
 }
 
@@ -159,7 +158,6 @@ impl RenderScene {
             camera,
             meshes: Vec::new(),
             ui: Vec::new(),
-            ui_dirty: true,
             lighting,
         }
     }
