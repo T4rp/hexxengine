@@ -18,8 +18,8 @@ use crate::renderer::text::{GlyphAtlas, GlyphRenderMode};
 use crate::scene::RenderScene;
 
 const USE_VALIDATION_LAYERS: bool = true;
-const MAX_FRAMES: usize = 1;
-const SHADOW_MAP_RESOLUTION: u32 = 1024;
+const MAX_FRAMES: usize = 2;
+const SHADOW_MAP_RESOLUTION: u32 = 2048;
 const MAX_INSTANCE_COUNT: usize = 10000;
 const MAX_VERTICES_2D: usize = 50000;
 
@@ -158,8 +158,8 @@ impl GlobalDescriptors {
             .buffer(global2d_buffer.0)];
 
         let shadow_map_sampler_info = vk::SamplerCreateInfo::default()
-            .mag_filter(vk::Filter::LINEAR)
-            .min_filter(vk::Filter::LINEAR)
+            .mag_filter(vk::Filter::NEAREST)
+            .min_filter(vk::Filter::NEAREST)
             .compare_enable(true)
             .compare_op(vk::CompareOp::GREATER)
             .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_BORDER)
@@ -1349,7 +1349,7 @@ fn create_swapchain(
         .surface(surface)
         .image_format(surface_format.format)
         .image_color_space(surface_format.color_space)
-        .present_mode(vk::PresentModeKHR::FIFO)
+        .present_mode(vk::PresentModeKHR::FIFO_RELAXED)
         .image_array_layers(1)
         .min_image_count(surface_capabilities.min_image_count + 1)
         .pre_transform(surface_capabilities.current_transform)
@@ -2280,6 +2280,10 @@ impl VulkanContext {
         index_buffer: vk::Buffer,
         count: u32,
     ) {
+        if count == 0 {
+            return;
+        }
+
         unsafe {
             let descriptor_sets = [global2d_descriptor_set, self.textures[1].descriptor_set];
 
