@@ -1,14 +1,11 @@
-use std::{fs, io::Cursor};
+use std::fs;
 
-use ash::{
-    prelude::VkResult,
-    vk::{self, PipelineLayout},
-};
+use ash::{prelude::VkResult, vk};
 
 use crate::{
     assets::ASSET_PATH,
     renderer::{
-        mesh::{InstanceVertex, MeshVertex, Vertex2d},
+        mesh::{MeshVertex, Vertex2d},
         scene3d::Scene3dPipelineObjects,
         vkutils::create_shader_module,
     },
@@ -217,6 +214,25 @@ pub struct VulkanPipelineBuilder<'a> {
     depth_attachment_format: Option<vk::Format>,
 }
 
+impl<'a> Default for VulkanPipelineBuilder<'a> {
+    fn default() -> Self {
+        Self {
+            viewport: Some(vk::Viewport::default()),
+            scissor: Some(vk::Rect2D::default()),
+            shader_stages: None,
+            vertex_input: None,
+            input_assembly_state: None,
+            rasterizer_state: None,
+            multisampling_state: None,
+            pipeline_layout: None,
+            colorblend_state: None,
+            depth_stencil_state: None,
+            depth_attachment_format: None,
+            color_attachment_format: None,
+        }
+    }
+}
+
 impl<'a> VulkanPipelineBuilder<'a> {
     pub fn build(&self, device: &ash::Device) -> VkResult<vk::Pipeline> {
         let shader_stages = self.shader_stages.unwrap();
@@ -363,24 +379,5 @@ impl<'a> VulkanPipelineBuilder<'a> {
     pub fn depth_attachment_format(mut self, format: vk::Format) -> Self {
         self.depth_attachment_format = Some(format);
         self
-    }
-}
-
-impl<'a> Default for VulkanPipelineBuilder<'a> {
-    fn default() -> Self {
-        Self {
-            viewport: Some(vk::Viewport::default()),
-            scissor: Some(vk::Rect2D::default()),
-            shader_stages: None,
-            vertex_input: None,
-            input_assembly_state: None,
-            rasterizer_state: None,
-            multisampling_state: None,
-            pipeline_layout: None,
-            colorblend_state: None,
-            depth_stencil_state: None,
-            depth_attachment_format: None,
-            color_attachment_format: None,
-        }
     }
 }

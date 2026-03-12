@@ -8,6 +8,7 @@ use crate::{
     renderer::{
         mesh::{CameraUniform3d, InstanceVertex, MeshVertex, Scene3dUniform},
         pipelines::VulkanPipelineBuilder,
+        textures::Texture,
         vkutils,
     },
 };
@@ -106,6 +107,58 @@ impl Scene3dResources {
             shadow_map_image,
             shadow_map_image_view,
         })
+    }
+
+    pub fn target_resized(
+        &mut self,
+        device: &ash::Device,
+        allocator: &vk_mem::Allocator,
+        command_pool: vk::CommandPool,
+        queue: vk::Queue,
+        window_extent: vk::Extent2D,
+    ) -> VkResult<()> {
+        vkutils::destroy_allocated_image(allocator, &mut self.depth_image);
+        unsafe {
+            device.destroy_image_view(self.depth_image_view, None);
+        }
+
+        let depth_image = Self::create_depth_image(
+            device,
+            allocator,
+            queue,
+            command_pool,
+            window_extent.width,
+            window_extent.height,
+            vk::ImageUsageFlags::empty(),
+            vk::MemoryPropertyFlags::LAZILY_ALLOCATED,
+        )?;
+        let depth_image_view = Self::create_depth_image_view(device, &depth_image)?;
+
+        self.depth_image = depth_image;
+        self.depth_image_view = depth_image_view;
+
+        todo!()
+    }
+
+    pub fn update_skybox(&mut self, device: &ash::Device, skybox_texture: &Texture) {
+        let skybox_image_info = [vk::DescriptorImageInfo::default()
+            .image_view(skybox_texture.image_view)
+            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+            .sampler(
+                skybox_texture
+                    .sampler
+                    .expect("No sampler in skybox texture"),
+            )];
+
+        let descriptor_write = [vk::WriteDescriptorSet::default()
+            .dst_set(self.main_pass_descriptor_set)
+            .dst_binding(3)
+            .dst_array_element(0)
+            .descriptor_count(1)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .image_info(&skybox_image_info)];
+
+        unsafe { device.update_descriptor_sets(&descriptor_write, &[]) };
     }
 
     fn create_instance_buffer(allocator: &vk_mem::Allocator) -> VkResult<vkutils::AllocatedBuffer> {
@@ -462,9 +515,51 @@ impl Scene3dPipelineObjects {
 
 struct Scene3dPass {
     pub resources: Scene3dResources,
-    pub main_graphics_pipeline: vk::Pipeline,
-    pub shadow_graphics_pipeline: vk::Pipeline,
-    pub main_transparent_graphics_pipeline: vk::Pipeline,
+    pub pipeline_objects: Scene3dPipelineObjects,
 }
 
-impl Scene3dPass {}
+impl Scene3dPass {
+    pub fn new(
+        device: &ash::Device,
+        allocator: &vk_mem::Allocator,
+        command_pool: vk::CommandPool,
+        queue: vk::Queue,
+        queue_family_index: u32,
+        descriptor_pool: vk::DescriptorPool,
+        scene_descriptor_layout: vk::DescriptorSetLayout,
+        window_extent: vk::Extent2D,
+        pipeline_layout: vk::PipelineLayout,
+        surface_format: vk::SurfaceFormatKHR,
+    ) -> VkResult<Self> {
+        let resources = Scene3dResources::new(
+            device,
+            allocator,
+            command_pool,
+            queue,
+            queue_family_index,
+            descriptor_pool,
+            scene_descriptor_layout,
+            window_extent,
+        )?;
+
+        let pipeline_objects =
+            Scene3dPipelineObjects::new(device, pipeline_layout, surface_format.format)?;
+
+        Ok(Self {
+            resources,
+            pipeline_objects,
+        })
+    }
+
+    pub fn target_resized(
+        &mut self,
+        device: &ash::Device,
+        allocator: &vk_mem::Allocator,
+        command_pool: vk::CommandPool,
+        queue: vk::Queue,
+        window_extent: vk::Extent2D,
+    ) -> VkResult<()> {
+        self.resources
+            .target_resized(device, allocator, command_pool, queue, window_extent)
+    }
+}

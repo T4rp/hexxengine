@@ -6,3 +6,4 @@ mod vkutils;
 
 pub mod mesh;
 pub mod renderer;
+pub mod textures;
