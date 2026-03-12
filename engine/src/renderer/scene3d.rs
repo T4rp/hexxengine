@@ -1,0 +1,334 @@
+use std::mem;
+
+use ash::{prelude::VkResult, vk};
+use vk_mem::Alloc;
+
+use crate::renderer::{
+    mesh::{CameraUniform3d, InstanceVertex, Scene3dUniform},
+    vkutils,
+};
+
+const SHADOW_MAP_RESOLUTION: u32 = 2048;
+const MAX_INSTANCE_COUNT: usize = 10000;
+
+struct Scene3dResources {
+    main_pass_descriptor_set: vk::DescriptorSet,
+    shadow_pass_descriptor_set: vk::DescriptorSet,
+
+    shadow_map_sampler: vk::Sampler,
+    skybox_outdated: bool,
+
+    camera_uniform_buffer: (vk::Buffer, vk_mem::Allocation),
+    scene_uniform_buffer: (vk::Buffer, vk_mem::Allocation),
+
+    instance_buffer: (vk::Buffer, vk_mem::Allocation),
+
+    depth_image_view: vk::ImageView,
+    depth_image: vkutils::AllocatedImage,
+    extents_outdated: bool,
+
+    shadow_map_image: vkutils::AllocatedImage,
+    shadow_map_image_view: vk::ImageView,
+}
+
+impl Scene3dResources {
+    pub fn new(
+        device: &ash::Device,
+        allocator: &vk_mem::Allocator,
+        command_pool: vk::CommandPool,
+        queue: vk::Queue,
+        queue_family_index: u32,
+        descriptor_pool: vk::DescriptorPool,
+        scene_descriptor_layout: vk::DescriptorSetLayout,
+        window_extent: vk::Extent2D,
+    ) -> VkResult<Self> {
+        let command_buffer = vkutils::allocate_command_buffer(
+            device,
+            command_pool,
+            vk::CommandBufferLevel::PRIMARY,
+        )?;
+
+        let depth_image = Self::create_depth_image(
+            device,
+            allocator,
+            queue,
+            command_pool,
+            window_extent.width,
+            window_extent.height,
+            vk::ImageUsageFlags::empty(),
+            vk::MemoryPropertyFlags::LAZILY_ALLOCATED,
+        )?;
+        let depth_image_view = Self::create_depth_image_view(device, &depth_image)?;
+
+        let shadow_map_image = Self::create_depth_image(
+            device,
+            allocator,
+            queue,
+            command_pool,
+            SHADOW_MAP_RESOLUTION,
+            SHADOW_MAP_RESOLUTION,
+            vk::ImageUsageFlags::SAMPLED,
+            vk::MemoryPropertyFlags::empty(),
+        )?;
+        let shadow_map_image_view = Self::create_depth_image_view(device, &shadow_map_image)?;
+        let shadow_map_sampler = Self::create_shadow_map_sampler(device)?;
+
+        let camera_uniform_buffer = Self::create_camera_uniform_buffer(allocator)?;
+        let scene_uniform_buffer = Self::create_scene_uniform_buffer(allocator)?;
+
+        let (main_pass_descriptor_set, shadow_pass_descriptor_set) = Self::create_descriptor_sets(
+            device,
+            descriptor_pool,
+            scene_descriptor_layout,
+            camera_uniform_buffer,
+            scene_uniform_buffer,
+            shadow_map_image_view,
+            shadow_map_sampler,
+        )?;
+
+        let instance_buffer = Self::create_instance_buffer(allocator)?;
+
+        Ok(Self {
+            main_pass_descriptor_set,
+            shadow_pass_descriptor_set,
+            shadow_map_sampler,
+            skybox_outdated: true,
+            camera_uniform_buffer,
+            scene_uniform_buffer,
+            instance_buffer,
+            depth_image_view,
+            depth_image,
+            extents_outdated: false,
+            shadow_map_image,
+            shadow_map_image_view,
+        })
+    }
+
+    fn create_instance_buffer(allocator: &vk_mem::Allocator) -> VkResult<vkutils::AllocatedBuffer> {
+        let instance_buffer_info = vk::BufferCreateInfo::default()
+            .size((mem::size_of::<InstanceVertex>() * MAX_INSTANCE_COUNT) as u64)
+            .usage(vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
+
+        let alloc_info = vk_mem::AllocationCreateInfo {
+            usage: vk_mem::MemoryUsage::AutoPreferHost,
+            flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE
+                | vk_mem::AllocationCreateFlags::MAPPED,
+            ..Default::default()
+        };
+
+        unsafe { allocator.create_buffer(&instance_buffer_info, &alloc_info) }
+    }
+
+    fn create_descriptor_sets(
+        device: &ash::Device,
+        descriptor_pool: vk::DescriptorPool,
+        scene_descriptor_layout: vk::DescriptorSetLayout,
+        camera_buffer: vkutils::AllocatedBuffer,
+        scene_buffer: vkutils::AllocatedBuffer,
+        shadow_map_view: vk::ImageView,
+        shadow_map_sampler: vk::Sampler,
+    ) -> VkResult<(vk::DescriptorSet, vk::DescriptorSet)> {
+        // one for shadow map pass, one for main scene pass
+        let layouts = [scene_descriptor_layout; 2];
+        let descriptor_set_info = vk::DescriptorSetAllocateInfo::default()
+            .descriptor_pool(descriptor_pool)
+            .set_layouts(&layouts);
+
+        let descriptor_sets = unsafe { device.allocate_descriptor_sets(&descriptor_set_info)? };
+        let main_pass_descriptor_set = descriptor_sets[0];
+        let shadow_pass_descriptor_set = descriptor_sets[1];
+
+        let shadow_map_image_info = [vk::DescriptorImageInfo::default()
+            .image_view(shadow_map_view)
+            .image_layout(vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL)
+            .sampler(shadow_map_sampler)];
+
+        let camera_buffer_info = [vk::DescriptorBufferInfo::default()
+            .offset(0)
+            .range(mem::size_of::<CameraUniform3d>() as u64)
+            .buffer(camera_buffer.0)];
+
+        let scene_buffer_info = [vk::DescriptorBufferInfo::default()
+            .offset(0)
+            .range(mem::size_of::<Scene3dUniform>() as u64)
+            .buffer(scene_buffer.0)];
+
+        let descriptor_write = [
+            vk::WriteDescriptorSet::default()
+                .dst_set(shadow_pass_descriptor_set)
+                .dst_binding(0)
+                .dst_array_element(0)
+                .descriptor_count(1)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .buffer_info(&camera_buffer_info),
+            vk::WriteDescriptorSet::default()
+                .dst_set(shadow_pass_descriptor_set)
+                .dst_binding(1)
+                .dst_array_element(0)
+                .descriptor_count(1)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .buffer_info(&scene_buffer_info),
+            vk::WriteDescriptorSet::default()
+                .dst_set(main_pass_descriptor_set)
+                .dst_binding(0)
+                .dst_array_element(0)
+                .descriptor_count(1)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .buffer_info(&camera_buffer_info),
+            vk::WriteDescriptorSet::default()
+                .dst_set(main_pass_descriptor_set)
+                .dst_binding(1)
+                .dst_array_element(0)
+                .descriptor_count(1)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .buffer_info(&scene_buffer_info),
+            vk::WriteDescriptorSet::default()
+                .dst_set(main_pass_descriptor_set)
+                .dst_binding(2)
+                .dst_array_element(0)
+                .descriptor_count(1)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .image_info(&shadow_map_image_info),
+        ];
+
+        unsafe { device.update_descriptor_sets(&descriptor_write, &[]) };
+
+        Ok((main_pass_descriptor_set, shadow_pass_descriptor_set))
+    }
+
+    fn create_camera_uniform_buffer(
+        allocator: &vk_mem::Allocator,
+    ) -> VkResult<vkutils::AllocatedBuffer> {
+        vkutils::create_uniform_buffer::<CameraUniform3d>(allocator)
+    }
+
+    fn create_scene_uniform_buffer(
+        allocator: &vk_mem::Allocator,
+    ) -> VkResult<vkutils::AllocatedBuffer> {
+        vkutils::create_uniform_buffer::<Scene3dUniform>(allocator)
+    }
+
+    fn create_shadow_map_sampler(device: &ash::Device) -> VkResult<vk::Sampler> {
+        let shadow_map_sampler_info = vk::SamplerCreateInfo::default()
+            .mag_filter(vk::Filter::NEAREST)
+            .min_filter(vk::Filter::NEAREST)
+            // .compare_enable(false)
+            // .compare_op(vk::CompareOp::GREATER)
+            .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_BORDER)
+            .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_BORDER)
+            .border_color(vk::BorderColor::FLOAT_OPAQUE_BLACK);
+
+        unsafe { device.create_sampler(&shadow_map_sampler_info, None) }
+    }
+
+    fn create_depth_image_view(
+        device: &ash::Device,
+        depth_image: &vkutils::AllocatedImage,
+    ) -> VkResult<vk::ImageView> {
+        let image_view_info = vk::ImageViewCreateInfo::default()
+            .image(depth_image.0)
+            .view_type(vk::ImageViewType::TYPE_2D)
+            .format(vk::Format::D32_SFLOAT)
+            .subresource_range(vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::DEPTH,
+                base_mip_level: 0,
+                level_count: vk::REMAINING_MIP_LEVELS,
+                base_array_layer: 0,
+                layer_count: vk::REMAINING_ARRAY_LAYERS,
+            });
+
+        unsafe { device.create_image_view(&image_view_info, None) }
+    }
+
+    fn create_shadow_map_image_view(
+        device: &ash::Device,
+        depth_image: &vkutils::AllocatedImage,
+    ) -> VkResult<vk::ImageView> {
+        let image_view_info = vk::ImageViewCreateInfo::default()
+            .image(depth_image.0)
+            .view_type(vk::ImageViewType::TYPE_2D)
+            .format(vk::Format::D32_SFLOAT)
+            .subresource_range(vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::DEPTH,
+                base_mip_level: 0,
+                level_count: vk::REMAINING_MIP_LEVELS,
+                base_array_layer: 0,
+                layer_count: vk::REMAINING_ARRAY_LAYERS,
+            });
+
+        unsafe { device.create_image_view(&image_view_info, None) }
+    }
+
+    fn create_depth_image(
+        device: &ash::Device,
+        allocator: &vk_mem::Allocator,
+        queue: vk::Queue,
+        command_pool: vk::CommandPool,
+        width: u32,
+        height: u32,
+        usage_flags: vk::ImageUsageFlags,
+        preferred_allocation_flags: vk::MemoryPropertyFlags,
+    ) -> VkResult<vkutils::AllocatedImage> {
+        let image_info = vk::ImageCreateInfo::default()
+            .image_type(vk::ImageType::TYPE_2D)
+            .extent(vk::Extent3D {
+                width: width,
+                height: height,
+                depth: 1,
+            })
+            .mip_levels(1)
+            .array_layers(1)
+            .format(vk::Format::D32_SFLOAT)
+            .tiling(vk::ImageTiling::OPTIMAL)
+            .initial_layout(vk::ImageLayout::UNDEFINED)
+            .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | usage_flags)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .samples(vk::SampleCountFlags::TYPE_1);
+
+        let image_alloc_info = vk_mem::AllocationCreateInfo {
+            usage: vk_mem::MemoryUsage::AutoPreferDevice,
+            preferred_flags: preferred_allocation_flags,
+            ..Default::default()
+        };
+
+        let depth_image = unsafe { allocator.create_image(&image_info, &image_alloc_info)? };
+
+        let command_buffers = vkutils::allocate_command_buffers(
+            device,
+            command_pool,
+            1,
+            vk::CommandBufferLevel::PRIMARY,
+        )?;
+
+        let command_buffer_being_info = vk::CommandBufferBeginInfo::default()
+            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+
+        unsafe { device.begin_command_buffer(command_buffers[0], &command_buffer_being_info)? };
+
+        vkutils::transition_image(
+            device,
+            command_buffers[0],
+            depth_image.0,
+            vk::ImageLayout::UNDEFINED,
+            vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            vk::ImageAspectFlags::DEPTH,
+        );
+
+        let submit_info = [vk::SubmitInfo::default().command_buffers(&command_buffers)];
+
+        unsafe {
+            device.end_command_buffer(command_buffers[0])?;
+            device.queue_submit(queue, &submit_info, vk::Fence::null())?;
+            device.queue_wait_idle(queue)?;
+            device.free_command_buffers(command_pool, &command_buffers);
+        }
+
+        Ok(depth_image)
+    }
+}
+
+struct Scene3dPass {
+    resources: Scene3dResources,
+}
+
+impl Scene3dPass {}

@@ -10,11 +10,12 @@ use winit::window::Window;
 use crate::freetype::FreetypeLibrary;
 use crate::renderer::images::{ImageTransition, transition_images};
 use crate::renderer::mesh::{
-    Global2DUniform, Global3DUniform, InstanceVertex, MaterialFlags, MaterialUniform, MeshVertex,
-    SceneUniform, Vertex2d,
+    CameraUniform3d, Global2DUniform, InstanceVertex, MaterialFlags, MaterialUniform, MeshVertex,
+    Scene3dUniform, Vertex2d,
 };
 use crate::renderer::pipelines::RendererPipelineObjects;
 use crate::renderer::text::{GlyphAtlas, GlyphRenderMode};
+use crate::renderer::vkutils::{create_command_pool, transition_image};
 use crate::scene::RenderScene;
 
 const USE_VALIDATION_LAYERS: bool = true;
@@ -106,15 +107,15 @@ impl GlobalDescriptors {
 
         let camera_uniform_buffer_info = vk::BufferCreateInfo::default()
             .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
-            .size(mem::size_of::<Global3DUniform>() as u64);
+            .size(mem::size_of::<CameraUniform3d>() as u64);
+
+        let scene_uniform_buffer_info = vk::BufferCreateInfo::default()
+            .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
+            .size(mem::size_of::<Scene3dUniform>() as u64);
 
         let global2d_uniform_buffer_info = vk::BufferCreateInfo::default()
             .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
             .size(mem::size_of::<Global2DUniform>() as u64);
-
-        let scene_uniform_buffer_info = vk::BufferCreateInfo::default()
-            .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
-            .size(mem::size_of::<SceneUniform>() as u64);
 
         let uniform_alloc_info = vk_mem::AllocationCreateInfo {
             flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE
@@ -144,12 +145,12 @@ impl GlobalDescriptors {
 
         let camera_buffer_info = [vk::DescriptorBufferInfo::default()
             .offset(0)
-            .range(mem::size_of::<Global3DUniform>() as u64)
+            .range(mem::size_of::<CameraUniform3d>() as u64)
             .buffer(camera_buffer.0)];
 
         let scene_buffer_info = [vk::DescriptorBufferInfo::default()
             .offset(0)
-            .range(mem::size_of::<SceneUniform>() as u64)
+            .range(mem::size_of::<Scene3dUniform>() as u64)
             .buffer(scene_buffer.0)];
 
         let global2d_buffer_info = [vk::DescriptorBufferInfo::default()
@@ -290,7 +291,7 @@ impl RenderFrame {
         window_extent: vk::Extent2D,
         queue_family_index: u32,
     ) -> Self {
-        let command_pool = create_command_pool(device, queue_family_index);
+        let command_pool = create_command_pool(device, queue_family_index).unwrap();
 
         let command_buffer_alloc_info = vk::CommandBufferAllocateInfo::default()
             .command_pool(command_pool)
@@ -1385,55 +1386,12 @@ fn create_swapchain(
     Ok((swapchain, swapchain_images, image_views, image_extent))
 }
 
-fn transition_image(
-    device: &ash::Device,
-    command_buffer: vk::CommandBuffer,
-    image: vk::Image,
-    current_layout: vk::ImageLayout,
-    new_layout: vk::ImageLayout,
-    aspect_mask: vk::ImageAspectFlags,
-) {
-    let image_barriers = &[vk::ImageMemoryBarrier2::default()
-        .src_stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)
-        .src_access_mask(vk::AccessFlags2::MEMORY_WRITE)
-        .dst_stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)
-        .dst_access_mask(vk::AccessFlags2::MEMORY_WRITE | vk::AccessFlags2::MEMORY_READ)
-        .old_layout(current_layout)
-        .new_layout(new_layout)
-        .subresource_range(vk::ImageSubresourceRange {
-            aspect_mask,
-            base_mip_level: 0,
-            level_count: vk::REMAINING_MIP_LEVELS,
-            base_array_layer: 0,
-            layer_count: vk::REMAINING_ARRAY_LAYERS,
-        })
-        .image(image)];
-
-    let dep_info = vk::DependencyInfo::default().image_memory_barriers(image_barriers);
-
-    unsafe { device.cmd_pipeline_barrier2(command_buffer, &dep_info) };
-}
-
 fn create_nearest_sampler(device: &ash::Device) -> vk::Sampler {
     let sampler_info = vk::SamplerCreateInfo::default()
         .mag_filter(vk::Filter::NEAREST)
         .min_filter(vk::Filter::NEAREST);
 
     unsafe { device.create_sampler(&sampler_info, None).unwrap() }
-}
-
-fn create_command_pool(device: &ash::Device, queue_family_index: u32) -> vk::CommandPool {
-    let command_pool_create_info = vk::CommandPoolCreateInfo::default()
-        .queue_family_index(queue_family_index)
-        .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
-
-    let command_pool = unsafe {
-        device
-            .create_command_pool(&command_pool_create_info, None)
-            .unwrap()
-    };
-
-    command_pool
 }
 
 fn create_submit_semaphores(device: &ash::Device, count: usize) -> Vec<vk::Semaphore> {
@@ -1632,7 +1590,7 @@ impl VulkanContext {
             )
             .unwrap();
 
-        let command_pool = create_command_pool(&device, graphics_queue_family_index);
+        let command_pool = create_command_pool(&device, graphics_queue_family_index).unwrap();
 
         let mut skybox_textures = Vec::new();
 
@@ -1864,7 +1822,7 @@ impl VulkanContext {
         let mut light_proj = Mat4::orthographic_rh(min.x, max.x, min.y, max.y, min.z, max.z);
         light_proj.y_axis *= vec4(1.0, -1.0, 1.0, 1.0);
 
-        let camera_ubo = Global3DUniform {
+        let camera_ubo = CameraUniform3d {
             proj: proj_3d,
             view: view_3d,
             camera_position: vec4(camera_position.x, camera_position.y, camera_position.z, 0.0),
@@ -1872,7 +1830,7 @@ impl VulkanContext {
             light_view,
         };
 
-        let scene_ubo = SceneUniform {
+        let scene_ubo = Scene3dUniform {
             sun_direction: vec4(
                 lighting.sun_direction.x,
                 lighting.sun_direction.y,
