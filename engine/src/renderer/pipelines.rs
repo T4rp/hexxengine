@@ -57,107 +57,73 @@ fn create_main_2d_graphics_pipeline(
     pipeline_layout: vk::PipelineLayout,
     surface_format: vk::SurfaceFormatKHR,
 ) -> vk::Pipeline {
-    let dynamic_states = &[vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
-
-    let dynamic_state_info =
-        vk::PipelineDynamicStateCreateInfo::default().dynamic_states(dynamic_states);
-
-    let viewports = &[vk::Viewport::default()];
-    let scissors = &[vk::Rect2D::default()];
-
-    let viewport_state_info = vk::PipelineViewportStateCreateInfo::default()
-        .viewports(viewports)
-        .scissors(scissors);
-
     let vert_shader_code = fs::read(format!("{}/main2d.vert.spv", ASSET_PATH)).unwrap();
     let frag_shader_code = fs::read(format!("{}/main2d.frag.spv", ASSET_PATH)).unwrap();
-
     let vertex_shader = create_shader_module(device, &vert_shader_code).unwrap();
     let fragment_shader = create_shader_module(device, &frag_shader_code).unwrap();
 
-    let vert_stage_info = vk::PipelineShaderStageCreateInfo::default()
-        .stage(vk::ShaderStageFlags::VERTEX)
-        .module(vertex_shader)
-        .name(c"main");
-
-    let frag_stage_info = vk::PipelineShaderStageCreateInfo::default()
-        .stage(vk::ShaderStageFlags::FRAGMENT)
-        .module(fragment_shader)
-        .name(c"main");
-
-    let shader_stages = &[vert_stage_info, frag_stage_info];
+    let shader_stages = [
+        vk::PipelineShaderStageCreateInfo::default()
+            .stage(vk::ShaderStageFlags::VERTEX)
+            .module(vertex_shader)
+            .name(c"main"),
+        vk::PipelineShaderStageCreateInfo::default()
+            .stage(vk::ShaderStageFlags::FRAGMENT)
+            .module(fragment_shader)
+            .name(c"main"),
+    ];
 
     let vertex_attribute_descriptions = Vertex2d::get_attribute_descriptions();
     let vertex_binding_description = Vertex2d::get_binding_descriptions();
 
-    let vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default()
-        .vertex_attribute_descriptions(&vertex_attribute_descriptions)
-        .vertex_binding_descriptions(&vertex_binding_description);
-
-    let input_assembly_state_info = vk::PipelineInputAssemblyStateCreateInfo::default()
-        .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
-        .primitive_restart_enable(false);
-
-    let rasterization_info = vk::PipelineRasterizationStateCreateInfo::default()
-        .depth_clamp_enable(false)
-        .polygon_mode(vk::PolygonMode::FILL)
-        .line_width(1.0)
-        .cull_mode(vk::CullModeFlags::BACK)
-        .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
-        .depth_bias_enable(false);
-
-    let multisample_info = vk::PipelineMultisampleStateCreateInfo::default()
-        .sample_shading_enable(false)
-        .rasterization_samples(vk::SampleCountFlags::TYPE_1);
-
-    let color_blend_attachment_states = &[vk::PipelineColorBlendAttachmentState::default()
-        .color_write_mask(vk::ColorComponentFlags::RGBA)
-        .blend_enable(true)
-        .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
-        .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
-        .color_blend_op(vk::BlendOp::ADD)
-        .src_alpha_blend_factor(vk::BlendFactor::ONE)
-        .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-        .alpha_blend_op(vk::BlendOp::ADD)];
-
-    let color_blender_state_info =
-        vk::PipelineColorBlendStateCreateInfo::default().attachments(color_blend_attachment_states);
-
-    let depth_stencil_state_info = vk::PipelineDepthStencilStateCreateInfo::default()
-        .depth_test_enable(false)
-        .depth_write_enable(false)
-        .depth_compare_op(vk::CompareOp::GREATER);
-
-    let color_attachment_formats = [surface_format.format];
-    let mut rendering_create_info = vk::PipelineRenderingCreateInfo::default()
-        .color_attachment_formats(&color_attachment_formats)
+    let pipeline_builder = VulkanPipelineBuilder::default()
+        .pipeline_layout(pipeline_layout)
+        .shader_stages(&shader_stages)
+        .vertex_input_state(
+            vk::PipelineVertexInputStateCreateInfo::default()
+                .vertex_attribute_descriptions(&vertex_attribute_descriptions)
+                .vertex_binding_descriptions(&vertex_binding_description),
+        )
+        .input_assembly_state(
+            vk::PipelineInputAssemblyStateCreateInfo::default()
+                .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
+                .primitive_restart_enable(false),
+        )
+        .rasterizer(
+            vk::PipelineRasterizationStateCreateInfo::default()
+                .depth_clamp_enable(false)
+                .polygon_mode(vk::PolygonMode::FILL)
+                .line_width(1.0)
+                .cull_mode(vk::CullModeFlags::BACK)
+                .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
+                .depth_bias_enable(false),
+        )
+        .colorblend_state(
+            vk::PipelineColorBlendAttachmentState::default()
+                .color_write_mask(vk::ColorComponentFlags::RGBA)
+                .blend_enable(true)
+                .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
+                .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+                .color_blend_op(vk::BlendOp::ADD)
+                .src_alpha_blend_factor(vk::BlendFactor::ONE)
+                .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
+                .alpha_blend_op(vk::BlendOp::ADD),
+        )
+        .multisampling(
+            vk::PipelineMultisampleStateCreateInfo::default()
+                .sample_shading_enable(false)
+                .rasterization_samples(vk::SampleCountFlags::TYPE_1),
+        )
+        .depth_stencil_state(
+            vk::PipelineDepthStencilStateCreateInfo::default()
+                .depth_test_enable(false)
+                .depth_write_enable(false)
+                .depth_compare_op(vk::CompareOp::GREATER),
+        )
+        .color_attachment_format(surface_format.format)
         .depth_attachment_format(vk::Format::D32_SFLOAT);
 
-    let graphics_pipeline_create_info = &[vk::GraphicsPipelineCreateInfo::default()
-        .stages(shader_stages)
-        .vertex_input_state(&vertex_input_state_info)
-        .input_assembly_state(&input_assembly_state_info)
-        .dynamic_state(&dynamic_state_info)
-        .viewport_state(&viewport_state_info)
-        .rasterization_state(&rasterization_info)
-        .multisample_state(&multisample_info)
-        .color_blend_state(&color_blender_state_info)
-        .layout(pipeline_layout)
-        .depth_stencil_state(&depth_stencil_state_info)
-        .subpass(0)
-        .push_next(&mut rendering_create_info)];
-
-    let graphics_pipeline = unsafe {
-        device
-            .create_graphics_pipelines(
-                vk::PipelineCache::null(),
-                graphics_pipeline_create_info,
-                None,
-            )
-            .unwrap()[0]
-    };
-
-    graphics_pipeline
+    pipeline_builder.build(device).unwrap()
 }
 
 fn create_sky_graphics_pipeline(
