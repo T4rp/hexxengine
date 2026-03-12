@@ -1,4 +1,4 @@
-use std::mem;
+use std::{io::Cursor, mem};
 
 use ash::{prelude::VkResult, vk};
 use vk_mem::Alloc;
@@ -91,7 +91,7 @@ pub fn allocate_command_buffers(
 pub fn create_uniform_buffer<T>(allocator: &vk_mem::Allocator) -> VkResult<AllocatedBuffer> {
     let buffer_info = vk::BufferCreateInfo::default()
         .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
-        .size(mem::size_of::<T> as u64);
+        .size(mem::size_of::<T>() as u64);
 
     let alloc_info = vk_mem::AllocationCreateInfo {
         flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE
@@ -102,4 +102,13 @@ pub fn create_uniform_buffer<T>(allocator: &vk_mem::Allocator) -> VkResult<Alloc
     };
 
     unsafe { allocator.create_buffer(&buffer_info, &alloc_info) }
+}
+
+pub fn create_shader_module(device: &ash::Device, data: &[u8]) -> VkResult<vk::ShaderModule> {
+    let mut cursor = Cursor::new(data);
+
+    let spv = ash::util::read_spv(&mut cursor).unwrap();
+    let create_info = vk::ShaderModuleCreateInfo::default().code(&spv);
+
+    unsafe { device.create_shader_module(&create_info, None) }
 }
