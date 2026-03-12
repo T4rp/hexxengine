@@ -137,7 +137,7 @@ impl Scene3dResources {
         self.depth_image = depth_image;
         self.depth_image_view = depth_image_view;
 
-        todo!()
+        Ok(())
     }
 
     pub fn update_skybox(&mut self, device: &ash::Device, skybox_texture: &Texture) {
@@ -513,9 +513,8 @@ impl Scene3dPipelineObjects {
     }
 }
 
-struct Scene3dPass {
+pub struct Scene3dPass {
     pub resources: Scene3dResources,
-    pub pipeline_objects: Scene3dPipelineObjects,
 }
 
 impl Scene3dPass {
@@ -528,8 +527,6 @@ impl Scene3dPass {
         descriptor_pool: vk::DescriptorPool,
         scene_descriptor_layout: vk::DescriptorSetLayout,
         window_extent: vk::Extent2D,
-        pipeline_layout: vk::PipelineLayout,
-        surface_format: vk::SurfaceFormatKHR,
     ) -> VkResult<Self> {
         let resources = Scene3dResources::new(
             device,
@@ -542,13 +539,7 @@ impl Scene3dPass {
             window_extent,
         )?;
 
-        let pipeline_objects =
-            Scene3dPipelineObjects::new(device, pipeline_layout, surface_format.format)?;
-
-        Ok(Self {
-            resources,
-            pipeline_objects,
-        })
+        Ok(Self { resources })
     }
 
     pub fn target_resized(

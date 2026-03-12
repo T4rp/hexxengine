@@ -14,6 +14,7 @@ use crate::renderer::mesh::{
     Scene3dUniform, Vertex2d,
 };
 use crate::renderer::pipelines::RendererPipelineObjects;
+use crate::renderer::scene3d::{Scene3dPass, Scene3dResources};
 use crate::renderer::text::{GlyphAtlas, GlyphRenderMode};
 use crate::renderer::textures::{SkyboxImageData, Texture};
 use crate::renderer::vkutils::{create_command_pool, transition_image};
@@ -68,30 +69,24 @@ unsafe extern "system" fn debug_messager_callback(
     }
 }
 
-struct GlobalDescriptors {
-    global2d_buffer: (vk::Buffer, vk_mem::Allocation),
-    camera_buffer: (vk::Buffer, vk_mem::Allocation),
-    scene_buffer: (vk::Buffer, vk_mem::Allocation),
-    main_pass_descriptor_set: vk::DescriptorSet,
-    shadow_pass_descriptor_set: vk::DescriptorSet,
-    shadow_map_sampler: vk::Sampler,
-    skybox_dirty: bool,
+struct Scene2dResources {
     main_2d_pass_descriptor_set: vk::DescriptorSet,
+    global2d_buffer: (vk::Buffer, vk_mem::Allocation),
+    vertex2d_buffer: (vk::Buffer, vk_mem::Allocation),
+    vertex2d_index_buffer: (vk::Buffer, vk_mem::Allocation),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct MeshHandle(u32);
 
-impl GlobalDescriptors {
+impl Scene2dResources {
     fn new(
         device: &ash::Device,
         allocator: &vk_mem::Allocator,
         descriptor_pool: vk::DescriptorPool,
-        frame_layout_3d: vk::DescriptorSetLayout,
         frame_layout_2d: vk::DescriptorSetLayout,
-        shadow_map_view: vk::ImageView,
     ) -> Self {
-        let layouts = [frame_layout_3d, frame_layout_3d, frame_layout_2d];
+        let layouts = [frame_layout_2d];
         let descriptor_set_alloc_info = vk::DescriptorSetAllocateInfo::default()
             .descriptor_pool(descriptor_pool)
             .set_layouts(&layouts);
@@ -102,17 +97,7 @@ impl GlobalDescriptors {
                 .unwrap()
         };
 
-        let main_pass_descriptor_set = descriptor_sets[0];
-        let shadow_pass_descriptor_set = descriptor_sets[1];
-        let main_2d_pass_descriptor_set = descriptor_sets[2];
-
-        let camera_uniform_buffer_info = vk::BufferCreateInfo::default()
-            .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
-            .size(mem::size_of::<CameraUniform3d>() as u64);
-
-        let scene_uniform_buffer_info = vk::BufferCreateInfo::default()
-            .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
-            .size(mem::size_of::<Scene3dUniform>() as u64);
+        let main_2d_pass_descriptor_set = descriptor_sets[0];
 
         let global2d_uniform_buffer_info = vk::BufferCreateInfo::default()
             .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
@@ -126,144 +111,45 @@ impl GlobalDescriptors {
             ..Default::default()
         };
 
-        let camera_buffer = unsafe {
-            allocator
-                .create_buffer(&camera_uniform_buffer_info, &uniform_alloc_info)
-                .unwrap()
-        };
-
-        let scene_buffer = unsafe {
-            allocator
-                .create_buffer(&scene_uniform_buffer_info, &uniform_alloc_info)
-                .unwrap()
-        };
-
         let global2d_buffer = unsafe {
             allocator
                 .create_buffer(&global2d_uniform_buffer_info, &uniform_alloc_info)
                 .unwrap()
         };
 
-        let camera_buffer_info = [vk::DescriptorBufferInfo::default()
-            .offset(0)
-            .range(mem::size_of::<CameraUniform3d>() as u64)
-            .buffer(camera_buffer.0)];
-
-        let scene_buffer_info = [vk::DescriptorBufferInfo::default()
-            .offset(0)
-            .range(mem::size_of::<Scene3dUniform>() as u64)
-            .buffer(scene_buffer.0)];
-
         let global2d_buffer_info = [vk::DescriptorBufferInfo::default()
             .offset(0)
             .range(mem::size_of::<Global2DUniform>() as u64)
             .buffer(global2d_buffer.0)];
 
-        let shadow_map_sampler_info = vk::SamplerCreateInfo::default()
-            .mag_filter(vk::Filter::NEAREST)
-            .min_filter(vk::Filter::NEAREST)
-            // .compare_enable(false)
-            // .compare_op(vk::CompareOp::GREATER)
-            .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_BORDER)
-            .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_BORDER)
-            .border_color(vk::BorderColor::FLOAT_OPAQUE_BLACK);
-
-        let shadow_map_sampler = unsafe {
-            device
-                .create_sampler(&shadow_map_sampler_info, None)
-                .unwrap()
-        };
-
-        let shadow_map_image_info = [vk::DescriptorImageInfo::default()
-            .image_view(shadow_map_view)
-            .image_layout(vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL)
-            .sampler(shadow_map_sampler)];
-
-        let descriptor_write = [
-            vk::WriteDescriptorSet::default()
-                .dst_set(shadow_pass_descriptor_set)
-                .dst_binding(0)
-                .dst_array_element(0)
-                .descriptor_count(1)
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                .buffer_info(&camera_buffer_info),
-            vk::WriteDescriptorSet::default()
-                .dst_set(shadow_pass_descriptor_set)
-                .dst_binding(1)
-                .dst_array_element(0)
-                .descriptor_count(1)
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                .buffer_info(&scene_buffer_info),
-            vk::WriteDescriptorSet::default()
-                .dst_set(main_pass_descriptor_set)
-                .dst_binding(0)
-                .dst_array_element(0)
-                .descriptor_count(1)
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                .buffer_info(&camera_buffer_info),
-            vk::WriteDescriptorSet::default()
-                .dst_set(main_pass_descriptor_set)
-                .dst_binding(1)
-                .dst_array_element(0)
-                .descriptor_count(1)
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                .buffer_info(&scene_buffer_info),
-            vk::WriteDescriptorSet::default()
-                .dst_set(main_pass_descriptor_set)
-                .dst_binding(2)
-                .dst_array_element(0)
-                .descriptor_count(1)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .image_info(&shadow_map_image_info),
-            vk::WriteDescriptorSet::default()
-                .dst_set(main_2d_pass_descriptor_set)
-                .dst_binding(0)
-                .dst_array_element(0)
-                .descriptor_count(1)
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                .buffer_info(&global2d_buffer_info),
-        ];
+        let descriptor_write = [vk::WriteDescriptorSet::default()
+            .dst_set(main_2d_pass_descriptor_set)
+            .dst_binding(0)
+            .dst_array_element(0)
+            .descriptor_count(1)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .buffer_info(&global2d_buffer_info)];
 
         unsafe { device.update_descriptor_sets(&descriptor_write, &[]) };
 
-        GlobalDescriptors {
+        let (vertex2d_buffer, vertex2d_index_buffer) = create_vertex2d_buffer(allocator);
+
+        Scene2dResources {
             global2d_buffer,
-            camera_buffer,
-            scene_buffer,
-            main_pass_descriptor_set,
-            shadow_pass_descriptor_set,
             main_2d_pass_descriptor_set,
-            shadow_map_sampler,
-            skybox_dirty: true,
+            vertex2d_buffer,
+            vertex2d_index_buffer,
         }
     }
 
-    fn update_skybox(&mut self, device: &ash::Device, skybox_texture: &Texture) {
-        let skybox_image_info = [vk::DescriptorImageInfo::default()
-            .image_view(skybox_texture.image_view)
-            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-            .sampler(
-                skybox_texture
-                    .sampler
-                    .expect("No sampler in skybox texture"),
-            )];
-
-        let descriptor_write = [vk::WriteDescriptorSet::default()
-            .dst_set(self.main_pass_descriptor_set)
-            .dst_binding(3)
-            .dst_array_element(0)
-            .descriptor_count(1)
-            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .image_info(&skybox_image_info)];
-
-        unsafe { device.update_descriptor_sets(&descriptor_write, &[]) };
-    }
-
-    fn destroy(&mut self, device: &ash::Device, allocator: &vk_mem::Allocator) {
-        unsafe { allocator.destroy_buffer(self.camera_buffer.0, &mut self.camera_buffer.1) };
-        unsafe { allocator.destroy_buffer(self.scene_buffer.0, &mut self.scene_buffer.1) };
+    fn destroy(&mut self, _device: &ash::Device, allocator: &vk_mem::Allocator) {
         unsafe { allocator.destroy_buffer(self.global2d_buffer.0, &mut self.global2d_buffer.1) };
-        unsafe { device.destroy_sampler(self.shadow_map_sampler, None) };
+        unsafe {
+            allocator.destroy_buffer(
+                self.vertex2d_index_buffer.0,
+                &mut self.vertex2d_index_buffer.1,
+            )
+        };
     }
 }
 
@@ -272,14 +158,11 @@ struct RenderFrame {
     command_buffer: vk::CommandBuffer,
     swapchain_semaphore: vk::Semaphore,
     in_flight_fence: vk::Fence,
-    per_frame_descriptor_data: GlobalDescriptors,
-    depth_image_view: vk::ImageView,
-    depth_image: (vk::Image, vk_mem::Allocation),
-    instance_buffer: (vk::Buffer, vk_mem::Allocation),
-    vertex2d_buffer: (vk::Buffer, vk_mem::Allocation),
-    vertex2d_index_buffer: (vk::Buffer, vk_mem::Allocation),
-    shadow_map: (vk::Image, vk_mem::Allocation),
-    shadow_map_view: vk::ImageView,
+
+    scene2d_resources: Scene2dResources,
+    scene3d_resources: Scene3dResources,
+
+    skybox_dirty: bool,
 }
 
 impl RenderFrame {
@@ -319,52 +202,33 @@ impl RenderFrame {
 
         let in_flight_fence = unsafe { device.create_fence(&fence_create_info, None).unwrap() };
 
-        let (depth_image, depth_image_view) = Self::create_depth_image(
+        let scene3d_resources = Scene3dResources::new(
             device,
             allocator,
-            queue,
             command_pool,
+            queue,
+            queue_family_index,
+            descriptor_pool,
+            descriptor_layouts.global_3d_layout,
             window_extent,
-            vk::ImageUsageFlags::empty(),
-        );
+        )
+        .unwrap();
 
-        let (shadow_map, shadow_map_view) = Self::create_depth_image(
-            device,
-            allocator,
-            queue,
-            command_pool,
-            vk::Extent2D {
-                width: SHADOW_MAP_RESOLUTION,
-                height: SHADOW_MAP_RESOLUTION,
-            },
-            vk::ImageUsageFlags::SAMPLED,
-        );
-
-        let per_frame_descriptor_data = GlobalDescriptors::new(
+        let scene2d_resources = Scene2dResources::new(
             device,
             allocator,
             descriptor_pool,
             descriptor_layouts.global_3d_layout,
-            descriptor_layouts.global_2d_layout,
-            shadow_map_view,
         );
-
-        let instance_buffer = create_instance_buffer(allocator);
-        let (vertex2d_buffer, vertex2d_index_buffer) = create_vertex2d_buffer(allocator);
 
         RenderFrame {
             command_pool,
             command_buffer,
             swapchain_semaphore,
             in_flight_fence,
-            per_frame_descriptor_data,
-            depth_image,
-            depth_image_view,
-            shadow_map,
-            shadow_map_view,
-            instance_buffer,
-            vertex2d_buffer,
-            vertex2d_index_buffer,
+            scene2d_resources,
+            scene3d_resources,
+            skybox_dirty: true,
         }
     }
 
@@ -389,23 +253,15 @@ impl RenderFrame {
                 .unwrap()
         };
 
-        unsafe {
-            allocator.destroy_image(self.depth_image.0, &mut self.depth_image.1);
-            device.destroy_image_view(self.depth_image_view, None);
-        };
+        self.swapchain_semaphore = new_semaphore;
 
-        let (depth_image, depth_image_view) = Self::create_depth_image(
+        self.scene3d_resources.target_resized(
             device,
             allocator,
-            queue,
             command_pool,
+            queue,
             window_extent,
-            vk::ImageUsageFlags::empty(),
         );
-
-        self.swapchain_semaphore = new_semaphore;
-        self.depth_image = depth_image;
-        self.depth_image_view = depth_image_view;
     }
 
     fn create_depth_image(
@@ -508,17 +364,7 @@ impl RenderFrame {
     }
 
     fn destroy(&mut self, device: &ash::Device, allocator: &vk_mem::Allocator) {
-        self.per_frame_descriptor_data.destroy(device, allocator);
-        unsafe { allocator.destroy_image(self.depth_image.0, &mut self.depth_image.1) };
-        unsafe { allocator.destroy_image(self.shadow_map.0, &mut self.shadow_map.1) };
-        unsafe { allocator.destroy_buffer(self.instance_buffer.0, &mut self.instance_buffer.1) };
-        unsafe { allocator.destroy_buffer(self.vertex2d_buffer.0, &mut self.vertex2d_buffer.1) };
-        unsafe {
-            allocator.destroy_buffer(
-                self.vertex2d_index_buffer.0,
-                &mut self.vertex2d_index_buffer.1,
-            )
-        };
+        self.scene2d_resources.destroy(device, allocator);
     }
 }
 
@@ -1364,9 +1210,9 @@ impl VulkanContext {
 
     fn update_global_descriptors(&mut self, scene: &RenderScene) {
         let current_frame = &mut self.render_frames[self.current_frame % MAX_FRAMES];
-        let camera_buffer_allocation = current_frame.per_frame_descriptor_data.camera_buffer.1;
-        let scene_buffer_allocation = current_frame.per_frame_descriptor_data.scene_buffer.1;
-        let global2d_buffer_allocation = current_frame.per_frame_descriptor_data.global2d_buffer.1;
+        let camera_buffer_allocation = current_frame.scene3d_resources.camera_uniform_buffer.1;
+        let scene_buffer_allocation = current_frame.scene3d_resources.scene_uniform_buffer.1;
+        let global2d_buffer_allocation = current_frame.scene2d_resources.global2d_buffer.1;
 
         let aspect_ratio = self.swapchain_extent.width as f32 / self.swapchain_extent.height as f32;
 
@@ -1495,18 +1341,18 @@ impl VulkanContext {
             std::ptr::copy_nonoverlapping(&global2d_ubo, global2d_alloc_info.mapped_data.cast(), 1);
         };
 
-        if current_frame.per_frame_descriptor_data.skybox_dirty {
-            current_frame.per_frame_descriptor_data.update_skybox(
+        if current_frame.skybox_dirty {
+            current_frame.scene3d_resources.update_skybox(
                 &self.device,
                 &self.skybox_textures[scene.lighting.skybox_id as usize],
             );
-            current_frame.per_frame_descriptor_data.skybox_dirty = false;
+            current_frame.skybox_dirty = false;
         }
     }
 
     fn set_global_descriptor_dirty(&mut self) {
         for render_frame in self.render_frames.iter_mut() {
-            render_frame.per_frame_descriptor_data.skybox_dirty = true;
+            render_frame.skybox_dirty = true;
         }
     }
 
@@ -1907,21 +1753,17 @@ impl VulkanContext {
         let command_buffer = current_frame.command_buffer;
         let swapchain_semaphore = current_frame.swapchain_semaphore;
         let in_flight_fence = current_frame.in_flight_fence;
-        let main_per_frame_descriptor_set = current_frame
-            .per_frame_descriptor_data
-            .main_pass_descriptor_set;
-        let shadow_per_frame_descriptor_set = current_frame
-            .per_frame_descriptor_data
-            .shadow_pass_descriptor_set;
-        let global2d_descriptor_set = current_frame
-            .per_frame_descriptor_data
-            .main_2d_pass_descriptor_set;
-        let depth_image_view = current_frame.depth_image_view;
-        let shadow_image = current_frame.shadow_map;
-        let shadow_image_view = current_frame.shadow_map_view;
-        let instance_buffer = current_frame.instance_buffer;
-        let vertex2d_buffer = current_frame.vertex2d_buffer;
-        let vertex2d_index_buffer = current_frame.vertex2d_index_buffer;
+        let main_per_frame_descriptor_set =
+            current_frame.scene3d_resources.main_pass_descriptor_set;
+        let shadow_per_frame_descriptor_set =
+            current_frame.scene3d_resources.shadow_pass_descriptor_set;
+        let global2d_descriptor_set = current_frame.scene2d_resources.main_2d_pass_descriptor_set;
+        let depth_image_view = current_frame.scene3d_resources.depth_image_view;
+        let shadow_image = current_frame.scene3d_resources.shadow_map_image;
+        let shadow_image_view = current_frame.scene3d_resources.shadow_map_image_view;
+        let instance_buffer = current_frame.scene3d_resources.instance_buffer;
+        let vertex2d_buffer = current_frame.scene2d_resources.vertex2d_buffer;
+        let vertex2d_index_buffer = current_frame.scene2d_resources.vertex2d_index_buffer;
 
         unsafe {
             self.device
@@ -2076,15 +1918,6 @@ impl VulkanContext {
                 .depth_attachment(&main_depth_attachment)
                 .render_area(main_render_area)
                 .layer_count(1);
-
-            // transition_image(
-            //     &self.device,
-            //     command_buffer,
-            //     swapchain_image,
-            //     vk::ImageLayout::UNDEFINED,
-            //     vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            //     vk::ImageAspectFlags::COLOR,
-            // );
 
             transition_images(
                 &self.device,
