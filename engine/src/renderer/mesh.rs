@@ -200,7 +200,7 @@ pub struct MaterialUniform {
 
 #[derive(Clone, Copy)]
 #[repr(C)]
-pub struct Global2DUniform {
+pub struct CameraUniform2d {
     pub proj: Mat4,
     pub view: Mat4,
 }

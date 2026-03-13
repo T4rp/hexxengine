@@ -96,14 +96,12 @@ impl Texture {
             ptr::copy_nonoverlapping(data.as_ptr(), alloc_info.mapped_data.cast(), data.len())
         };
 
-        let command_buffers = unsafe {
-            vkutils::allocate_command_buffers(
-                device,
-                command_pool,
-                1,
-                vk::CommandBufferLevel::PRIMARY,
-            )?
-        };
+        let command_buffers = vkutils::allocate_command_buffers(
+            device,
+            command_pool,
+            1,
+            vk::CommandBufferLevel::PRIMARY,
+        )?;
 
         let command_buffer = command_buffers[0];
 
@@ -258,19 +256,12 @@ impl Texture {
             );
         }
 
-        let command_buffer_info = vk::CommandBufferAllocateInfo::default()
-            .command_pool(command_pool)
-            .level(vk::CommandBufferLevel::PRIMARY)
-            .command_buffer_count(1);
-
-        let command_buffers = unsafe {
-            vkutils::allocate_command_buffers(
-                device,
-                command_pool,
-                1,
-                vk::CommandBufferLevel::PRIMARY,
-            )?
-        };
+        let command_buffers = vkutils::allocate_command_buffers(
+            device,
+            command_pool,
+            1,
+            vk::CommandBufferLevel::PRIMARY,
+        )?;
 
         let command_buffer = command_buffers[0];
 

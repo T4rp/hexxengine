@@ -1,4 +1,4 @@
-use std::{collections::HashMap, error::Error, fmt::Display, fs};
+use std::{collections::HashMap, fmt::Display, fs};
 
 use image::{ImageBuffer, RgbaImage};
 use paidtype::freetype::{

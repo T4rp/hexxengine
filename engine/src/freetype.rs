@@ -1,9 +1,4 @@
-use std::{
-    error::Error,
-    ffi::{self, CStr},
-    fmt::Display,
-    sync::Arc,
-};
+use std::{ffi::CStr, fmt::Display, sync::Arc};
 
 use paidtype::freetype::{
     _bindgen_ty_2, FT_Bitmap_Size, FT_Done_Face, FT_Done_FreeType, FT_Err_Ok, FT_Error,

@@ -1,30 +1,23 @@
 use std::borrow::Cow;
-use std::{array, ffi, mem, ptr};
+use std::{ffi, mem};
 
 use ash::{khr, vk};
-use glam::{Mat3, Mat4, Quat, Vec2, Vec3, Vec4, vec2, vec4};
+use glam::Vec2;
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
 
-use crate::freetype::FreetypeLibrary;
 use crate::renderer::images::{ImageTransition, transition_images};
-use crate::renderer::mesh::{
-    CameraUniform3d, Global2DUniform, InstanceVertex, MaterialFlags, MaterialUniform, MeshVertex,
-    Scene3dUniform, Vertex2d,
-};
+use crate::renderer::mesh::{MaterialFlags, MaterialUniform, MeshVertex};
 use crate::renderer::pipelines::RendererPipelineObjects;
-use crate::renderer::scene3d;
-use crate::renderer::text::{GlyphAtlas, GlyphRenderMode};
+use crate::renderer::scene2d;
+use crate::renderer::scene3d::{self, SHADOW_MAP_RESOLUTION};
 use crate::renderer::textures::{SkyboxImageData, Texture};
-use crate::renderer::vkutils::{create_command_pool, transition_image};
+use crate::renderer::vkutils::create_command_pool;
 use crate::scene::RenderScene;
 
 const USE_VALIDATION_LAYERS: bool = true;
 const MAX_FRAMES: usize = 2;
-const SHADOW_MAP_RESOLUTION: u32 = 2048;
-const MAX_INSTANCE_COUNT: usize = 10000;
-const MAX_VERTICES_2D: usize = 50000;
 
 const DESCRIPTOR_RATIOS: &[(vk::DescriptorType, u32)] = &[
     (vk::DescriptorType::COMBINED_IMAGE_SAMPLER, 1),
@@ -70,97 +63,14 @@ unsafe extern "system" fn debug_messager_callback(
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct MeshHandle(u32);
-
-struct Scene2dResources {
-    main_2d_pass_descriptor_set: vk::DescriptorSet,
-    global2d_buffer: (vk::Buffer, vk_mem::Allocation),
-    vertex2d_buffer: (vk::Buffer, vk_mem::Allocation),
-    vertex2d_index_buffer: (vk::Buffer, vk_mem::Allocation),
-}
-
-impl Scene2dResources {
-    fn new(
-        device: &ash::Device,
-        allocator: &vk_mem::Allocator,
-        descriptor_pool: vk::DescriptorPool,
-        frame_layout_2d: vk::DescriptorSetLayout,
-    ) -> Self {
-        let layouts = [frame_layout_2d];
-        let descriptor_set_alloc_info = vk::DescriptorSetAllocateInfo::default()
-            .descriptor_pool(descriptor_pool)
-            .set_layouts(&layouts);
-
-        let descriptor_sets = unsafe {
-            device
-                .allocate_descriptor_sets(&descriptor_set_alloc_info)
-                .unwrap()
-        };
-
-        let main_2d_pass_descriptor_set = descriptor_sets[0];
-
-        let global2d_uniform_buffer_info = vk::BufferCreateInfo::default()
-            .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
-            .size(mem::size_of::<Global2DUniform>() as u64);
-
-        let uniform_alloc_info = vk_mem::AllocationCreateInfo {
-            flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE
-                | vk_mem::AllocationCreateFlags::MAPPED,
-            usage: vk_mem::MemoryUsage::AutoPreferHost,
-
-            ..Default::default()
-        };
-
-        let global2d_buffer = unsafe {
-            allocator
-                .create_buffer(&global2d_uniform_buffer_info, &uniform_alloc_info)
-                .unwrap()
-        };
-
-        let global2d_buffer_info = [vk::DescriptorBufferInfo::default()
-            .offset(0)
-            .range(mem::size_of::<Global2DUniform>() as u64)
-            .buffer(global2d_buffer.0)];
-
-        let descriptor_write = [vk::WriteDescriptorSet::default()
-            .dst_set(main_2d_pass_descriptor_set)
-            .dst_binding(0)
-            .dst_array_element(0)
-            .descriptor_count(1)
-            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-            .buffer_info(&global2d_buffer_info)];
-
-        unsafe { device.update_descriptor_sets(&descriptor_write, &[]) };
-
-        let (vertex2d_buffer, vertex2d_index_buffer) = create_vertex2d_buffer(allocator);
-
-        Scene2dResources {
-            global2d_buffer,
-            main_2d_pass_descriptor_set,
-            vertex2d_buffer,
-            vertex2d_index_buffer,
-        }
-    }
-
-    fn destroy(&mut self, _device: &ash::Device, allocator: &vk_mem::Allocator) {
-        unsafe {
-            allocator.destroy_buffer(self.global2d_buffer.0, &mut self.global2d_buffer.1);
-            allocator.destroy_buffer(self.vertex2d_buffer.0, &mut self.vertex2d_buffer.1);
-            allocator.destroy_buffer(
-                self.vertex2d_index_buffer.0,
-                &mut self.vertex2d_index_buffer.1,
-            )
-        };
-    }
-}
-
+pub struct MeshHandle(pub u32);
 struct RenderFrame {
     command_pool: vk::CommandPool,
     command_buffer: vk::CommandBuffer,
     swapchain_semaphore: vk::Semaphore,
     in_flight_fence: vk::Fence,
 
-    scene2d_resources: Scene2dResources,
+    scene2d_resources: scene2d::Resources,
     scene3d_resources: scene3d::Resources,
 
     skybox_dirty: bool,
@@ -215,12 +125,13 @@ impl RenderFrame {
         )
         .unwrap();
 
-        let scene2d_resources = Scene2dResources::new(
+        let scene2d_resources = scene2d::Resources::new(
             device,
             allocator,
             descriptor_pool,
             descriptor_layouts.global_2d_layout,
-        );
+        )
+        .unwrap();
 
         RenderFrame {
             command_pool,
@@ -256,112 +167,9 @@ impl RenderFrame {
 
         self.swapchain_semaphore = new_semaphore;
 
-        self.scene3d_resources.target_resized(
-            device,
-            allocator,
-            command_pool,
-            queue,
-            window_extent,
-        );
-    }
-
-    fn create_depth_image(
-        device: &ash::Device,
-        allocator: &vk_mem::Allocator,
-        queue: vk::Queue,
-        command_pool: vk::CommandPool,
-        extent: vk::Extent2D,
-        extra_usage_flags: vk::ImageUsageFlags,
-    ) -> ((vk::Image, vk_mem::Allocation), vk::ImageView) {
-        let image_info = vk::ImageCreateInfo::default()
-            .image_type(vk::ImageType::TYPE_2D)
-            .extent(vk::Extent3D {
-                width: extent.width,
-                height: extent.height,
-                depth: 1,
-            })
-            .mip_levels(1)
-            .array_layers(1)
-            .format(vk::Format::D32_SFLOAT)
-            .tiling(vk::ImageTiling::OPTIMAL)
-            .initial_layout(vk::ImageLayout::UNDEFINED)
-            .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | extra_usage_flags)
-            .sharing_mode(vk::SharingMode::EXCLUSIVE)
-            .samples(vk::SampleCountFlags::TYPE_1);
-
-        let image_alloc_info = vk_mem::AllocationCreateInfo {
-            usage: vk_mem::MemoryUsage::AutoPreferDevice,
-            preferred_flags: vk::MemoryPropertyFlags::LAZILY_ALLOCATED,
-            ..Default::default()
-        };
-
-        let depth_image = unsafe {
-            allocator
-                .create_image(&image_info, &image_alloc_info)
-                .unwrap()
-        };
-
-        let command_buffers = unsafe {
-            device
-                .allocate_command_buffers(
-                    &vk::CommandBufferAllocateInfo::default()
-                        .command_pool(command_pool)
-                        .command_buffer_count(1)
-                        .level(vk::CommandBufferLevel::PRIMARY),
-                )
-                .unwrap()
-        };
-
-        unsafe {
-            device
-                .begin_command_buffer(
-                    command_buffers[0],
-                    &vk::CommandBufferBeginInfo::default()
-                        .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
-                )
-                .unwrap()
-        };
-
-        transition_image(
-            device,
-            command_buffers[0],
-            depth_image.0,
-            vk::ImageLayout::UNDEFINED,
-            vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-            vk::ImageAspectFlags::DEPTH,
-        );
-
-        unsafe {
-            device.end_command_buffer(command_buffers[0]).unwrap();
-
-            device
-                .queue_submit(
-                    queue,
-                    &[vk::SubmitInfo::default().command_buffers(&command_buffers)],
-                    vk::Fence::null(),
-                )
-                .unwrap();
-
-            device.queue_wait_idle(queue).unwrap();
-
-            device.free_command_buffers(command_pool, &command_buffers);
-        }
-
-        let image_view_info = vk::ImageViewCreateInfo::default()
-            .image(depth_image.0)
-            .view_type(vk::ImageViewType::TYPE_2D)
-            .format(vk::Format::D32_SFLOAT)
-            .subresource_range(vk::ImageSubresourceRange {
-                aspect_mask: vk::ImageAspectFlags::DEPTH,
-                base_mip_level: 0,
-                level_count: vk::REMAINING_MIP_LEVELS,
-                base_array_layer: 0,
-                layer_count: vk::REMAINING_ARRAY_LAYERS,
-            });
-
-        let depth_image_view = unsafe { device.create_image_view(&image_view_info, None).unwrap() };
-
-        (depth_image, depth_image_view)
+        self.scene3d_resources
+            .target_resized(device, allocator, command_pool, queue, window_extent)
+            .unwrap();
     }
 
     fn destroy(&mut self, device: &ash::Device, allocator: &vk_mem::Allocator) {
@@ -377,9 +185,9 @@ struct DescriptorSetLayouts {
     global_2d_layout: vk::DescriptorSetLayout,
 }
 
-struct TextureDescriptors {
-    texture: Texture,
-    descriptor_set: vk::DescriptorSet,
+pub struct TextureDescriptors {
+    pub texture: Texture,
+    pub descriptor_set: vk::DescriptorSet,
 }
 
 impl TextureDescriptors {
@@ -430,10 +238,10 @@ impl TextureDescriptors {
     }
 }
 
-struct MeshBuffer {
-    vertex_buffer: (vk::Buffer, vk_mem::Allocation),
-    index_buffer: (vk::Buffer, vk_mem::Allocation),
-    index_count: u32,
+pub struct MeshBuffer {
+    pub vertex_buffer: (vk::Buffer, vk_mem::Allocation),
+    pub index_buffer: (vk::Buffer, vk_mem::Allocation),
+    pub index_count: u32,
 }
 
 impl MeshBuffer {
@@ -593,18 +401,9 @@ impl MeshBuffer {
     }
 }
 
-#[derive(Debug)]
-struct MeshBatch {
-    mesh_id: MeshHandle,
-    material_id: u32,
-    instance_offset: u64,
-    instance_count: u32,
-    is_opaque: bool,
-}
-
-struct MaterialDescriptor {
-    uniform_buffer: (vk::Buffer, vk_mem::Allocation),
-    descriptor_set: vk::DescriptorSet,
+pub struct MaterialDescriptor {
+    pub uniform_buffer: (vk::Buffer, vk_mem::Allocation),
+    pub descriptor_set: vk::DescriptorSet,
 }
 
 impl MaterialDescriptor {
@@ -717,8 +516,6 @@ pub struct VulkanContext {
     textures: Vec<TextureDescriptors>,
     skybox_textures: Vec<Texture>,
     current_skybox: Option<u32>,
-
-    glyph_atlas: GlyphAtlas,
 }
 
 fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> ash::Instance {
@@ -872,69 +669,10 @@ fn create_submit_semaphores(device: &ash::Device, count: usize) -> Vec<vk::Semap
     semaphores
 }
 
-fn create_instance_buffer(allocator: &vk_mem::Allocator) -> (vk::Buffer, vk_mem::Allocation) {
-    let instance_buffer_info = vk::BufferCreateInfo::default()
-        .size((mem::size_of::<InstanceVertex>() * MAX_INSTANCE_COUNT) as u64)
-        .usage(vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
-
-    let alloc_info = vk_mem::AllocationCreateInfo {
-        usage: vk_mem::MemoryUsage::AutoPreferHost,
-        flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE
-            | vk_mem::AllocationCreateFlags::MAPPED,
-        ..Default::default()
-    };
-
-    let instance_buffer = unsafe {
-        allocator
-            .create_buffer(&instance_buffer_info, &alloc_info)
-            .unwrap()
-    };
-
-    instance_buffer
-}
-
-fn create_vertex2d_buffer(
-    allocator: &vk_mem::Allocator,
-) -> (
-    (vk::Buffer, vk_mem::Allocation),
-    (vk::Buffer, vk_mem::Allocation),
-) {
-    let vertex_buffer_info = vk::BufferCreateInfo::default()
-        .size((mem::size_of::<u16>() * MAX_VERTICES_2D) as u64)
-        .usage(vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
-
-    let index_buffer_info = vk::BufferCreateInfo::default()
-        .size((mem::size_of::<Vertex2d>() * MAX_VERTICES_2D) as u64)
-        .usage(vk::BufferUsageFlags::INDEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
-
-    let alloc_info = vk_mem::AllocationCreateInfo {
-        usage: vk_mem::MemoryUsage::AutoPreferHost,
-        flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE
-            | vk_mem::AllocationCreateFlags::MAPPED,
-        ..Default::default()
-    };
-
-    let vertex_buffer = unsafe {
-        allocator
-            .create_buffer(&vertex_buffer_info, &alloc_info)
-            .unwrap()
-    };
-
-    let index_buffer = unsafe {
-        allocator
-            .create_buffer(&index_buffer_info, &alloc_info)
-            .unwrap()
-    };
-
-    (vertex_buffer, index_buffer)
-}
-
 impl VulkanContext {
     pub fn new(window: &Window) -> Self {
         let raw_window_handle = window.window_handle().unwrap().as_raw();
         let raw_display_handle = window.display_handle().unwrap().as_raw();
-
-        let freetype = FreetypeLibrary::new().unwrap();
 
         let entry = unsafe { ash::Entry::load().unwrap() };
         let instance = create_instance(&entry, raw_display_handle);
@@ -1173,8 +911,6 @@ impl VulkanContext {
 
         materials.push(base_material);
 
-        let glyph_atlas = GlyphAtlas::new(GlyphRenderMode::Normal, 1024, 1024);
-
         Self {
             entry,
             instance,
@@ -1206,547 +942,19 @@ impl VulkanContext {
             pipeline_objects,
             surface_loader,
             swapchain_loader,
-            glyph_atlas,
-        }
-    }
-
-    fn update_global_descriptors(&mut self, scene: &RenderScene) {
-        let current_frame = &mut self.render_frames[self.current_frame % MAX_FRAMES];
-        let camera_buffer_allocation = current_frame.scene3d_resources.camera_uniform_buffer.1;
-        let scene_buffer_allocation = current_frame.scene3d_resources.scene_uniform_buffer.1;
-        let global2d_buffer_allocation = current_frame.scene2d_resources.global2d_buffer.1;
-
-        let aspect_ratio = self.swapchain_extent.width as f32 / self.swapchain_extent.height as f32;
-
-        let (proj_3d, view_3d) = scene.camera.calc_perspective_matrices(aspect_ratio);
-
-        let corners = scene
-            .camera
-            .calc_frustrum_corners(aspect_ratio, 30.0, 500.0);
-        let mut frustrum_avg = Vec3::ZERO;
-
-        for corner in corners.iter() {
-            frustrum_avg += corner
-        }
-
-        frustrum_avg /= 8.0;
-
-        let lighting = &scene.lighting;
-        let camera_position = scene.camera.position;
-
-        let light_translation = lighting.sun_direction + frustrum_avg;
-
-        let light_rotation = Quat::look_at_rh(light_translation, frustrum_avg, Vec3::Y).inverse();
-
-        let light_view =
-            Mat4::from_rotation_translation(light_rotation, light_translation).inverse();
-
-        let light_view_mat3 = Mat3::from_mat4(light_view);
-
-        let mut min = Vec3::splat(0.0);
-        let mut max = Vec3::splat(0.0);
-
-        for corner in corners.iter() {
-            let lsc = light_view_mat3 * corner;
-            min = min.min(lsc);
-            max = max.max(lsc);
-        }
-
-        min.x -= 200.0;
-        max.x += 200.0;
-        min.y -= 200.0;
-        max.y += 200.0;
-
-        let z_mult = 10.0;
-
-        if min.z < 0.0 {
-            min.z *= z_mult
-        } else {
-            min.z /= z_mult
-        }
-
-        if max.z < 0.0 {
-            max.z /= z_mult
-        } else {
-            max.z *= z_mult
-        }
-
-        let shadow_snap = 1.0 / SHADOW_MAP_RESOLUTION as f32;
-
-        min /= shadow_snap;
-        min = min.floor();
-        min *= shadow_snap;
-
-        max /= shadow_snap;
-        max = max.floor();
-        max *= shadow_snap;
-
-        let mut light_proj = Mat4::orthographic_rh(min.x, max.x, min.y, max.y, min.z, max.z);
-        light_proj.y_axis *= vec4(1.0, -1.0, 1.0, 1.0);
-
-        let camera_ubo = CameraUniform3d {
-            proj: proj_3d,
-            view: view_3d,
-            camera_position: vec4(camera_position.x, camera_position.y, camera_position.z, 0.0),
-            light_proj,
-            light_view,
-        };
-
-        let scene_ubo = Scene3dUniform {
-            sun_direction: vec4(
-                lighting.sun_direction.x,
-                lighting.sun_direction.y,
-                lighting.sun_direction.z,
-                0.0,
-            ),
-            sun_color: vec4(
-                lighting.sun_color.x,
-                lighting.sun_color.y,
-                lighting.sun_color.z,
-                lighting.sun_power,
-            ),
-            ambient_color: vec4(
-                lighting.ambient_color.x,
-                lighting.ambient_color.y,
-                lighting.ambient_color.z,
-                0.0,
-            ),
-        };
-
-        let proj_2d = Mat4::orthographic_rh(
-            0.0,
-            self.swapchain_extent.width as f32,
-            0.0,
-            self.swapchain_extent.height as f32,
-            0.0,
-            1.0,
-        );
-
-        let global2d_ubo = Global2DUniform {
-            proj: proj_2d,
-            view: Mat4::IDENTITY,
-        };
-
-        let camera_alloc_info = self
-            .allocator
-            .get_allocation_info(&camera_buffer_allocation);
-
-        let scene_alloc_info = self.allocator.get_allocation_info(&scene_buffer_allocation);
-
-        let global2d_alloc_info = self
-            .allocator
-            .get_allocation_info(&global2d_buffer_allocation);
-
-        unsafe {
-            std::ptr::copy_nonoverlapping(&camera_ubo, camera_alloc_info.mapped_data.cast(), 1);
-            std::ptr::copy_nonoverlapping(&scene_ubo, scene_alloc_info.mapped_data.cast(), 1);
-            std::ptr::copy_nonoverlapping(&global2d_ubo, global2d_alloc_info.mapped_data.cast(), 1);
-        };
-
-        if current_frame.skybox_dirty {
-            current_frame.scene3d_resources.update_skybox(
-                &self.device,
-                &self.skybox_textures[scene.lighting.skybox_id as usize],
-            );
-            current_frame.skybox_dirty = false;
-        }
-    }
-
-    fn set_global_descriptor_dirty(&mut self) {
-        for render_frame in self.render_frames.iter_mut() {
-            render_frame.skybox_dirty = true;
-        }
-    }
-
-    fn update_vertex2d_buffer(
-        &mut self,
-        vertex2d_buffer: &(vk::Buffer, vk_mem::Allocation),
-        vertex2d_index_buffer: &(vk::Buffer, vk_mem::Allocation),
-        scene: &RenderScene,
-    ) -> u32 {
-        let mut vertices = Vec::new();
-        let mut indices = Vec::new();
-
-        for ui_frame in scene.ui.iter() {
-            ui_frame.push_verts(&mut vertices, &mut indices);
-        }
-
-        let vertex_alloc_info = self.allocator.get_allocation_info(&vertex2d_buffer.1);
-        let index_alloc_info = self.allocator.get_allocation_info(&vertex2d_index_buffer.1);
-
-        unsafe {
-            std::ptr::copy_nonoverlapping(
-                vertices.as_ptr(),
-                vertex_alloc_info.mapped_data.cast(),
-                vertices.len().min(MAX_VERTICES_2D),
-            );
-
-            std::ptr::copy_nonoverlapping(
-                indices.as_ptr(),
-                index_alloc_info.mapped_data.cast(),
-                indices.len().min(MAX_VERTICES_2D),
-            );
-        };
-
-        indices.len() as u32
-    }
-
-    fn update_instance_buffer(
-        &mut self,
-        instance_buffer: &(vk::Buffer, vk_mem::Allocation),
-        scene: &RenderScene,
-    ) -> Vec<MeshBatch> {
-        let mut meshes = scene.meshes.clone();
-
-        let aspect_ratio = self.swapchain_extent.width as f32 / self.swapchain_extent.height as f32;
-        let (proj, view) = scene.camera.calc_perspective_matrices(aspect_ratio);
-        let proj_view = proj * view;
-
-        meshes.sort_unstable_by_key(|m| {
-            let opacity = m.opacity;
-            let is_opaque = opacity == 1.0;
-            let depth = if is_opaque {
-                0
-            } else {
-                let model = proj_view * Vec4::new(m.position.x, m.position.y, m.position.z, 1.0);
-                let depth = model.z / model.w;
-                (depth * 100_000_000_000.0).round() as u32
-            };
-
-            (!is_opaque, depth, m.material_id, m.mesh_id)
-        });
-
-        let mesh_count = meshes.len().min(MAX_INSTANCE_COUNT);
-
-        let mut instances: Vec<InstanceVertex> = Vec::new();
-        let mut batch_infos: Vec<MeshBatch> = Vec::new();
-
-        let mut start = 0;
-
-        while start < mesh_count {
-            let is_opaque = meshes[start].opacity == 1.0;
-            let depth = if is_opaque {
-                0.0
-            } else {
-                let model = proj_view
-                    * Vec4::new(
-                        meshes[start].position.x,
-                        meshes[start].position.y,
-                        meshes[start].position.z,
-                        1.0,
-                    );
-                model.w
-            };
-
-            let key = (meshes[start].material_id, meshes[start].mesh_id, depth);
-
-            {
-                let mesh = &meshes[start];
-                instances.push(InstanceVertex::new(
-                    mesh.position,
-                    mesh.orientation,
-                    mesh.size,
-                    mesh.color,
-                    mesh.opacity,
-                ));
-            }
-
-            let mut end = start + 1;
-
-            while end < mesh_count {
-                let is_opaque = meshes[end].opacity == 1.0;
-                let depth = if is_opaque {
-                    0.0
-                } else {
-                    let model = proj_view
-                        * Vec4::new(
-                            meshes[end].position.x,
-                            meshes[end].position.y,
-                            meshes[end].position.z,
-                            1.0,
-                        );
-                    model.w
-                };
-
-                let new_key = (meshes[end].material_id, meshes[end].mesh_id, depth);
-
-                if new_key != key {
-                    break;
-                }
-
-                {
-                    let mesh = &meshes[end];
-                    instances.push(InstanceVertex::new(
-                        mesh.position,
-                        mesh.orientation,
-                        mesh.size,
-                        mesh.color,
-                        mesh.opacity,
-                    ));
-                }
-
-                end += 1;
-            }
-
-            batch_infos.push(MeshBatch {
-                mesh_id: key.1,
-                material_id: key.0,
-                instance_offset: start as u64 * mem::size_of::<InstanceVertex>() as u64,
-                instance_count: (end - start) as u32,
-                is_opaque,
-            });
-
-            start = end;
-        }
-
-        let alloc_info = self.allocator.get_allocation_info(&instance_buffer.1);
-
-        unsafe {
-            std::ptr::copy_nonoverlapping(
-                instances.as_ptr(),
-                alloc_info.mapped_data.cast(),
-                instances.len().min(MAX_INSTANCE_COUNT),
-            );
-        }
-
-        batch_infos
-    }
-
-    fn draw_shadow_map(
-        &mut self,
-        batch_info: &[MeshBatch],
-        command_buffer: vk::CommandBuffer,
-        instance_buffer: vk::Buffer,
-        shadow_per_frame_descriptor_set: vk::DescriptorSet,
-    ) {
-        unsafe {
-            self.device.cmd_bind_pipeline(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline_objects.shadow_graphics_pipeline,
-            );
-
-            let shadow_descriptor_sets = [
-                shadow_per_frame_descriptor_set,
-                self.textures[1].descriptor_set,
-            ];
-
-            self.device.cmd_bind_descriptor_sets(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline_layout_3d,
-                0,
-                &shadow_descriptor_sets,
-                &[],
-            );
-
-            for batch in batch_info.iter() {
-                // dont render shadows for transparent objects
-                // opaque objects are already sorted to be before transparent objects
-                if !batch.is_opaque {
-                    break;
-                }
-
-                let mesh_buffer = self.get_mesh_buffer(batch.mesh_id);
-
-                self.device.cmd_bind_vertex_buffers(
-                    command_buffer,
-                    0,
-                    &[mesh_buffer.vertex_buffer.0, instance_buffer],
-                    &[0, batch.instance_offset],
-                );
-
-                self.device.cmd_bind_index_buffer(
-                    command_buffer,
-                    mesh_buffer.index_buffer.0,
-                    0,
-                    vk::IndexType::UINT16,
-                );
-
-                self.device.cmd_draw_indexed(
-                    command_buffer,
-                    mesh_buffer.index_count,
-                    batch.instance_count,
-                    0,
-                    0,
-                    0,
-                );
-            }
-        }
-    }
-
-    fn draw_skybox(
-        &mut self,
-        command_buffer: vk::CommandBuffer,
-        main_per_frame_descriptor_set: vk::DescriptorSet,
-    ) {
-        unsafe {
-            let main_descriptor_sets = [
-                main_per_frame_descriptor_set,
-                self.textures[0].descriptor_set,
-                self.material_descriptors[0].descriptor_set,
-            ];
-
-            self.device.cmd_bind_descriptor_sets(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline_layout_3d,
-                0,
-                &main_descriptor_sets,
-                &[],
-            );
-
-            self.device.cmd_bind_pipeline(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline_objects.skybox_graphics_pipeline,
-            );
-
-            self.device.cmd_bind_vertex_buffers(
-                command_buffer,
-                0,
-                &[self.mesh_buffers[0].vertex_buffer.0],
-                &[0],
-            );
-
-            self.device.cmd_bind_index_buffer(
-                command_buffer,
-                self.mesh_buffers[0].index_buffer.0,
-                0,
-                vk::IndexType::UINT16,
-            );
-
-            self.device.cmd_draw_indexed(
-                command_buffer,
-                self.mesh_buffers[0].index_count,
-                1,
-                0,
-                0,
-                0,
-            );
-        }
-    }
-
-    fn draw_main_scene(
-        &mut self,
-        batch_info: &[MeshBatch],
-        command_buffer: vk::CommandBuffer,
-        instance_buffer: vk::Buffer,
-    ) {
-        unsafe {
-            let mut last_material = None;
-            let mut is_opaque = None;
-
-            for batch in batch_info.iter() {
-                if is_opaque != Some(batch.is_opaque) {
-                    is_opaque = Some(batch.is_opaque);
-
-                    let pipeline = if batch.is_opaque {
-                        self.pipeline_objects.main_graphics_pipeline
-                    } else {
-                        self.pipeline_objects.main_transparent_graphics_pipeline
-                    };
-
-                    self.device.cmd_bind_pipeline(
-                        command_buffer,
-                        vk::PipelineBindPoint::GRAPHICS,
-                        pipeline,
-                    );
-                }
-
-                if last_material != Some(batch.material_id) {
-                    last_material = Some(batch.material_id);
-
-                    let descriptor_sets =
-                        [self.textures[batch.material_id as usize].descriptor_set];
-
-                    self.device.cmd_bind_descriptor_sets(
-                        command_buffer,
-                        vk::PipelineBindPoint::GRAPHICS,
-                        self.pipeline_layout_3d,
-                        1,
-                        &descriptor_sets,
-                        &[],
-                    );
-                }
-
-                let mesh_buffer = self.get_mesh_buffer(batch.mesh_id);
-
-                self.device.cmd_bind_vertex_buffers(
-                    command_buffer,
-                    0,
-                    &[mesh_buffer.vertex_buffer.0, instance_buffer],
-                    &[0, batch.instance_offset],
-                );
-
-                self.device.cmd_bind_index_buffer(
-                    command_buffer,
-                    mesh_buffer.index_buffer.0,
-                    0,
-                    vk::IndexType::UINT16,
-                );
-
-                self.device.cmd_draw_indexed(
-                    command_buffer,
-                    mesh_buffer.index_count,
-                    batch.instance_count,
-                    0,
-                    0,
-                    0,
-                );
-            }
-        }
-    }
-
-    fn draw_2d(
-        &mut self,
-        command_buffer: vk::CommandBuffer,
-        global2d_descriptor_set: vk::DescriptorSet,
-        vertex_buffer: vk::Buffer,
-        index_buffer: vk::Buffer,
-        count: u32,
-    ) {
-        if count == 0 {
-            return;
-        }
-
-        unsafe {
-            let descriptor_sets = [global2d_descriptor_set, self.textures[1].descriptor_set];
-
-            self.device.cmd_bind_descriptor_sets(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline_layout_2d,
-                0,
-                &descriptor_sets,
-                &[],
-            );
-
-            self.device.cmd_bind_pipeline(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline_objects.main_2d_graphics_pipeline,
-            );
-
-            self.device
-                .cmd_bind_vertex_buffers(command_buffer, 0, &[vertex_buffer], &[0]);
-
-            self.device.cmd_bind_index_buffer(
-                command_buffer,
-                index_buffer,
-                0,
-                vk::IndexType::UINT16,
-            );
-
-            self.device
-                .cmd_draw_indexed(command_buffer, count, 1, 0, 0, 0);
         }
     }
 
     pub fn draw(&mut self, scene: &RenderScene) {
         if self.should_resize {
-            // self.handle_resize();
             return;
+        }
+
+        if self.current_skybox != Some(scene.lighting.skybox_id) {
+            self.current_skybox = Some(scene.lighting.skybox_id);
+            for render_frame in self.render_frames.iter_mut() {
+                render_frame.skybox_dirty = true;
+            }
         }
 
         let current_frame_index = self.current_frame % MAX_FRAMES;
@@ -1755,17 +963,17 @@ impl VulkanContext {
         let command_buffer = current_frame.command_buffer;
         let swapchain_semaphore = current_frame.swapchain_semaphore;
         let in_flight_fence = current_frame.in_flight_fence;
-        let main_per_frame_descriptor_set =
-            current_frame.scene3d_resources.main_pass_descriptor_set;
-        let shadow_per_frame_descriptor_set =
-            current_frame.scene3d_resources.shadow_pass_descriptor_set;
-        let global2d_descriptor_set = current_frame.scene2d_resources.main_2d_pass_descriptor_set;
-        let depth_image_view = current_frame.scene3d_resources.depth_image_view;
-        let shadow_image = current_frame.scene3d_resources.shadow_map_image;
-        let shadow_image_view = current_frame.scene3d_resources.shadow_map_image_view;
-        let instance_buffer = current_frame.scene3d_resources.instance_buffer;
-        let vertex2d_buffer = current_frame.scene2d_resources.vertex2d_buffer;
-        let vertex2d_index_buffer = current_frame.scene2d_resources.vertex2d_index_buffer;
+
+        let scene3d_resources = &mut current_frame.scene3d_resources;
+        let scene2d_resources = &mut current_frame.scene2d_resources;
+
+        if current_frame.skybox_dirty {
+            scene3d_resources.update_skybox(
+                &self.device,
+                &self.skybox_textures[scene.lighting.skybox_id as usize],
+            );
+            current_frame.skybox_dirty = false;
+        }
 
         unsafe {
             self.device
@@ -1790,17 +998,16 @@ impl VulkanContext {
 
             self.device.reset_fences(&[in_flight_fence]).unwrap();
 
-            if self.current_skybox != Some(scene.lighting.skybox_id) {
-                self.current_skybox = Some(scene.lighting.skybox_id);
-                self.set_global_descriptor_dirty();
-            }
+            scene3d_resources.update_uniform_buffers(&self.allocator, scene, self.swapchain_extent);
+            scene2d_resources.update_uniform_buffers(&self.allocator, self.swapchain_extent);
 
-            self.update_global_descriptors(scene);
+            scene2d_resources.update_buffers(&self.allocator, scene);
 
-            let vertex2d_count =
-                self.update_vertex2d_buffer(&vertex2d_buffer, &vertex2d_index_buffer, scene);
-
-            let batch_info = self.update_instance_buffer(&instance_buffer, scene);
+            let batch_info = scene3d_resources.update_instance_buffer(
+                &self.allocator,
+                scene,
+                self.swapchain_extent,
+            );
 
             let submit_semaphore = self.submit_semaphores[image_index as usize];
 
@@ -1819,7 +1026,7 @@ impl VulkanContext {
                 .unwrap();
 
             let shadow_depth_attachment = vk::RenderingAttachmentInfo::default()
-                .image_view(shadow_image_view)
+                .image_view(scene3d_resources.shadow_map_image_view)
                 .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
                 .load_op(vk::AttachmentLoadOp::CLEAR)
                 .store_op(vk::AttachmentStoreOp::STORE)
@@ -1847,7 +1054,7 @@ impl VulkanContext {
                 &self.device,
                 command_buffer,
                 &[ImageTransition {
-                    image: shadow_image.0,
+                    image: scene3d_resources.shadow_map_image.0,
                     current_layout: vk::ImageLayout::UNDEFINED,
                     new_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                     src_stage: vk::PipelineStageFlags2::TOP_OF_PIPE,
@@ -1878,11 +1085,14 @@ impl VulkanContext {
                 }],
             );
 
-            self.draw_shadow_map(
-                &batch_info,
+            scene3d_resources.draw_shadow_map(
+                &self.device,
                 command_buffer,
-                instance_buffer.0,
-                shadow_per_frame_descriptor_set,
+                self.pipeline_objects.shadow_graphics_pipeline,
+                self.pipeline_layout_3d,
+                &self.mesh_buffers,
+                &self.textures,
+                &batch_info,
             );
 
             self.device.cmd_end_rendering(command_buffer);
@@ -1899,7 +1109,7 @@ impl VulkanContext {
                 })];
 
             let main_depth_attachment = vk::RenderingAttachmentInfo::default()
-                .image_view(depth_image_view)
+                .image_view(scene3d_resources.depth_image_view)
                 .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
                 .load_op(vk::AttachmentLoadOp::CLEAR)
                 .store_op(vk::AttachmentStoreOp::STORE)
@@ -1937,7 +1147,7 @@ impl VulkanContext {
                     }
                     .as_barrier(),
                     ImageTransition {
-                        image: shadow_image.0,
+                        image: scene3d_resources.shadow_map_image.0,
                         current_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                         new_layout: vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
                         src_stage: vk::PipelineStageFlags2::EARLY_FRAGMENT_TESTS,
@@ -1969,14 +1179,34 @@ impl VulkanContext {
                 }],
             );
 
-            self.draw_skybox(command_buffer, main_per_frame_descriptor_set);
-            self.draw_main_scene(&batch_info, command_buffer, instance_buffer.0);
-            self.draw_2d(
+            scene3d_resources.draw_skybox(
+                &self.device,
                 command_buffer,
-                global2d_descriptor_set,
-                vertex2d_buffer.0,
-                vertex2d_index_buffer.0,
-                vertex2d_count,
+                self.pipeline_objects.skybox_graphics_pipeline,
+                self.pipeline_layout_3d,
+                &self.mesh_buffers,
+                &self.textures,
+                &self.material_descriptors,
+            );
+
+            scene3d_resources.draw_scene(
+                &self.device,
+                command_buffer,
+                self.pipeline_objects.main_graphics_pipeline,
+                self.pipeline_objects.main_transparent_graphics_pipeline,
+                self.pipeline_layout_3d,
+                &self.mesh_buffers,
+                &self.textures,
+                &self.material_descriptors,
+                &batch_info,
+            );
+
+            scene2d_resources.draw_scene(
+                &self.device,
+                command_buffer,
+                self.pipeline_objects.main_2d_graphics_pipeline,
+                self.pipeline_layout_2d,
+                &self.textures,
             );
 
             self.device.cmd_end_rendering(command_buffer);
@@ -2193,10 +1423,6 @@ impl VulkanContext {
                 .create_pipeline_layout(&pipeline_layout_info, None)
                 .unwrap()
         }
-    }
-
-    fn get_mesh_buffer(&self, mesh_id: MeshHandle) -> &MeshBuffer {
-        &self.mesh_buffers[mesh_id.0 as usize]
     }
 
     fn create_descriptor_pool(device: &ash::Device, set_count: u32) -> vk::DescriptorPool {

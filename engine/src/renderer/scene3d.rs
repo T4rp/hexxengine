@@ -1,6 +1,7 @@
 use std::{fs, mem};
 
 use ash::{prelude::VkResult, vk};
+use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
 use vk_mem::Alloc;
 
 use crate::{
@@ -8,13 +9,24 @@ use crate::{
     renderer::{
         mesh::{CameraUniform3d, InstanceVertex, MeshVertex, Scene3dUniform},
         pipelines::VulkanPipelineBuilder,
+        renderer::{MaterialDescriptor, MeshBuffer, MeshHandle, TextureDescriptors},
         textures::Texture,
         vkutils,
     },
+    scene::RenderScene,
 };
 
-const SHADOW_MAP_RESOLUTION: u32 = 2048;
+pub const SHADOW_MAP_RESOLUTION: u32 = 2048;
 const MAX_INSTANCE_COUNT: usize = 10000;
+
+#[derive(Debug)]
+pub struct MeshBatch {
+    pub mesh_id: MeshHandle,
+    pub material_id: u32,
+    pub instance_offset: u64,
+    pub instance_count: u32,
+    pub is_opaque: bool,
+}
 
 pub struct Resources {
     pub main_pass_descriptor_set: vk::DescriptorSet,
@@ -30,7 +42,6 @@ pub struct Resources {
 
     pub depth_image_view: vk::ImageView,
     pub depth_image: vkutils::AllocatedImage,
-    pub extents_outdated: bool,
 
     pub shadow_map_image: vkutils::AllocatedImage,
     pub shadow_map_image_view: vk::ImageView,
@@ -42,17 +53,11 @@ impl Resources {
         allocator: &vk_mem::Allocator,
         command_pool: vk::CommandPool,
         queue: vk::Queue,
-        queue_family_index: u32,
+        _queue_family_index: u32,
         descriptor_pool: vk::DescriptorPool,
         scene_descriptor_layout: vk::DescriptorSetLayout,
         window_extent: vk::Extent2D,
     ) -> VkResult<Self> {
-        let command_buffer = vkutils::allocate_command_buffer(
-            device,
-            command_pool,
-            vk::CommandBufferLevel::PRIMARY,
-        )?;
-
         let depth_image = Self::create_depth_image(
             device,
             allocator,
@@ -75,7 +80,7 @@ impl Resources {
             vk::ImageUsageFlags::SAMPLED,
             vk::MemoryPropertyFlags::empty(),
         )?;
-        let shadow_map_image_view = Self::create_depth_image_view(device, &shadow_map_image)?;
+        let shadow_map_image_view = Self::create_shadow_map_image_view(device, &shadow_map_image)?;
         let shadow_map_sampler = Self::create_shadow_map_sampler(device)?;
 
         let camera_uniform_buffer = Self::create_camera_uniform_buffer(allocator)?;
@@ -103,10 +108,17 @@ impl Resources {
             instance_buffer,
             depth_image_view,
             depth_image,
-            extents_outdated: false,
             shadow_map_image,
             shadow_map_image_view,
         })
+    }
+
+    pub fn destroy(&mut self, _device: &ash::Device, allocator: &vk_mem::Allocator) {
+        vkutils::destroy_allocated_buffer(allocator, &mut self.camera_uniform_buffer);
+        vkutils::destroy_allocated_buffer(allocator, &mut self.scene_uniform_buffer);
+        vkutils::destroy_allocated_buffer(allocator, &mut self.instance_buffer);
+        vkutils::destroy_allocated_image(allocator, &mut self.depth_image);
+        vkutils::destroy_allocated_image(allocator, &mut self.shadow_map_image);
     }
 
     pub fn target_resized(
@@ -161,12 +173,433 @@ impl Resources {
         unsafe { device.update_descriptor_sets(&descriptor_write, &[]) };
     }
 
-    pub fn destroy(&mut self, device: &ash::Device, allocator: &vk_mem::Allocator) {
-        vkutils::destroy_allocated_buffer(allocator, &mut self.camera_uniform_buffer);
-        vkutils::destroy_allocated_buffer(allocator, &mut self.scene_uniform_buffer);
-        vkutils::destroy_allocated_buffer(allocator, &mut self.instance_buffer);
-        vkutils::destroy_allocated_image(allocator, &mut self.depth_image);
-        vkutils::destroy_allocated_image(allocator, &mut self.shadow_map_image);
+    pub fn update_uniform_buffers(
+        &mut self,
+        allocator: &vk_mem::Allocator,
+        scene: &RenderScene,
+        window_extent: vk::Extent2D,
+    ) {
+        let camera_buffer_allocation = self.camera_uniform_buffer.1;
+        let scene_buffer_allocation = self.scene_uniform_buffer.1;
+
+        let aspect_ratio = window_extent.width as f32 / window_extent.height as f32;
+        let (proj_3d, view_3d) = scene.camera.calc_perspective_matrices(aspect_ratio);
+
+        let corners = scene
+            .camera
+            .calc_frustrum_corners(aspect_ratio, 30.0, 500.0);
+
+        let mut frustrum_avg = Vec3::ZERO;
+
+        for corner in corners.iter() {
+            frustrum_avg += corner
+        }
+
+        frustrum_avg /= 8.0;
+
+        let lighting = &scene.lighting;
+        let camera_position = scene.camera.position;
+
+        let light_translation = lighting.sun_direction + frustrum_avg;
+
+        let light_rotation = Quat::look_at_rh(light_translation, frustrum_avg, Vec3::Y).inverse();
+
+        let light_view =
+            Mat4::from_rotation_translation(light_rotation, light_translation).inverse();
+
+        let light_view_mat3 = Mat3::from_mat4(light_view);
+
+        let mut min = Vec3::splat(0.0);
+        let mut max = Vec3::splat(0.0);
+
+        for corner in corners.iter() {
+            let lsc = light_view_mat3 * corner;
+            min = min.min(lsc);
+            max = max.max(lsc);
+        }
+
+        min.x -= 200.0;
+        max.x += 200.0;
+        min.y -= 200.0;
+        max.y += 200.0;
+
+        let z_mult = 10.0;
+
+        if min.z < 0.0 {
+            min.z *= z_mult
+        } else {
+            min.z /= z_mult
+        }
+
+        if max.z < 0.0 {
+            max.z /= z_mult
+        } else {
+            max.z *= z_mult
+        }
+
+        let shadow_snap = 1.0 / SHADOW_MAP_RESOLUTION as f32;
+
+        min /= shadow_snap;
+        min = min.floor();
+        min *= shadow_snap;
+
+        max /= shadow_snap;
+        max = max.floor();
+        max *= shadow_snap;
+
+        let mut light_proj = Mat4::orthographic_rh(min.x, max.x, min.y, max.y, min.z, max.z);
+        light_proj.y_axis *= Vec4::new(1.0, -1.0, 1.0, 1.0);
+
+        let camera_ubo = CameraUniform3d {
+            proj: proj_3d,
+            view: view_3d,
+            camera_position: Vec4::new(
+                camera_position.x,
+                camera_position.y,
+                camera_position.z,
+                0.0,
+            ),
+            light_proj,
+            light_view,
+        };
+
+        let scene_ubo = Scene3dUniform {
+            sun_direction: Vec4::new(
+                lighting.sun_direction.x,
+                lighting.sun_direction.y,
+                lighting.sun_direction.z,
+                0.0,
+            ),
+            sun_color: Vec4::new(
+                lighting.sun_color.x,
+                lighting.sun_color.y,
+                lighting.sun_color.z,
+                lighting.sun_power,
+            ),
+            ambient_color: Vec4::new(
+                lighting.ambient_color.x,
+                lighting.ambient_color.y,
+                lighting.ambient_color.z,
+                0.0,
+            ),
+        };
+
+        let camera_alloc_info = allocator.get_allocation_info(&camera_buffer_allocation);
+        let scene_alloc_info = allocator.get_allocation_info(&scene_buffer_allocation);
+
+        unsafe {
+            std::ptr::copy_nonoverlapping(&camera_ubo, camera_alloc_info.mapped_data.cast(), 1);
+            std::ptr::copy_nonoverlapping(&scene_ubo, scene_alloc_info.mapped_data.cast(), 1);
+        };
+    }
+
+    pub fn update_instance_buffer(
+        &mut self,
+        allocator: &vk_mem::Allocator,
+        scene: &RenderScene,
+        window_extent: vk::Extent2D,
+    ) -> Vec<MeshBatch> {
+        let mut meshes = scene.meshes.clone();
+
+        let aspect_ratio = window_extent.width as f32 / window_extent.height as f32;
+        let (proj, view) = scene.camera.calc_perspective_matrices(aspect_ratio);
+        let proj_view = proj * view;
+
+        meshes.sort_unstable_by_key(|m| {
+            let opacity = m.opacity;
+            let is_opaque = opacity == 1.0;
+            let depth = if is_opaque {
+                0
+            } else {
+                let model = proj_view * Vec4::new(m.position.x, m.position.y, m.position.z, 1.0);
+                let depth = model.z / model.w;
+                (depth * 100_000_000_000.0).round() as u32
+            };
+
+            (!is_opaque, depth, m.material_id, m.mesh_id)
+        });
+
+        let mesh_count = meshes.len().min(MAX_INSTANCE_COUNT);
+
+        let mut instances: Vec<InstanceVertex> = Vec::new();
+        let mut batch_infos: Vec<MeshBatch> = Vec::new();
+
+        let mut start = 0;
+
+        while start < mesh_count {
+            let is_opaque = meshes[start].opacity == 1.0;
+            let depth = if is_opaque {
+                0.0
+            } else {
+                let model = proj_view
+                    * Vec4::new(
+                        meshes[start].position.x,
+                        meshes[start].position.y,
+                        meshes[start].position.z,
+                        1.0,
+                    );
+                model.w
+            };
+
+            let key = (meshes[start].material_id, meshes[start].mesh_id, depth);
+
+            {
+                let mesh = &meshes[start];
+                instances.push(InstanceVertex::new(
+                    mesh.position,
+                    mesh.orientation,
+                    mesh.size,
+                    mesh.color,
+                    mesh.opacity,
+                ));
+            }
+
+            let mut end = start + 1;
+
+            while end < mesh_count {
+                let is_opaque = meshes[end].opacity == 1.0;
+                let depth = if is_opaque {
+                    0.0
+                } else {
+                    let model = proj_view
+                        * Vec4::new(
+                            meshes[end].position.x,
+                            meshes[end].position.y,
+                            meshes[end].position.z,
+                            1.0,
+                        );
+                    model.w
+                };
+
+                let new_key = (meshes[end].material_id, meshes[end].mesh_id, depth);
+
+                if new_key != key {
+                    break;
+                }
+
+                {
+                    let mesh = &meshes[end];
+                    instances.push(InstanceVertex::new(
+                        mesh.position,
+                        mesh.orientation,
+                        mesh.size,
+                        mesh.color,
+                        mesh.opacity,
+                    ));
+                }
+
+                end += 1;
+            }
+
+            batch_infos.push(MeshBatch {
+                mesh_id: key.1,
+                material_id: key.0,
+                instance_offset: start as u64 * mem::size_of::<InstanceVertex>() as u64,
+                instance_count: (end - start) as u32,
+                is_opaque,
+            });
+
+            start = end;
+        }
+
+        let alloc_info = allocator.get_allocation_info(&self.instance_buffer.1);
+
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                instances.as_ptr(),
+                alloc_info.mapped_data.cast(),
+                instances.len().min(MAX_INSTANCE_COUNT),
+            );
+        }
+
+        batch_infos
+    }
+
+    pub fn draw_shadow_map(
+        &mut self,
+        device: &ash::Device,
+        command_buffer: vk::CommandBuffer,
+        shadow_pipeline: vk::Pipeline,
+        pipeline_layout: vk::PipelineLayout,
+        meshes: &[MeshBuffer],
+        textures: &[TextureDescriptors],
+        batch_info: &[MeshBatch],
+    ) {
+        unsafe {
+            device.cmd_bind_pipeline(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                shadow_pipeline,
+            );
+
+            let shadow_descriptor_sets =
+                [self.shadow_pass_descriptor_set, textures[1].descriptor_set];
+
+            device.cmd_bind_descriptor_sets(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline_layout,
+                0,
+                &shadow_descriptor_sets,
+                &[],
+            );
+
+            for batch in batch_info.iter() {
+                // dont render shadows for transparent objects
+                // opaque objects are already sorted to be before transparent objects
+                if !batch.is_opaque {
+                    break;
+                }
+
+                let mesh_buffer = &meshes[batch.mesh_id.0 as usize];
+
+                device.cmd_bind_vertex_buffers(
+                    command_buffer,
+                    0,
+                    &[mesh_buffer.vertex_buffer.0, self.instance_buffer.0],
+                    &[0, batch.instance_offset],
+                );
+
+                device.cmd_bind_index_buffer(
+                    command_buffer,
+                    mesh_buffer.index_buffer.0,
+                    0,
+                    vk::IndexType::UINT16,
+                );
+
+                device.cmd_draw_indexed(
+                    command_buffer,
+                    mesh_buffer.index_count,
+                    batch.instance_count,
+                    0,
+                    0,
+                    0,
+                );
+            }
+        }
+    }
+
+    pub fn draw_skybox(
+        &mut self,
+        device: &ash::Device,
+        command_buffer: vk::CommandBuffer,
+        skybox_pipeline: vk::Pipeline,
+        pipeline_layout: vk::PipelineLayout,
+        meshes: &[MeshBuffer],
+        textures: &[TextureDescriptors],
+        materials: &[MaterialDescriptor],
+    ) {
+        unsafe {
+            let main_descriptor_sets = [
+                self.main_pass_descriptor_set,
+                textures[0].descriptor_set,
+                materials[0].descriptor_set,
+            ];
+
+            device.cmd_bind_descriptor_sets(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline_layout,
+                0,
+                &main_descriptor_sets,
+                &[],
+            );
+
+            device.cmd_bind_pipeline(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                skybox_pipeline,
+            );
+
+            let cube_mesh = &meshes[0];
+
+            device.cmd_bind_vertex_buffers(command_buffer, 0, &[cube_mesh.vertex_buffer.0], &[0]);
+
+            device.cmd_bind_index_buffer(
+                command_buffer,
+                cube_mesh.index_buffer.0,
+                0,
+                vk::IndexType::UINT16,
+            );
+
+            device.cmd_draw_indexed(command_buffer, cube_mesh.index_count, 1, 0, 0, 0);
+        }
+    }
+
+    pub fn draw_scene(
+        &mut self,
+        device: &ash::Device,
+        command_buffer: vk::CommandBuffer,
+        opaque_scene_pipeline: vk::Pipeline,
+        transparent_scene_pipeline: vk::Pipeline,
+        pipeline_layout: vk::PipelineLayout,
+        meshes: &[MeshBuffer],
+        textures: &[TextureDescriptors],
+        _materials: &[MaterialDescriptor],
+        batch_info: &[MeshBatch],
+    ) {
+        unsafe {
+            let mut last_material = None;
+            let mut is_opaque = None;
+
+            for batch in batch_info.iter() {
+                if is_opaque != Some(batch.is_opaque) {
+                    is_opaque = Some(batch.is_opaque);
+
+                    let pipeline = if batch.is_opaque {
+                        opaque_scene_pipeline
+                    } else {
+                        transparent_scene_pipeline
+                    };
+
+                    device.cmd_bind_pipeline(
+                        command_buffer,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        pipeline,
+                    );
+                }
+
+                if last_material != Some(batch.material_id) {
+                    last_material = Some(batch.material_id);
+
+                    let descriptor_sets = [textures[batch.material_id as usize].descriptor_set];
+
+                    device.cmd_bind_descriptor_sets(
+                        command_buffer,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        pipeline_layout,
+                        1,
+                        &descriptor_sets,
+                        &[],
+                    );
+                }
+
+                let mesh_buffer = &meshes[batch.mesh_id.0 as usize];
+
+                device.cmd_bind_vertex_buffers(
+                    command_buffer,
+                    0,
+                    &[mesh_buffer.vertex_buffer.0, self.instance_buffer.0],
+                    &[0, batch.instance_offset],
+                );
+
+                device.cmd_bind_index_buffer(
+                    command_buffer,
+                    mesh_buffer.index_buffer.0,
+                    0,
+                    vk::IndexType::UINT16,
+                );
+
+                device.cmd_draw_indexed(
+                    command_buffer,
+                    mesh_buffer.index_count,
+                    batch.instance_count,
+                    0,
+                    0,
+                    0,
+                );
+            }
+        }
     }
 
     fn create_instance_buffer(allocator: &vk_mem::Allocator) -> VkResult<vkutils::AllocatedBuffer> {
@@ -396,6 +829,7 @@ pub struct PipelineObjects {
     pub opaque_pipeline: vk::Pipeline,
     pub transparent_pipeline: vk::Pipeline,
     pub shadow_pipeline: vk::Pipeline,
+    pub skybox_pipeline: vk::Pipeline,
 }
 
 impl PipelineObjects {
@@ -513,10 +947,68 @@ impl PipelineObjects {
             .shader_stages(&shadow_shader_stages)
             .no_color_attachments();
 
+        let shadow_vert_shader_code = fs::read(format!("{}/skybox.vert.spv", ASSET_PATH)).unwrap();
+        let shadow_frag_shader_code = fs::read(format!("{}/skybox.frag.spv", ASSET_PATH)).unwrap();
+        let shadow_vert_shader =
+            vkutils::create_shader_module(device, &shadow_vert_shader_code).unwrap();
+        let shadow_frag_shader =
+            vkutils::create_shader_module(device, &shadow_frag_shader_code).unwrap();
+
+        let shadow_shader_stages = [
+            vk::PipelineShaderStageCreateInfo::default()
+                .stage(vk::ShaderStageFlags::VERTEX)
+                .module(shadow_vert_shader)
+                .name(c"main"),
+            vk::PipelineShaderStageCreateInfo::default()
+                .stage(vk::ShaderStageFlags::FRAGMENT)
+                .module(shadow_frag_shader)
+                .name(c"main"),
+        ];
+
+        let shadow_vertex_attributes = MeshVertex::get_attribute_descriptions();
+        let shadow_vertex_bindings = [MeshVertex::get_binding_description()];
+
+        let skybox_pipeline_builder = opaque_pipeline_builder
+            .clone()
+            .pipeline_layout(scene3d_pipeline_layout)
+            .shader_stages(&shadow_shader_stages)
+            .vertex_input_state(
+                vk::PipelineVertexInputStateCreateInfo::default()
+                    .vertex_attribute_descriptions(&shadow_vertex_attributes)
+                    .vertex_binding_descriptions(&shadow_vertex_bindings),
+            )
+            .rasterizer(
+                vk::PipelineRasterizationStateCreateInfo::default()
+                    .depth_clamp_enable(false)
+                    .polygon_mode(vk::PolygonMode::FILL)
+                    .line_width(1.0)
+                    .cull_mode(vk::CullModeFlags::FRONT)
+                    .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
+                    .depth_bias_enable(false),
+            )
+            .colorblend_state(
+                vk::PipelineColorBlendAttachmentState::default()
+                    .blend_enable(false)
+                    .color_write_mask(vk::ColorComponentFlags::RGBA)
+                    .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
+                    .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+                    .color_blend_op(vk::BlendOp::ADD)
+                    .src_alpha_blend_factor(vk::BlendFactor::ONE)
+                    .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
+                    .alpha_blend_op(vk::BlendOp::ADD),
+            )
+            .depth_stencil_state(
+                vk::PipelineDepthStencilStateCreateInfo::default()
+                    .depth_test_enable(false)
+                    .depth_write_enable(false)
+                    .depth_compare_op(vk::CompareOp::GREATER),
+            );
+
         Ok(Self {
             opaque_pipeline: opaque_pipeline_builder.build(device).unwrap(),
             transparent_pipeline: transparent_pipeline_builder.build(device).unwrap(),
             shadow_pipeline: shadow_pipeline_builder.build(device).unwrap(),
+            skybox_pipeline: skybox_pipeline_builder.build(device).unwrap(),
         })
     }
 }
