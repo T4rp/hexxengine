@@ -16,7 +16,7 @@ use crate::{
 const SHADOW_MAP_RESOLUTION: u32 = 2048;
 const MAX_INSTANCE_COUNT: usize = 10000;
 
-pub struct Scene3dResources {
+pub struct Resources {
     pub main_pass_descriptor_set: vk::DescriptorSet,
     pub shadow_pass_descriptor_set: vk::DescriptorSet,
 
@@ -36,7 +36,7 @@ pub struct Scene3dResources {
     pub shadow_map_image_view: vk::ImageView,
 }
 
-impl Scene3dResources {
+impl Resources {
     pub fn new(
         device: &ash::Device,
         allocator: &vk_mem::Allocator,
@@ -159,6 +159,14 @@ impl Scene3dResources {
             .image_info(&skybox_image_info)];
 
         unsafe { device.update_descriptor_sets(&descriptor_write, &[]) };
+    }
+
+    pub fn destroy(&mut self, device: &ash::Device, allocator: &vk_mem::Allocator) {
+        vkutils::destroy_allocated_buffer(allocator, &mut self.camera_uniform_buffer);
+        vkutils::destroy_allocated_buffer(allocator, &mut self.scene_uniform_buffer);
+        vkutils::destroy_allocated_buffer(allocator, &mut self.instance_buffer);
+        vkutils::destroy_allocated_image(allocator, &mut self.depth_image);
+        vkutils::destroy_allocated_image(allocator, &mut self.shadow_map_image);
     }
 
     fn create_instance_buffer(allocator: &vk_mem::Allocator) -> VkResult<vkutils::AllocatedBuffer> {
@@ -384,13 +392,13 @@ impl Scene3dResources {
     }
 }
 
-pub struct Scene3dPipelineObjects {
+pub struct PipelineObjects {
     pub opaque_pipeline: vk::Pipeline,
     pub transparent_pipeline: vk::Pipeline,
     pub shadow_pipeline: vk::Pipeline,
 }
 
-impl Scene3dPipelineObjects {
+impl PipelineObjects {
     pub fn new(
         device: &ash::Device,
         scene3d_pipeline_layout: vk::PipelineLayout,
@@ -510,47 +518,5 @@ impl Scene3dPipelineObjects {
             transparent_pipeline: transparent_pipeline_builder.build(device).unwrap(),
             shadow_pipeline: shadow_pipeline_builder.build(device).unwrap(),
         })
-    }
-}
-
-pub struct Scene3dPass {
-    pub resources: Scene3dResources,
-}
-
-impl Scene3dPass {
-    pub fn new(
-        device: &ash::Device,
-        allocator: &vk_mem::Allocator,
-        command_pool: vk::CommandPool,
-        queue: vk::Queue,
-        queue_family_index: u32,
-        descriptor_pool: vk::DescriptorPool,
-        scene_descriptor_layout: vk::DescriptorSetLayout,
-        window_extent: vk::Extent2D,
-    ) -> VkResult<Self> {
-        let resources = Scene3dResources::new(
-            device,
-            allocator,
-            command_pool,
-            queue,
-            queue_family_index,
-            descriptor_pool,
-            scene_descriptor_layout,
-            window_extent,
-        )?;
-
-        Ok(Self { resources })
-    }
-
-    pub fn target_resized(
-        &mut self,
-        device: &ash::Device,
-        allocator: &vk_mem::Allocator,
-        command_pool: vk::CommandPool,
-        queue: vk::Queue,
-        window_extent: vk::Extent2D,
-    ) -> VkResult<()> {
-        self.resources
-            .target_resized(device, allocator, command_pool, queue, window_extent)
     }
 }

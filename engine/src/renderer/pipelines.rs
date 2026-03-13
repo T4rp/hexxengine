@@ -6,7 +6,7 @@ use crate::{
     assets::ASSET_PATH,
     renderer::{
         mesh::{MeshVertex, Vertex2d},
-        scene3d::Scene3dPipelineObjects,
+        scene3d::PipelineObjects,
         vkutils::create_shader_module,
     },
 };
@@ -27,7 +27,7 @@ impl RendererPipelineObjects {
         surface_format: vk::SurfaceFormatKHR,
     ) -> Self {
         let pipelines_3d =
-            Scene3dPipelineObjects::new(device, pipeline_layout_3d, surface_format.format).unwrap();
+            PipelineObjects::new(device, pipeline_layout_3d, surface_format.format).unwrap();
 
         let main_graphics_pipeline = pipelines_3d.opaque_pipeline;
         let main_transparent_graphics_pipeline = pipelines_3d.transparent_pipeline;

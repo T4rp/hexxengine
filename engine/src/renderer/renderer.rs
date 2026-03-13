@@ -14,7 +14,7 @@ use crate::renderer::mesh::{
     Scene3dUniform, Vertex2d,
 };
 use crate::renderer::pipelines::RendererPipelineObjects;
-use crate::renderer::scene3d::{Scene3dPass, Scene3dResources};
+use crate::renderer::scene3d;
 use crate::renderer::text::{GlyphAtlas, GlyphRenderMode};
 use crate::renderer::textures::{SkyboxImageData, Texture};
 use crate::renderer::vkutils::{create_command_pool, transition_image};
@@ -69,15 +69,15 @@ unsafe extern "system" fn debug_messager_callback(
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub struct MeshHandle(u32);
+
 struct Scene2dResources {
     main_2d_pass_descriptor_set: vk::DescriptorSet,
     global2d_buffer: (vk::Buffer, vk_mem::Allocation),
     vertex2d_buffer: (vk::Buffer, vk_mem::Allocation),
     vertex2d_index_buffer: (vk::Buffer, vk_mem::Allocation),
 }
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct MeshHandle(u32);
 
 impl Scene2dResources {
     fn new(
@@ -143,8 +143,9 @@ impl Scene2dResources {
     }
 
     fn destroy(&mut self, _device: &ash::Device, allocator: &vk_mem::Allocator) {
-        unsafe { allocator.destroy_buffer(self.global2d_buffer.0, &mut self.global2d_buffer.1) };
         unsafe {
+            allocator.destroy_buffer(self.global2d_buffer.0, &mut self.global2d_buffer.1);
+            allocator.destroy_buffer(self.vertex2d_buffer.0, &mut self.vertex2d_buffer.1);
             allocator.destroy_buffer(
                 self.vertex2d_index_buffer.0,
                 &mut self.vertex2d_index_buffer.1,
@@ -160,7 +161,7 @@ struct RenderFrame {
     in_flight_fence: vk::Fence,
 
     scene2d_resources: Scene2dResources,
-    scene3d_resources: Scene3dResources,
+    scene3d_resources: scene3d::Resources,
 
     skybox_dirty: bool,
 }
@@ -202,7 +203,7 @@ impl RenderFrame {
 
         let in_flight_fence = unsafe { device.create_fence(&fence_create_info, None).unwrap() };
 
-        let scene3d_resources = Scene3dResources::new(
+        let scene3d_resources = scene3d::Resources::new(
             device,
             allocator,
             command_pool,
@@ -218,7 +219,7 @@ impl RenderFrame {
             device,
             allocator,
             descriptor_pool,
-            descriptor_layouts.global_3d_layout,
+            descriptor_layouts.global_2d_layout,
         );
 
         RenderFrame {
@@ -364,6 +365,7 @@ impl RenderFrame {
     }
 
     fn destroy(&mut self, device: &ash::Device, allocator: &vk_mem::Allocator) {
+        self.scene3d_resources.destroy(device, allocator);
         self.scene2d_resources.destroy(device, allocator);
     }
 }
@@ -1311,7 +1313,7 @@ impl VulkanContext {
             ),
         };
 
-        let mut proj_2d = Mat4::orthographic_rh(
+        let proj_2d = Mat4::orthographic_rh(
             0.0,
             self.swapchain_extent.width as f32,
             0.0,
