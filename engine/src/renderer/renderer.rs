@@ -967,14 +967,6 @@ impl VulkanContext {
         let scene3d_resources = &mut current_frame.scene3d_resources;
         let scene2d_resources = &mut current_frame.scene2d_resources;
 
-        if current_frame.skybox_dirty {
-            scene3d_resources.update_skybox(
-                &self.device,
-                &self.skybox_textures[scene.lighting.skybox_id as usize],
-            );
-            current_frame.skybox_dirty = false;
-        }
-
         unsafe {
             self.device
                 .wait_for_fences(&[in_flight_fence], true, 1000000000)
@@ -997,6 +989,14 @@ impl VulkanContext {
             }
 
             self.device.reset_fences(&[in_flight_fence]).unwrap();
+
+            if current_frame.skybox_dirty {
+                scene3d_resources.update_skybox(
+                    &self.device,
+                    &self.skybox_textures[scene.lighting.skybox_id as usize],
+                );
+                current_frame.skybox_dirty = false;
+            }
 
             scene3d_resources.update_uniform_buffers(&self.allocator, scene, self.swapchain_extent);
             scene2d_resources.update_uniform_buffers(&self.allocator, self.swapchain_extent);
