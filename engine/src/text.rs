@@ -1,5 +1,6 @@
 use std::{collections::HashMap, fmt::Display, fs};
 
+use glam::UVec2;
 use image::{ImageBuffer, RgbaImage};
 use paidtype::freetype::{
     FT_LOAD_DEFAULT, FT_Render_Mode__FT_RENDER_MODE_NORMAL, FT_Render_Mode__FT_RENDER_MODE_SDF,
@@ -8,7 +9,7 @@ use paidtype::freetype::{
 use crate::{
     assets::ASSET_PATH,
     freetype::{Face, FreetypeError, FreetypeLibrary},
-    shapes::Rect,
+    shapes::{Rect, Region2d},
 };
 
 const MIN_BIN_LENGTH: u32 = 8;
@@ -45,6 +46,7 @@ pub struct GlyphAtlas {
     pub bins: Vec<Rect>,
     pub glyphs: HashMap<GlyphKey, GlyphData>,
     pub render_mode: GlyphRenderMode,
+    pub dirty_region: Option<Region2d>,
 }
 
 #[derive(Debug)]
@@ -101,6 +103,7 @@ impl GlyphAtlas {
             bins,
             glyphs,
             render_mode,
+            dirty_region: None,
         }
     }
 
@@ -322,10 +325,34 @@ impl GlyphAtlas {
             is_empty: false,
         };
 
+        self.update_dirty_region(&glyph_bounds);
+
         self.glyphs.insert(glyph_key, glyph);
         self.break_bin(chosen_bin_index, glyph_bounds);
 
         Ok(())
+    }
+
+    pub fn flush_dirty_region(&mut self) {
+        self.dirty_region = None;
+    }
+
+    fn update_dirty_region(&mut self, rect: &Rect) {
+        if let Some(region) = self.dirty_region.as_mut() {
+            region.top_left = region.top_left.min(UVec2 {
+                x: rect.x,
+                y: rect.y,
+            });
+            region.bottom_right = region.bottom_right.max(UVec2 {
+                x: rect.x + rect.width,
+                y: rect.y + rect.height,
+            });
+        } else {
+            self.dirty_region = Some(Region2d {
+                top_left: UVec2::new(rect.x, rect.y),
+                bottom_right: UVec2::new(rect.x + rect.width, rect.y + rect.height),
+            })
+        };
     }
 
     pub fn debug_render(&self) -> RgbaImage {
@@ -452,5 +479,22 @@ mod tests {
         }
 
         atlas.get_glyphs("the quick brown fox jumps over the lazy dog", 18);
+    }
+
+    #[test]
+    fn dirty_region() {
+        let mut atlas = GlyphAtlas::new(GlyphRenderMode::Normal, 256, 256);
+
+        atlas.load_glyph(67 as u64, 18).unwrap();
+        assert_eq!(atlas.dirty_region.is_some(), true);
+
+        atlas.flush_dirty_region();
+        assert_eq!(atlas.dirty_region, None);
+
+        atlas.load_glyph(67 as u64, 18).unwrap();
+        assert_eq!(atlas.dirty_region, None);
+
+        atlas.load_glyph(67 as u64, 24).unwrap();
+        assert_eq!(atlas.dirty_region.is_some(), true);
     }
 }

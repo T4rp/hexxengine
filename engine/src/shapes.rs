@@ -1,3 +1,5 @@
+use glam::UVec2;
+
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
 pub struct Rect {
     pub x: u32,
@@ -20,4 +22,10 @@ impl Rect {
             && self.y + self.height >= rect.y
             && rect.y + rect.height >= self.y
     }
+}
+
+#[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
+pub struct Region2d {
+    pub top_left: UVec2,
+    pub bottom_right: UVec2,
 }
