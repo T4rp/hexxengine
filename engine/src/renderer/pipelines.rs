@@ -28,7 +28,7 @@ impl RendererPipelineObjects {
         let skybox_graphics_pipeline = pipelines_3d.skybox_pipeline;
 
         let main_2d_graphics_pipeline =
-            scene2d::create_scene2_pipeline(device, pipeline_layout_2d, surface_format);
+            scene2d::create_scene2_pipeline(device, pipeline_layout_2d, surface_format).unwrap();
 
         Self {
             main_2d_graphics_pipeline,

@@ -15,6 +15,7 @@ use crate::renderer::scene3d::{self, SHADOW_MAP_RESOLUTION};
 use crate::renderer::textures::{SkyboxImageData, Texture};
 use crate::renderer::vkutils::create_command_pool;
 use crate::scene::RenderScene;
+use crate::text::{GlyphAtlas, GlyphRenderMode};
 
 const USE_VALIDATION_LAYERS: bool = true;
 const MAX_FRAMES: usize = 2;
@@ -85,6 +86,7 @@ impl RenderFrame {
         descriptor_layouts: &DescriptorSetLayouts,
         window_extent: vk::Extent2D,
         queue_family_index: u32,
+        glyph_atlas: &GlyphAtlas,
     ) -> Self {
         let command_pool = create_command_pool(device, queue_family_index).unwrap();
 
@@ -130,6 +132,7 @@ impl RenderFrame {
             allocator,
             descriptor_pool,
             descriptor_layouts.global_2d_layout,
+            &glyph_atlas,
         )
         .unwrap();
 
@@ -506,7 +509,6 @@ pub struct VulkanContext {
     render_frames: Vec<RenderFrame>,
 
     descriptor_set_layouts: DescriptorSetLayouts,
-    material_descriptors: Vec<MaterialDescriptor>,
     descriptor_pool: vk::DescriptorPool,
     pipeline_layout_3d: vk::PipelineLayout,
     pipeline_objects: RendererPipelineObjects,
@@ -514,8 +516,11 @@ pub struct VulkanContext {
 
     mesh_buffers: Vec<MeshBuffer>,
     textures: Vec<TextureDescriptors>,
+    material_descriptors: Vec<MaterialDescriptor>,
     skybox_textures: Vec<Texture>,
     current_skybox: Option<u32>,
+
+    glyph_atlas: GlyphAtlas,
 }
 
 fn create_instance(entry: &ash::Entry, raw_display_handle: RawDisplayHandle) -> ash::Instance {
@@ -671,6 +676,8 @@ fn create_submit_semaphores(device: &ash::Device, count: usize) -> Vec<vk::Semap
 
 impl VulkanContext {
     pub fn new(window: &Window) -> Self {
+        let glyph_atlas = GlyphAtlas::new(GlyphRenderMode::Normal, 1024, 1024);
+
         let raw_window_handle = window.window_handle().unwrap().as_raw();
         let raw_display_handle = window.display_handle().unwrap().as_raw();
 
@@ -832,6 +839,7 @@ impl VulkanContext {
             &descriptor_set_layouts,
             swapchain_extent,
             graphics_queue_family_index,
+            &glyph_atlas,
         );
 
         let submit_semaphores = create_submit_semaphores(&device, swapchain_images.len());
@@ -942,6 +950,7 @@ impl VulkanContext {
             pipeline_objects,
             surface_loader,
             swapchain_loader,
+            glyph_atlas,
         }
     }
 
@@ -1542,6 +1551,7 @@ impl VulkanContext {
         descriptor_layouts: &DescriptorSetLayouts,
         window_extent: vk::Extent2D,
         queue_family_index: u32,
+        glyph_atlas: &GlyphAtlas,
     ) -> Vec<RenderFrame> {
         let frames: Vec<RenderFrame> = (0..MAX_FRAMES)
             .map(|_i| -> RenderFrame {
@@ -1553,6 +1563,7 @@ impl VulkanContext {
                     descriptor_layouts,
                     window_extent,
                     queue_family_index,
+                    glyph_atlas,
                 )
             })
             .collect();

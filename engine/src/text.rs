@@ -8,33 +8,10 @@ use paidtype::freetype::{
 use crate::{
     assets::ASSET_PATH,
     freetype::{Face, FreetypeError, FreetypeLibrary},
+    shapes::Rect,
 };
 
 const MIN_BIN_LENGTH: u32 = 8;
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
-pub struct Rect {
-    x: u32,
-    y: u32,
-    width: u32,
-    height: u32,
-}
-
-impl Rect {
-    fn contains(&self, rect: &Rect) -> bool {
-        rect.x >= self.x
-            && rect.x + rect.width <= self.x + self.width
-            && rect.y >= self.y
-            && rect.y + rect.height <= self.y + self.height
-    }
-
-    pub fn intersects(&self, rect: &Rect) -> bool {
-        self.x + self.width >= rect.x
-            && rect.x + rect.width >= self.x
-            && self.y + self.height >= rect.y
-            && rect.y + rect.height >= self.y
-    }
-}
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct GlyphData {
@@ -430,7 +407,7 @@ impl GlyphAtlas {
 
 #[cfg(test)]
 mod tests {
-    use crate::renderer::text::{GlyphAtlas, GlyphRenderMode};
+    use crate::text::{GlyphAtlas, GlyphRenderMode};
 
     #[test]
     fn creation() {

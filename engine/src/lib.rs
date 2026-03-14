@@ -1,4 +1,5 @@
 mod freetype;
+mod text;
 
 pub mod assets;
 pub mod color;
@@ -6,6 +7,7 @@ pub mod input;
 pub mod physics;
 pub mod renderer;
 pub mod scene;
+pub mod shapes;
 
 pub use ash;
 pub use glam;
