@@ -1,7 +1,10 @@
 use std::{fs, mem};
 
-use ash::{prelude::VkResult, vk};
-use glam::Mat4;
+use ash::{
+    prelude::VkResult,
+    vk::{self, ImageAspectFlags},
+};
+use glam::{Mat4, UVec2};
 use vk_mem::Alloc;
 
 use crate::{
@@ -13,7 +16,7 @@ use crate::{
         vkutils,
     },
     scene::RenderScene,
-    shapes::Rect,
+    shapes::{Rect, Region2d},
     text::GlyphAtlas,
 };
 
@@ -25,8 +28,10 @@ pub struct Resources {
     pub vertex_buffer: vkutils::AllocatedBuffer,
     pub index_buffer: vkutils::AllocatedBuffer,
     pub glyph_atlas_image: vkutils::AllocatedImage,
-    pub dirty_region: Option<Rect>,
+    pub dirty_region: Option<Region2d>,
     pub vertex_count: u32,
+    glyph_atlas_view: vk::ImageView,
+    glyph_atlas_staging_buffer: (vk::Buffer, vk_mem::Allocation),
 }
 
 impl Resources {
@@ -82,18 +87,23 @@ impl Resources {
         let glyph_atlas_image =
             Self::create_glyph_atlas_image(allocator, glyph_atlas.width, glyph_atlas.height)?;
 
+        let glyph_atlas_view = Self::create_glyph_atlas_view(device, glyph_atlas_image.0)?;
+
+        let glyph_atlas_staging_buffer =
+            Self::create_staging_buffer(device, allocator, glyph_atlas.width, glyph_atlas.height)?;
+
         Ok(Resources {
             camera_uniform_buffer,
             camera_descriptor_set: camera2d_descriptor_set,
             vertex_buffer,
             index_buffer,
             glyph_atlas_image,
+            glyph_atlas_view,
+            glyph_atlas_staging_buffer,
             vertex_count: 0,
-            dirty_region: Some(Rect {
-                x: 0,
-                y: 0,
-                width: glyph_atlas.width,
-                height: glyph_atlas.height,
+            dirty_region: Some(Region2d {
+                top_left: UVec2::new(0, 0),
+                bottom_right: UVec2::new(glyph_atlas.width, glyph_atlas.height),
             }),
         })
     }
@@ -102,6 +112,7 @@ impl Resources {
         vkutils::destroy_allocated_buffer(allocator, &mut self.camera_uniform_buffer);
         vkutils::destroy_allocated_buffer(allocator, &mut self.vertex_buffer);
         vkutils::destroy_allocated_buffer(allocator, &mut self.index_buffer);
+        vkutils::destroy_allocated_buffer(allocator, &mut self.glyph_atlas_staging_buffer);
         vkutils::destroy_allocated_image(allocator, &mut self.glyph_atlas_image);
     }
 
@@ -174,6 +185,42 @@ impl Resources {
 
             device.cmd_draw_indexed(command_buffer, self.vertex_count, 1, 0, 0, 0);
         }
+    }
+
+    fn create_staging_buffer(
+        device: &ash::Device,
+        allocator: &vk_mem::Allocator,
+        width: u32,
+        height: u32,
+    ) -> VkResult<vkutils::AllocatedBuffer> {
+        let buffer_info = vk::BufferCreateInfo::default()
+            .usage(vk::BufferUsageFlags::TRANSFER_SRC)
+            .size((width * height) as u64);
+
+        let alloc_info = vk_mem::AllocationCreateInfo {
+            usage: vk_mem::MemoryUsage::AutoPreferHost,
+            flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE
+                | vk_mem::AllocationCreateFlags::MAPPED,
+            ..Default::default()
+        };
+
+        unsafe { allocator.create_buffer(&buffer_info, &alloc_info) }
+    }
+
+    fn create_glyph_atlas_view(device: &ash::Device, image: vk::Image) -> VkResult<vk::ImageView> {
+        let image_view_info = vk::ImageViewCreateInfo::default()
+            .image(image)
+            .view_type(vk::ImageViewType::TYPE_2D)
+            .format(vk::Format::R8_UNORM)
+            .subresource_range(vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: vk::REMAINING_MIP_LEVELS,
+                base_array_layer: 0,
+                layer_count: vk::REMAINING_ARRAY_LAYERS,
+            });
+
+        unsafe { device.create_image_view(&image_view_info, None) }
     }
 
     fn create_glyph_atlas_image(
