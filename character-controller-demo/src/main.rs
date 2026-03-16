@@ -1,6 +1,6 @@
 mod game;
 
-use hexxengine::winit;
+use hexxengine::winit::{self, event::ElementState, window::Fullscreen};
 use winit::{
     application::ApplicationHandler,
     event::{DeviceEvent, WindowEvent},
@@ -69,6 +69,20 @@ impl ApplicationHandler for App {
             } => {
                 if PhysicalKey::Code(KeyCode::Escape) == event.physical_key {
                     event_loop.exit();
+                    return;
+                }
+
+                if PhysicalKey::Code(KeyCode::KeyF) == event.physical_key
+                    && event.state == ElementState::Pressed
+                {
+                    let is_fullscreen = window.fullscreen().is_some();
+
+                    if !is_fullscreen {
+                        window.set_fullscreen(Some(Fullscreen::Borderless(None)));
+                    } else {
+                        window.set_fullscreen(None);
+                    }
+
                     return;
                 }
             }
