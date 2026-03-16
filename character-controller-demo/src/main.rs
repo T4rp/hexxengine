@@ -55,8 +55,6 @@ impl ApplicationHandler for App {
         let game = self.game.as_mut().unwrap();
         let window = self.window.as_ref().unwrap();
 
-        let mut should_draw = false;
-
         match event {
             WindowEvent::CloseRequested => {
                 event_loop.exit();
@@ -86,18 +84,11 @@ impl ApplicationHandler for App {
                     return;
                 }
             }
-            WindowEvent::RedrawRequested => {
-                should_draw = true;
-            }
+            WindowEvent::RedrawRequested => {}
             _ => {}
         }
 
-        game.update(window);
-        game.handle_window_event(&event);
-
-        if should_draw {
-            self.window.as_ref().unwrap().request_redraw();
-        }
+        game.handle_window_event(window, &event);
     }
 }
 

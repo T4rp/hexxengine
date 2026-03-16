@@ -36,6 +36,8 @@ use hexxengine::{
     scene::{Camera, Lighting, MeshNode, RenderScene},
 };
 
+const FRAMERATE_LIMIT_HZ: f32 = 1.0 / 80.0;
+
 const CAMERA_SPEED: f32 = 100.0;
 const STEP_HZ: f32 = 1.0 / 60.0;
 const CHARACTER_HEIGHT: f32 = 10.0;
@@ -323,6 +325,7 @@ pub struct Game {
     parts: Arena<Part>,
     physics_context: PhysicsContext,
     accumulator: f32,
+    draw_accumulator: f32,
     character: Character,
 }
 
@@ -419,6 +422,7 @@ impl Game {
             parts: cubes,
             physics_context,
             accumulator: 0.0,
+            draw_accumulator: 0.0,
             character,
         }
     }
@@ -522,6 +526,7 @@ impl Game {
 
         self.last_frame = now;
         self.accumulator += dt;
+        self.draw_accumulator += dt;
 
         self.update_character_movement();
 
@@ -598,7 +603,9 @@ impl Game {
         }
     }
 
-    pub fn handle_window_event(&mut self, event: &WindowEvent) {
+    pub fn handle_window_event(&mut self, window: &Window, event: &WindowEvent) {
+        let mut should_draw = false;
+
         match event {
             WindowEvent::KeyboardInput {
                 device_id: _,
@@ -623,8 +630,20 @@ impl Game {
             WindowEvent::Resized(size) => {
                 self.vk_ctx.handle_resize((size.width, size.height));
             }
-            WindowEvent::RedrawRequested => self.draw(),
+            WindowEvent::RedrawRequested => {
+                should_draw = true;
+                window.request_redraw();
+            }
             _ => {}
+        }
+
+        self.update(window);
+
+        if should_draw {
+            if self.draw_accumulator >= FRAMERATE_LIMIT_HZ {
+                self.draw();
+                self.draw_accumulator = 0.0;
+            }
         }
     }
 }
