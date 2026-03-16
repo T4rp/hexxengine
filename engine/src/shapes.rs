@@ -29,3 +29,20 @@ pub struct Region2d {
     pub top_left: UVec2,
     pub bottom_right: UVec2,
 }
+
+impl Region2d {
+    pub fn max(self, region: Region2d) -> Region2d {
+        Region2d {
+            top_left: self.top_left.min(region.top_left),
+            bottom_right: self.bottom_right.max(region.bottom_right),
+        }
+    }
+
+    pub fn width(&self) -> u32 {
+        self.bottom_right.x - self.top_left.x
+    }
+
+    pub fn heigth(&self) -> u32 {
+        self.bottom_right.y - self.top_left.y
+    }
+}

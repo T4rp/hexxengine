@@ -159,6 +159,7 @@ impl Texture {
 
             device.queue_wait_idle(queue)?;
             allocator.destroy_buffer(staging_buffer.0, &mut staging_buffer.1);
+            device.free_command_buffers(command_pool, &[command_buffer]);
         }
 
         Ok(Self {
@@ -317,6 +318,7 @@ impl Texture {
 
             device.queue_wait_idle(queue)?;
             allocator.destroy_buffer(staging_buffer.0, &mut staging_buffer.1);
+            device.free_command_buffers(command_pool, &[command_buffer]);
         }
 
         let sampler_info = vk::SamplerCreateInfo::default()

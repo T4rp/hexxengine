@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles, vec2, vec4};
 
 use crate::renderer::{
@@ -145,11 +147,28 @@ impl UiFrame {
     }
 }
 
+pub struct TextDrawCmd {
+    pub position: Vec2,
+    pub font_height: u32,
+    pub text: Cow<'static, str>,
+}
+
+impl TextDrawCmd {
+    pub fn new(position: Vec2, height: u32, text: impl Into<Cow<'static, str>>) -> Self {
+        Self {
+            position,
+            font_height: height,
+            text: text.into(),
+        }
+    }
+}
+
 pub struct RenderScene {
     pub camera: Camera,
     pub meshes: Vec<MeshNode>,
     pub ui: Vec<UiFrame>,
     pub lighting: Lighting,
+    pub text_draws: Vec<TextDrawCmd>,
 }
 
 impl RenderScene {
@@ -158,6 +177,7 @@ impl RenderScene {
             camera,
             meshes: Vec::new(),
             ui: Vec::new(),
+            text_draws: Vec::new(),
             lighting,
         }
     }

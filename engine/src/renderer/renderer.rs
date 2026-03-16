@@ -676,7 +676,7 @@ fn create_submit_semaphores(device: &ash::Device, count: usize) -> Vec<vk::Semap
 
 impl VulkanContext {
     pub fn new(window: &Window) -> Self {
-        let glyph_atlas = GlyphAtlas::new(GlyphRenderMode::Normal, 1024, 1024);
+        let glyph_atlas = GlyphAtlas::new(GlyphRenderMode::Sdf, 1024, 1024);
 
         let raw_window_handle = window.window_handle().unwrap().as_raw();
         let raw_display_handle = window.display_handle().unwrap().as_raw();
@@ -966,6 +966,20 @@ impl VulkanContext {
             }
         }
 
+        for text_cmd in scene.text_draws.iter() {
+            self.glyph_atlas
+                .load_glyphs(text_cmd.text.as_ref(), text_cmd.font_height)
+                .unwrap();
+        }
+
+        for render_frame in self.render_frames.iter_mut() {
+            render_frame
+                .scene2d_resources
+                .mark_glyph_atlas_dirty(&self.glyph_atlas);
+        }
+
+        self.glyph_atlas.flush_dirty_region();
+
         let current_frame_index = self.current_frame % MAX_FRAMES;
         let current_frame = &mut self.render_frames[current_frame_index];
         let command_pool = current_frame.command_pool;
@@ -1006,6 +1020,16 @@ impl VulkanContext {
                 );
                 current_frame.skybox_dirty = false;
             }
+
+            scene2d_resources
+                .update_atlas_image(
+                    &self.device,
+                    &self.allocator,
+                    self.graphics_queue,
+                    current_frame.command_pool,
+                    &self.glyph_atlas,
+                )
+                .unwrap();
 
             scene3d_resources.update_uniform_buffers(&self.allocator, scene, self.swapchain_extent);
             scene2d_resources.update_uniform_buffers(&self.allocator, self.swapchain_extent);

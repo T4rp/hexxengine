@@ -2,9 +2,9 @@ use std::time::Instant;
 
 use hexxengine::{
     assets::ASSET_PATH,
-    glam::{self, vec2},
+    glam::{self, Vec2, vec2},
     rand, rapier3d,
-    scene::UiFrame,
+    scene::{TextDrawCmd, UiFrame},
     thunderdome, winit,
 };
 
@@ -201,6 +201,12 @@ impl Game {
         scene
             .ui
             .push(UiFrame::new(vec2(0.0, 0.0), vec2(600.0, 300.0), 1));
+
+        scene.text_draws.push(TextDrawCmd::new(
+            vec2(0.0, 0.0),
+            16,
+            "the quick brown fox doesnt not concern himself with subpixel rendering",
+        ));
 
         let mut rng = SmallRng::from_os_rng();
 

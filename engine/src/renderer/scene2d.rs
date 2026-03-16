@@ -1,4 +1,4 @@
-use std::{fs, mem};
+use std::{fs, mem, ptr};
 
 use ash::{
     prelude::VkResult,
@@ -10,6 +10,7 @@ use vk_mem::Alloc;
 use crate::{
     assets::ASSET_PATH,
     renderer::{
+        images::transition_images,
         mesh::{CameraUniform2d, Vertex2d},
         pipelines::VulkanPipelineBuilder,
         renderer::TextureDescriptors,
@@ -187,6 +188,119 @@ impl Resources {
         }
     }
 
+    pub fn update_atlas_image(
+        &mut self,
+        device: &ash::Device,
+        allocator: &vk_mem::Allocator,
+        queue: vk::Queue,
+        command_pool: vk::CommandPool,
+        glyph_atlas: &GlyphAtlas,
+    ) -> VkResult<()> {
+        let Some(dirty_region) = self.dirty_region else {
+            return Ok(());
+        };
+
+        let staging_alloc_info = allocator.get_allocation_info(&self.glyph_atlas_staging_buffer.1);
+        let size = (glyph_atlas.width * glyph_atlas.height) as usize;
+
+        unsafe {
+            ptr::copy_nonoverlapping(
+                glyph_atlas.bitmap.as_ptr(),
+                staging_alloc_info.mapped_data.cast(),
+                size,
+            );
+        }
+
+        let command_buffers = vkutils::allocate_command_buffers(
+            device,
+            command_pool,
+            1,
+            vk::CommandBufferLevel::PRIMARY,
+        )?;
+
+        let begin_info = vk::CommandBufferBeginInfo::default()
+            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+
+        unsafe {
+            device.begin_command_buffer(command_buffers[0], &begin_info)?;
+
+            vkutils::transition_image(
+                device,
+                command_buffers[0],
+                self.glyph_atlas_image.0,
+                vk::ImageLayout::UNDEFINED,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                vk::ImageAspectFlags::COLOR,
+            );
+
+            device.cmd_copy_buffer_to_image(
+                command_buffers[0],
+                self.glyph_atlas_staging_buffer.0,
+                self.glyph_atlas_image.0,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                &[vk::BufferImageCopy {
+                    buffer_offset: (dirty_region.top_left.x
+                        + dirty_region.top_left.y * glyph_atlas.width)
+                        as u64,
+                    buffer_row_length: glyph_atlas.width,
+                    buffer_image_height: glyph_atlas.height,
+                    image_subresource: vk::ImageSubresourceLayers {
+                        aspect_mask: vk::ImageAspectFlags::COLOR,
+                        mip_level: 0,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                    },
+                    image_offset: vk::Offset3D {
+                        x: dirty_region.top_left.x as i32,
+                        y: dirty_region.top_left.y as i32,
+                        z: 0,
+                    },
+                    image_extent: vk::Extent3D {
+                        width: dirty_region.width(),
+                        height: dirty_region.heigth(),
+                        depth: 1,
+                    },
+                }],
+            );
+
+            vkutils::transition_image(
+                device,
+                command_buffers[0],
+                self.glyph_atlas_image.0,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                vk::ImageAspectFlags::COLOR,
+            );
+
+            device.end_command_buffer(command_buffers[0])?;
+
+            device.queue_submit(
+                queue,
+                &[vk::SubmitInfo::default().command_buffers(&command_buffers)],
+                vk::Fence::null(),
+            )?;
+
+            device.queue_wait_idle(queue)?;
+            device.free_command_buffers(command_pool, &command_buffers);
+        };
+
+        self.dirty_region = None;
+
+        Ok(())
+    }
+
+    pub fn mark_glyph_atlas_dirty(&mut self, glyph_atlas: &GlyphAtlas) {
+        let Some(glyph_atlas_dirty_region) = glyph_atlas.dirty_region else {
+            return;
+        };
+
+        if let Some(region) = self.dirty_region.as_mut() {
+            *region = glyph_atlas_dirty_region
+        } else {
+            self.dirty_region = glyph_atlas.dirty_region;
+        }
+    }
+
     fn create_staging_buffer(
         device: &ash::Device,
         allocator: &vk_mem::Allocator,
@@ -240,7 +354,11 @@ impl Resources {
             .format(vk::Format::R8_UNORM)
             .tiling(vk::ImageTiling::LINEAR)
             .initial_layout(vk::ImageLayout::UNDEFINED)
-            .usage(vk::ImageUsageFlags::SAMPLED)
+            .usage(
+                vk::ImageUsageFlags::COLOR_ATTACHMENT
+                    | vk::ImageUsageFlags::SAMPLED
+                    | vk::ImageUsageFlags::TRANSFER_DST,
+            )
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
             .samples(vk::SampleCountFlags::TYPE_1)
             .flags(vk::ImageCreateFlags::empty());
