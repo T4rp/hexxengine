@@ -155,21 +155,6 @@ impl RenderFrame {
         queue: vk::Queue,
         window_extent: vk::Extent2D,
     ) {
-        unsafe {
-            device.destroy_semaphore(self.swapchain_semaphore, None);
-        };
-
-        let semaphore_create_info =
-            vk::SemaphoreCreateInfo::default().flags(vk::SemaphoreCreateFlags::empty());
-
-        let new_semaphore = unsafe {
-            device
-                .create_semaphore(&semaphore_create_info, None)
-                .unwrap()
-        };
-
-        self.swapchain_semaphore = new_semaphore;
-
         self.scene3d_resources
             .target_resized(device, allocator, command_pool, queue, window_extent)
             .unwrap();
