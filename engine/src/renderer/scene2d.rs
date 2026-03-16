@@ -14,7 +14,7 @@ use crate::{
         mesh::{CameraUniform2d, Vertex2d},
         pipelines::VulkanPipelineBuilder,
         renderer::TextureDescriptors,
-        vkutils,
+        vkutils::{self, AllocatedBuffer},
     },
     scene::RenderScene,
     shapes::{Rect, Region2d},
@@ -24,15 +24,18 @@ use crate::{
 const MAX_VERTICES_2D: usize = 50000;
 
 pub struct Resources {
-    pub camera_descriptor_set: vk::DescriptorSet,
+    pub global_descriptor_set: vk::DescriptorSet,
     pub camera_uniform_buffer: vkutils::AllocatedBuffer,
+
     pub vertex_buffer: vkutils::AllocatedBuffer,
     pub index_buffer: vkutils::AllocatedBuffer,
-    pub glyph_atlas_image: vkutils::AllocatedImage,
-    pub dirty_region: Option<Region2d>,
     pub vertex_count: u32,
-    glyph_atlas_view: vk::ImageView,
-    glyph_atlas_staging_buffer: (vk::Buffer, vk_mem::Allocation),
+
+    pub glyph_atlas_image: vkutils::AllocatedImage,
+    pub glyph_atlas_view: vk::ImageView,
+    pub glyph_atlas_sampler: vk::Sampler,
+    pub glyph_atlas_staging_buffer: (vk::Buffer, vk_mem::Allocation),
+    pub dirty_region: Option<Region2d>,
 }
 
 impl Resources {
@@ -51,37 +54,10 @@ impl Resources {
         let descriptor_sets =
             unsafe { device.allocate_descriptor_sets(&descriptor_set_alloc_info)? };
 
-        let camera2d_descriptor_set = descriptor_sets[0];
-
-        let global2d_uniform_buffer_info = vk::BufferCreateInfo::default()
-            .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
-            .size(mem::size_of::<CameraUniform2d>() as u64);
-
-        let uniform_alloc_info = vk_mem::AllocationCreateInfo {
-            flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE
-                | vk_mem::AllocationCreateFlags::MAPPED,
-            usage: vk_mem::MemoryUsage::AutoPreferHost,
-
-            ..Default::default()
-        };
+        let global_descriptor_set = descriptor_sets[0];
 
         let camera_uniform_buffer =
-            unsafe { allocator.create_buffer(&global2d_uniform_buffer_info, &uniform_alloc_info)? };
-
-        let camera_descriptor_buffer_info = [vk::DescriptorBufferInfo::default()
-            .offset(0)
-            .range(mem::size_of::<CameraUniform2d>() as u64)
-            .buffer(camera_uniform_buffer.0)];
-
-        let descriptor_write = [vk::WriteDescriptorSet::default()
-            .dst_set(camera2d_descriptor_set)
-            .dst_binding(0)
-            .dst_array_element(0)
-            .descriptor_count(1)
-            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-            .buffer_info(&camera_descriptor_buffer_info)];
-
-        unsafe { device.update_descriptor_sets(&descriptor_write, &[]) };
+            Self::create_camera_uniform_buffer(device, allocator, global_descriptor_set)?;
 
         let (vertex_buffer, index_buffer) = Self::create_vertex_buffer(allocator)?;
 
@@ -90,18 +66,32 @@ impl Resources {
 
         let glyph_atlas_view = Self::create_glyph_atlas_view(device, glyph_atlas_image.0)?;
 
-        let glyph_atlas_staging_buffer =
-            Self::create_staging_buffer(device, allocator, glyph_atlas.width, glyph_atlas.height)?;
+        let glyph_atlas_sampler = Self::create_atlas_sampler(device)?;
+
+        let glyph_atlas_staging_buffer = Self::create_atlas_staging_buffer(
+            device,
+            allocator,
+            glyph_atlas.width,
+            glyph_atlas.height,
+        )?;
+
+        Self::update_atlas_binding(
+            device,
+            global_descriptor_set,
+            glyph_atlas_view,
+            glyph_atlas_sampler,
+        );
 
         Ok(Resources {
+            global_descriptor_set,
             camera_uniform_buffer,
-            camera_descriptor_set: camera2d_descriptor_set,
             vertex_buffer,
             index_buffer,
+            vertex_count: 0,
             glyph_atlas_image,
             glyph_atlas_view,
+            glyph_atlas_sampler,
             glyph_atlas_staging_buffer,
-            vertex_count: 0,
             dirty_region: Some(Region2d {
                 top_left: UVec2::new(0, 0),
                 bottom_right: UVec2::new(glyph_atlas.width, glyph_atlas.height),
@@ -158,7 +148,7 @@ impl Resources {
         }
 
         unsafe {
-            let descriptor_sets = [self.camera_descriptor_set, textures[1].descriptor_set];
+            let descriptor_sets = [self.global_descriptor_set, textures[1].descriptor_set];
 
             device.cmd_bind_descriptor_sets(
                 command_buffer,
@@ -185,6 +175,35 @@ impl Resources {
             );
 
             device.cmd_draw_indexed(command_buffer, self.vertex_count, 1, 0, 0, 0);
+        }
+    }
+
+    pub fn update_uniform_buffers(
+        &self,
+        allocator: &vk_mem::Allocator,
+        window_extent: vk::Extent2D,
+    ) {
+        let view = Mat4::IDENTITY;
+        let proj = Mat4::orthographic_rh(
+            0.0,
+            window_extent.width as f32,
+            0.0,
+            window_extent.height as f32,
+            0.0,
+            1.0,
+        );
+
+        let camera_data = CameraUniform2d { proj, view };
+
+        let camera_uniform_buffer_alloc_info =
+            allocator.get_allocation_info(&self.camera_uniform_buffer.1);
+
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                &camera_data,
+                camera_uniform_buffer_alloc_info.mapped_data.cast(),
+                1,
+            );
         }
     }
 
@@ -301,7 +320,66 @@ impl Resources {
         }
     }
 
-    fn create_staging_buffer(
+    fn create_camera_uniform_buffer(
+        device: &ash::Device,
+        allocator: &vk_mem::Allocator,
+        camera_descriptor_set: vk::DescriptorSet,
+    ) -> VkResult<AllocatedBuffer> {
+        let camera_uniform_buffer = vk::BufferCreateInfo::default()
+            .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
+            .size(mem::size_of::<CameraUniform2d>() as u64);
+
+        let uniform_alloc_info = vk_mem::AllocationCreateInfo {
+            flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE
+                | vk_mem::AllocationCreateFlags::MAPPED,
+            usage: vk_mem::MemoryUsage::AutoPreferHost,
+
+            ..Default::default()
+        };
+
+        let camera_uniform_buffer =
+            unsafe { allocator.create_buffer(&camera_uniform_buffer, &uniform_alloc_info)? };
+
+        let camera_descriptor_buffer_info = [vk::DescriptorBufferInfo::default()
+            .offset(0)
+            .range(mem::size_of::<CameraUniform2d>() as u64)
+            .buffer(camera_uniform_buffer.0)];
+
+        let descriptor_write = [vk::WriteDescriptorSet::default()
+            .dst_set(camera_descriptor_set)
+            .dst_binding(0)
+            .dst_array_element(0)
+            .descriptor_count(1)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .buffer_info(&camera_descriptor_buffer_info)];
+
+        unsafe { device.update_descriptor_sets(&descriptor_write, &[]) };
+
+        Ok(camera_uniform_buffer)
+    }
+
+    fn update_atlas_binding(
+        device: &ash::Device,
+        descriptor_set: vk::DescriptorSet,
+        image_view: vk::ImageView,
+        sampler: vk::Sampler,
+    ) {
+        let atlas_image_info = [vk::DescriptorImageInfo::default()
+            .image_view(image_view)
+            .sampler(sampler)
+            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+
+        let descriptor_writes = [vk::WriteDescriptorSet::default()
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .dst_set(descriptor_set)
+            .descriptor_count(1)
+            .dst_binding(1)
+            .image_info(&atlas_image_info)];
+
+        unsafe { device.update_descriptor_sets(&descriptor_writes, &[]) }
+    }
+
+    fn create_atlas_staging_buffer(
         device: &ash::Device,
         allocator: &vk_mem::Allocator,
         width: u32,
@@ -319,6 +397,17 @@ impl Resources {
         };
 
         unsafe { allocator.create_buffer(&buffer_info, &alloc_info) }
+    }
+
+    fn create_atlas_sampler(device: &ash::Device) -> VkResult<vk::Sampler> {
+        let sampler_info = vk::SamplerCreateInfo::default()
+            .min_filter(vk::Filter::LINEAR)
+            .mag_filter(vk::Filter::LINEAR)
+            .unnormalized_coordinates(true)
+            .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+            .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE);
+
+        unsafe { device.create_sampler(&sampler_info, None) }
     }
 
     fn create_glyph_atlas_view(device: &ash::Device, image: vk::Image) -> VkResult<vk::ImageView> {
@@ -395,35 +484,6 @@ impl Resources {
         let index_buffer = unsafe { allocator.create_buffer(&index_buffer_info, &alloc_info)? };
 
         Ok((vertex_buffer, index_buffer))
-    }
-
-    pub fn update_uniform_buffers(
-        &self,
-        allocator: &vk_mem::Allocator,
-        window_extent: vk::Extent2D,
-    ) {
-        let view = Mat4::IDENTITY;
-        let proj = Mat4::orthographic_rh(
-            0.0,
-            window_extent.width as f32,
-            0.0,
-            window_extent.height as f32,
-            0.0,
-            1.0,
-        );
-
-        let camera_data = CameraUniform2d { proj, view };
-
-        let camera_uniform_buffer_alloc_info =
-            allocator.get_allocation_info(&self.camera_uniform_buffer.1);
-
-        unsafe {
-            std::ptr::copy_nonoverlapping(
-                &camera_data,
-                camera_uniform_buffer_alloc_info.mapped_data.cast(),
-                1,
-            );
-        }
     }
 }
 
