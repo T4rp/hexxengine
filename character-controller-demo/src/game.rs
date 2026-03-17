@@ -3,11 +3,12 @@ use std::time::Instant;
 use hexxengine::{
     assets::ASSET_PATH,
     glam::{self, Vec2},
+    physics::character_controller::{
+        CharacterCollision, CharacterLength, KinematicCharacterController,
+    },
     rand,
     rapier3d::{
         self,
-        control::{CharacterCollision, CharacterLength},
-        parry::shape::Capsule,
         prelude::{MassProperties, QueryFilter, QueryPipeline, Shape, ShapeType, SharedShape},
     },
     scene::UiText,
@@ -16,7 +17,6 @@ use hexxengine::{
 
 use glam::{EulerRot, Quat, Vec3, vec3};
 use rapier3d::{
-    control::KinematicCharacterController,
     math::Pose3,
     prelude::{ColliderBuilder, ColliderHandle, RigidBodyBuilder, RigidBodyHandle, RigidBodyType},
 };
@@ -33,7 +33,7 @@ use hexxengine::{
     assets::{get_first_gltf_mesh, load_skybox},
     color::hsv_to_rgb,
     input::InputState,
-    physics::PhysicsContext,
+    physics::context::PhysicsContext,
     renderer::renderer::{MeshHandle, VulkanContext},
     scene::{Camera, Lighting, MeshNode, RenderScene},
 };
@@ -653,10 +653,10 @@ impl Game {
         self.update(window);
 
         if should_draw {
-            if self.draw_accumulator >= FRAMERATE_LIMIT_HZ {
-                self.draw();
-                self.draw_accumulator = 0.0;
-            }
+            // if self.draw_accumulator >= FRAMERATE_LIMIT_HZ {
+            self.draw();
+            // self.draw_accumulator = 0.0;
+            // }
         }
     }
 }

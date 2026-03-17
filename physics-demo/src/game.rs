@@ -26,7 +26,7 @@ use hexxengine::{
     assets::{get_first_gltf_mesh, load_skybox},
     color::hsv_to_rgb,
     input::InputState,
-    physics::PhysicsContext,
+    physics::context::PhysicsContext,
     renderer::renderer::{MeshHandle, VulkanContext},
     scene::{Camera, Lighting, MeshNode, RenderScene},
 };

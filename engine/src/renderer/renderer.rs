@@ -612,7 +612,7 @@ fn create_swapchain(
         .surface(surface)
         .image_format(surface_format.format)
         .image_color_space(surface_format.color_space)
-        .present_mode(vk::PresentModeKHR::FIFO_RELAXED)
+        .present_mode(vk::PresentModeKHR::FIFO)
         .image_array_layers(1)
         .min_image_count(surface_capabilities.min_image_count + 1)
         .pre_transform(surface_capabilities.current_transform)
