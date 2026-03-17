@@ -3,15 +3,16 @@ use ash::{prelude::VkResult, vk};
 use crate::renderer::scene2d;
 use crate::renderer::scene3d;
 
-pub struct RendererPipelineObjects {
+pub struct RendererPipelines {
     pub main_2d_graphics_pipeline: vk::Pipeline,
     pub main_graphics_pipeline: vk::Pipeline,
     pub shadow_graphics_pipeline: vk::Pipeline,
     pub main_transparent_graphics_pipeline: vk::Pipeline,
     pub skybox_graphics_pipeline: vk::Pipeline,
+    text_2d_graphics_pipeline: vk::Pipeline,
 }
 
-impl RendererPipelineObjects {
+impl RendererPipelines {
     pub fn new(
         device: &ash::Device,
         pipeline_layout_3d: vk::PipelineLayout,
@@ -19,19 +20,23 @@ impl RendererPipelineObjects {
         surface_format: vk::SurfaceFormatKHR,
     ) -> Self {
         let pipelines_3d =
-            scene3d::PipelineObjects::new(device, pipeline_layout_3d, surface_format.format)
-                .unwrap();
+            scene3d::Pipelines::new(device, pipeline_layout_3d, surface_format.format).unwrap();
+
+        let pipelines_2d =
+            scene2d::Pipelines::new(device, pipeline_layout_2d, surface_format.format).unwrap();
 
         let main_graphics_pipeline = pipelines_3d.opaque_pipeline;
         let main_transparent_graphics_pipeline = pipelines_3d.transparent_pipeline;
         let shadow_graphics_pipeline = pipelines_3d.shadow_pipeline;
         let skybox_graphics_pipeline = pipelines_3d.skybox_pipeline;
 
-        let main_2d_graphics_pipeline =
-            scene2d::create_scene2_pipeline(device, pipeline_layout_2d, surface_format).unwrap();
+        let main_2d_graphics_pipeline = pipelines_2d.main_pipeline;
+        let text_2d_graphics_pipeline = pipelines_2d.text_pipeline;
 
         Self {
             main_2d_graphics_pipeline,
+            text_2d_graphics_pipeline,
+
             main_graphics_pipeline,
             shadow_graphics_pipeline,
             skybox_graphics_pipeline,

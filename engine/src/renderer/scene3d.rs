@@ -825,14 +825,14 @@ impl Resources {
     }
 }
 
-pub struct PipelineObjects {
+pub struct Pipelines {
     pub opaque_pipeline: vk::Pipeline,
     pub transparent_pipeline: vk::Pipeline,
     pub shadow_pipeline: vk::Pipeline,
     pub skybox_pipeline: vk::Pipeline,
 }
 
-impl PipelineObjects {
+impl Pipelines {
     pub fn new(
         device: &ash::Device,
         scene3d_pipeline_layout: vk::PipelineLayout,

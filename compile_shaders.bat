@@ -10,3 +10,6 @@ glslc shaders\skybox.frag -o assets\skybox.frag.spv
 glslc shaders\main2d.vert -o assets\main2d.vert.spv
 glslc shaders\main2d.frag -o assets\main2d.frag.spv
 
+glslc shaders\text.vert -o assets\text.vert.spv
+glslc shaders\text.frag -o assets\text.frag.spv
+

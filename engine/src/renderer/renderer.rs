@@ -9,7 +9,7 @@ use winit::window::Window;
 
 use crate::renderer::images::{ImageTransition, transition_images};
 use crate::renderer::mesh::{MaterialFlags, MaterialUniform, MeshVertex};
-use crate::renderer::pipelines::RendererPipelineObjects;
+use crate::renderer::pipelines::RendererPipelines;
 use crate::renderer::scene2d;
 use crate::renderer::scene3d::{self, SHADOW_MAP_RESOLUTION};
 use crate::renderer::textures::{SkyboxImageData, Texture};
@@ -511,7 +511,7 @@ pub struct VulkanContext {
     descriptor_set_layouts: DescriptorSetLayouts,
     descriptor_pool: vk::DescriptorPool,
     pipeline_layout_3d: vk::PipelineLayout,
-    pipeline_objects: RendererPipelineObjects,
+    pipeline_objects: RendererPipelines,
     pipeline_layout_2d: vk::PipelineLayout,
 
     mesh_buffers: Vec<MeshBuffer>,
@@ -847,7 +847,7 @@ impl VulkanContext {
         let pipeline_layout_3d = Self::create_3d_pipeline_layout(&device, &descriptor_set_layouts);
         let pipeline_layout_2d = Self::create_2d_pipeline_layout(&device, &descriptor_set_layouts);
 
-        let pipeline_objects = RendererPipelineObjects::new(
+        let pipeline_objects = RendererPipelines::new(
             &device,
             pipeline_layout_3d,
             pipeline_layout_2d,
