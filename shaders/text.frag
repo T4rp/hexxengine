@@ -9,5 +9,5 @@ layout (location = 0) out vec4 outFragColor;
 
 void main() {
 	float col = textureLod(glyphAtlasText, inUv, 0).r;
-	outFragColor = vec4(col, col, col, col) * inColor;
+	outFragColor = vec4(1.0, 1.0, 1.0, col) * inColor;
 }

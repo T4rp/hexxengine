@@ -225,6 +225,15 @@ impl Face {
 
         (advance_x, advance_y)
     }
+
+    pub fn get_glyph_left_top(&self) -> (i32, i32) {
+        let glyph_slot = unsafe { *self.raw_rec().glyph };
+
+        let bitmap_left = glyph_slot.bitmap_left as i32;
+        let bitmap_top = glyph_slot.bitmap_top as i32;
+
+        (bitmap_left, bitmap_top)
+    }
 }
 
 impl Drop for Face {

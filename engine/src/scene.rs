@@ -177,11 +177,20 @@ impl UiText {
         let mut vertex_count = 0;
         let mut index_count = 0;
 
-        let mut pos_x = 0.0;
-        let mut pos_y = 0.0;
+        let mut pen_x = self.position.x;
+        let mut pen_y = self.position.y;
 
         for glyph in glyphs {
+            if glyph.is_empty {
+                pen_x += glyph.advance.0 as f32;
+                pen_y += glyph.advance.1 as f32;
+                continue;
+            }
+
             let vert_offset = vertices.len();
+
+            let pos_x = pen_x + glyph.bitmap_left as f32;
+            let pos_y = pen_y - glyph.bitmap_top as f32;
 
             let glyph_x = glyph.rect.x as f32;
             let glyph_y = glyph.rect.y as f32;
@@ -224,8 +233,8 @@ impl UiText {
             vertex_count += 4;
             index_count += 6;
 
-            pos_x += glyph.advance.0 as f32;
-            pos_y += glyph.advance.1 as f32;
+            pen_x += glyph.advance.0 as f32;
+            pen_y += glyph.advance.1 as f32;
         }
 
         (vertex_count, index_count)

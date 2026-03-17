@@ -431,7 +431,7 @@ impl Resources {
         };
 
         if let Some(region) = self.dirty_region.as_mut() {
-            *region = glyph_atlas_dirty_region
+            *region = region.max(glyph_atlas_dirty_region)
         } else {
             self.dirty_region = glyph_atlas.dirty_region;
         }

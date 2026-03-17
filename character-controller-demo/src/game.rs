@@ -2,13 +2,15 @@ use std::time::Instant;
 
 use hexxengine::{
     assets::ASSET_PATH,
-    glam, rand,
+    glam::{self, Vec2},
+    rand,
     rapier3d::{
         self,
         control::{CharacterCollision, CharacterLength},
         parry::shape::Capsule,
         prelude::{MassProperties, QueryFilter, QueryPipeline, Shape, ShapeType, SharedShape},
     },
+    scene::UiText,
     thunderdome, winit,
 };
 
@@ -539,6 +541,17 @@ impl Game {
 
         self.clean_parts();
         self.update_camera(dt, window);
+
+        let horizontal_speed = (self.character.velocity * Vec3::new(1.0, 0.0, 1.0))
+            .length()
+            .floor();
+
+        self.scene.ui.clear();
+        self.scene.push_ui_text(UiText::new(
+            Vec2::new(0.0, 100.0),
+            32,
+            format!("speed: {}", horizontal_speed),
+        ));
 
         self.input_state.clear();
     }

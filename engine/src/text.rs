@@ -18,6 +18,8 @@ const MIN_BIN_LENGTH: u32 = 8;
 pub struct GlyphData {
     pub rect: Rect,
     pub advance: (i32, i32),
+    pub bitmap_top: i32,
+    pub bitmap_left: i32,
     pub is_empty: bool,
 }
 
@@ -78,9 +80,14 @@ impl Display for GlyphAtlasError {
 }
 
 impl GlyphAtlas {
-    pub fn new(render_mode: GlyphRenderMode, width: u32, height: u32) -> GlyphAtlas {
+    pub fn new(
+        render_mode: GlyphRenderMode,
+        font_path: &str,
+        width: u32,
+        height: u32,
+    ) -> GlyphAtlas {
         let library = FreetypeLibrary::new().unwrap();
-        let font_data = fs::read(format!("{}/unifont-17.0.03.otf", ASSET_PATH)).unwrap();
+        let font_data = fs::read(font_path).unwrap();
         let face = library.new_memory_face(&font_data, 0).unwrap();
 
         let pixel_width = width;
@@ -278,6 +285,7 @@ impl GlyphAtlas {
         .map_err(|err| GlyphAtlasError::Freetype(err))?;
 
         let (advance_x, advance_y) = self.face.get_glyph_advance();
+        let (bitmap_left, bitmap_top) = self.face.get_glyph_left_top();
 
         let Some(bitmap_data) = self.face.get_bitmap_data() else {
             let glyph = GlyphData {
@@ -288,6 +296,8 @@ impl GlyphAtlas {
                     height: 0,
                 },
                 advance: (advance_x, advance_y),
+                bitmap_top,
+                bitmap_left,
                 is_empty: true,
             };
 
@@ -322,6 +332,8 @@ impl GlyphAtlas {
         let glyph = GlyphData {
             rect: glyph_bounds,
             advance: (advance_x, advance_y),
+            bitmap_top,
+            bitmap_left,
             is_empty: false,
         };
 
@@ -401,18 +413,17 @@ impl GlyphAtlas {
         for character in text.chars() {
             let glyph_data = self
                 .get_glyph(character as u64, font_height)
-                .unwrap_or_else(|| {
-                    println!("failed to get glyph, falling back");
-                    &GlyphData {
-                        rect: Rect {
-                            x: 0,
-                            y: 0,
-                            width: 0,
-                            height: 0,
-                        },
-                        advance: (0, 0),
-                        is_empty: true,
-                    }
+                .unwrap_or_else(|| &GlyphData {
+                    rect: Rect {
+                        x: 0,
+                        y: 0,
+                        width: 0,
+                        height: 0,
+                    },
+                    advance: (0, 0),
+                    bitmap_top: 0,
+                    bitmap_left: 0,
+                    is_empty: true,
                 });
 
             glyphs.push(glyph_data)
@@ -437,16 +448,20 @@ impl GlyphAtlas {
 
 #[cfg(test)]
 mod tests {
-    use crate::text::{GlyphAtlas, GlyphRenderMode};
+    use crate::text::{ASSET_PATH, GlyphAtlas, GlyphRenderMode};
+
+    fn get_unifont_path() -> String {
+        format!("{}/unifont-17.0.03.otf", ASSET_PATH)
+    }
 
     #[test]
     fn creation() {
-        GlyphAtlas::new(GlyphRenderMode::Normal, 256, 256);
+        GlyphAtlas::new(GlyphRenderMode::Normal, &get_unifont_path(), 256, 256);
     }
 
     #[test]
     fn load_glyph_normal() {
-        let mut atlas = GlyphAtlas::new(GlyphRenderMode::Normal, 256, 256);
+        let mut atlas = GlyphAtlas::new(GlyphRenderMode::Normal, &get_unifont_path(), 256, 256);
 
         for height in [32, 24, 18, 16, 12] {
             for i in 32..128 {
@@ -459,7 +474,7 @@ mod tests {
 
     #[test]
     fn load_glyph_sdf() {
-        let mut atlas = GlyphAtlas::new(GlyphRenderMode::Sdf, 512, 512);
+        let mut atlas = GlyphAtlas::new(GlyphRenderMode::Sdf, &get_unifont_path(), 512, 512);
 
         for i in 32..128 {
             atlas.load_glyph(i as u64, 48).unwrap();
@@ -473,7 +488,7 @@ mod tests {
 
     #[test]
     fn get_glyphs() {
-        let mut atlas = GlyphAtlas::new(GlyphRenderMode::Normal, 128, 128);
+        let mut atlas = GlyphAtlas::new(GlyphRenderMode::Normal, &get_unifont_path(), 128, 128);
 
         for height in [18] {
             for i in 32..128 {
@@ -486,7 +501,7 @@ mod tests {
 
     #[test]
     fn dirty_region() {
-        let mut atlas = GlyphAtlas::new(GlyphRenderMode::Normal, 256, 256);
+        let mut atlas = GlyphAtlas::new(GlyphRenderMode::Normal, &get_unifont_path(), 256, 256);
 
         atlas.load_glyph(67 as u64, 18).unwrap();
         assert_eq!(atlas.dirty_region.is_some(), true);

@@ -7,6 +7,7 @@ use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
 
+use crate::assets::ASSET_PATH;
 use crate::renderer::images::{ImageTransition, transition_images};
 use crate::renderer::mesh::{MaterialFlags, MaterialUniform, MeshVertex};
 use crate::renderer::pipelines::RendererPipelines;
@@ -676,7 +677,12 @@ fn create_submit_semaphores(device: &ash::Device, count: usize) -> Vec<vk::Semap
 
 impl VulkanContext {
     pub fn new(window: &Window) -> Self {
-        let glyph_atlas = GlyphAtlas::new(GlyphRenderMode::Normal, 1024, 1024);
+        let glyph_atlas = GlyphAtlas::new(
+            GlyphRenderMode::Normal,
+            &format!("{}/unifont-17.0.03.otf", ASSET_PATH),
+            1024,
+            1024,
+        );
 
         let raw_window_handle = window.window_handle().unwrap().as_raw();
         let raw_display_handle = window.display_handle().unwrap().as_raw();
@@ -1193,17 +1199,17 @@ impl VulkanContext {
                         aspect_mask: vk::ImageAspectFlags::DEPTH,
                     }
                     .as_barrier(),
-                    ImageTransition {
-                        image: scene2d_resources.glyph_atlas_image.0,
-                        current_layout: vk::ImageLayout::UNDEFINED,
-                        new_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                        src_stage: vk::PipelineStageFlags2::NONE,
-                        src_access: vk::AccessFlags2::NONE,
-                        dst_stage: vk::PipelineStageFlags2::FRAGMENT_SHADER,
-                        dst_access: vk::AccessFlags2::SHADER_SAMPLED_READ,
-                        aspect_mask: vk::ImageAspectFlags::COLOR,
-                    }
-                    .as_barrier(),
+                    // ImageTransition {
+                    //     image: scene2d_resources.glyph_atlas_image.0,
+                    //     current_layout: vk::ImageLayout::UNDEFINED,
+                    //     new_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    //     src_stage: vk::PipelineStageFlags2::NONE,
+                    //     src_access: vk::AccessFlags2::NONE,
+                    //     dst_stage: vk::PipelineStageFlags2::FRAGMENT_SHADER,
+                    //     dst_access: vk::AccessFlags2::SHADER_SAMPLED_READ,
+                    //     aspect_mask: vk::ImageAspectFlags::COLOR,
+                    // }
+                    // .as_barrier(),
                 ],
             );
 
