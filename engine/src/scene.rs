@@ -2,9 +2,12 @@ use std::borrow::Cow;
 
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles, vec2, vec4};
 
-use crate::renderer::{
-    mesh::{MeshVertex, Vertex2d},
-    renderer::MeshHandle,
+use crate::{
+    renderer::{
+        mesh::{MeshVertex, Vertex2d},
+        renderer::MeshHandle,
+    },
+    text::GlyphAtlas,
 };
 
 pub struct Camera {
@@ -107,7 +110,7 @@ impl UiFrame {
         }
     }
 
-    pub fn push_verts(&self, vertices: &mut Vec<Vertex2d>, indices: &mut Vec<u16>) {
+    pub fn push_verts(&self, vertices: &mut Vec<Vertex2d>, indices: &mut Vec<u16>) -> (u32, u32) {
         let vert_offset = vertices.len();
 
         vertices.push(Vertex2d {
@@ -141,31 +144,104 @@ impl UiFrame {
         indices.push(vert_offset as u16);
         indices.push(vert_offset as u16 + 2);
         indices.push(vert_offset as u16 + 3);
+
+        (4, 6)
     }
 }
 
-pub struct TextDrawCmd {
+pub struct UiText {
     pub position: Vec2,
     pub font_height: u32,
     pub text: Cow<'static, str>,
+    pub color: Vec3,
 }
 
-impl TextDrawCmd {
+impl UiText {
     pub fn new(position: Vec2, height: u32, text: impl Into<Cow<'static, str>>) -> Self {
         Self {
             position,
             font_height: height,
             text: text.into(),
+            color: Vec3::ZERO,
         }
     }
+
+    pub fn push_verts(
+        &self,
+        glyph_atlas: &GlyphAtlas,
+        vertices: &mut Vec<Vertex2d>,
+        indices: &mut Vec<u16>,
+    ) -> (u32, u32) {
+        let glyphs = glyph_atlas.get_glyphs(&self.text, self.font_height);
+
+        let mut vertex_count = 0;
+        let mut index_count = 0;
+
+        let mut pos_x = 0.0;
+        let mut pos_y = 0.0;
+
+        for glyph in glyphs {
+            let vert_offset = vertices.len();
+
+            let glyph_x = glyph.rect.x as f32;
+            let glyph_y = glyph.rect.y as f32;
+
+            let glyph_width = glyph.rect.width as f32;
+            let glyph_height = glyph.rect.height as f32;
+
+            vertices.push(Vertex2d {
+                pos: Vec2::new(pos_x, pos_y),
+                uv: Vec2::new(glyph_x, glyph_y),
+                color: Vec4::new(self.color.x, self.color.y, self.color.z, 1.0),
+            });
+
+            vertices.push(Vertex2d {
+                pos: Vec2::new(pos_x, pos_y + glyph_height),
+                uv: Vec2::new(glyph_x, glyph_y + glyph_height),
+                color: Vec4::new(self.color.x, self.color.y, self.color.z, 1.0),
+            });
+
+            vertices.push(Vertex2d {
+                pos: Vec2::new(pos_x + glyph_width, pos_y + glyph_height),
+                uv: Vec2::new(glyph_x + glyph_width, glyph_y + glyph_height),
+                color: Vec4::new(self.color.x, self.color.y, self.color.z, 1.0),
+            });
+
+            vertices.push(Vertex2d {
+                pos: Vec2::new(pos_x + glyph_width, pos_y),
+                uv: Vec2::new(glyph_x + glyph_width, glyph_y),
+                color: Vec4::new(self.color.x, self.color.y, self.color.z, 1.0),
+            });
+
+            indices.push(vert_offset as u16);
+            indices.push(vert_offset as u16 + 1);
+            indices.push(vert_offset as u16 + 2);
+
+            indices.push(vert_offset as u16);
+            indices.push(vert_offset as u16 + 2);
+            indices.push(vert_offset as u16 + 3);
+
+            vertex_count += 4;
+            index_count += 6;
+
+            pos_x += glyph.advance.0 as f32;
+            pos_y += glyph.advance.1 as f32;
+        }
+
+        (vertex_count, index_count)
+    }
+}
+
+pub enum UiDraw {
+    Frame(UiFrame),
+    Text(UiText),
 }
 
 pub struct RenderScene {
     pub camera: Camera,
     pub meshes: Vec<MeshNode>,
-    pub ui: Vec<UiFrame>,
+    pub ui: Vec<UiDraw>,
     pub lighting: Lighting,
-    pub text_draws: Vec<TextDrawCmd>,
 }
 
 impl RenderScene {
@@ -174,9 +250,16 @@ impl RenderScene {
             camera,
             meshes: Vec::new(),
             ui: Vec::new(),
-            text_draws: Vec::new(),
             lighting,
         }
+    }
+
+    pub fn push_ui_frame(&mut self, frame: UiFrame) {
+        self.ui.push(UiDraw::Frame(frame));
+    }
+
+    pub fn push_ui_text(&mut self, ui_text: UiText) {
+        self.ui.push(UiDraw::Text(ui_text));
     }
 }
 

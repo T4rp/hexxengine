@@ -14,7 +14,7 @@ use crate::renderer::scene2d;
 use crate::renderer::scene3d::{self, SHADOW_MAP_RESOLUTION};
 use crate::renderer::textures::{SkyboxImageData, Texture};
 use crate::renderer::vkutils::create_command_pool;
-use crate::scene::RenderScene;
+use crate::scene::{RenderScene, UiDraw};
 use crate::text::{GlyphAtlas, GlyphRenderMode};
 
 const USE_VALIDATION_LAYERS: bool = true;
@@ -676,7 +676,7 @@ fn create_submit_semaphores(device: &ash::Device, count: usize) -> Vec<vk::Semap
 
 impl VulkanContext {
     pub fn new(window: &Window) -> Self {
-        let glyph_atlas = GlyphAtlas::new(GlyphRenderMode::Sdf, 1024, 1024);
+        let glyph_atlas = GlyphAtlas::new(GlyphRenderMode::Normal, 1024, 1024);
 
         let raw_window_handle = window.window_handle().unwrap().as_raw();
         let raw_display_handle = window.display_handle().unwrap().as_raw();
@@ -966,10 +966,12 @@ impl VulkanContext {
             }
         }
 
-        for text_cmd in scene.text_draws.iter() {
-            self.glyph_atlas
-                .load_glyphs(text_cmd.text.as_ref(), text_cmd.font_height)
-                .unwrap();
+        for ui_draws in scene.ui.iter() {
+            if let UiDraw::Text(text_draw) = ui_draws {
+                self.glyph_atlas
+                    .load_glyphs(text_draw.text.as_ref(), text_draw.font_height)
+                    .unwrap();
+            }
         }
 
         for render_frame in self.render_frames.iter_mut() {
@@ -1034,7 +1036,8 @@ impl VulkanContext {
             scene3d_resources.update_uniform_buffers(&self.allocator, scene, self.swapchain_extent);
             scene2d_resources.update_uniform_buffers(&self.allocator, self.swapchain_extent);
 
-            scene2d_resources.update_buffers(&self.allocator, scene);
+            let ui_batches =
+                scene2d_resources.update_vertex_buffer(&self.allocator, &self.glyph_atlas, scene);
 
             let batch_info = scene3d_resources.update_instance_buffer(
                 &self.allocator,
@@ -1190,6 +1193,17 @@ impl VulkanContext {
                         aspect_mask: vk::ImageAspectFlags::DEPTH,
                     }
                     .as_barrier(),
+                    ImageTransition {
+                        image: scene2d_resources.glyph_atlas_image.0,
+                        current_layout: vk::ImageLayout::UNDEFINED,
+                        new_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                        src_stage: vk::PipelineStageFlags2::NONE,
+                        src_access: vk::AccessFlags2::NONE,
+                        dst_stage: vk::PipelineStageFlags2::FRAGMENT_SHADER,
+                        dst_access: vk::AccessFlags2::SHADER_SAMPLED_READ,
+                        aspect_mask: vk::ImageAspectFlags::COLOR,
+                    }
+                    .as_barrier(),
                 ],
             );
 
@@ -1238,8 +1252,10 @@ impl VulkanContext {
                 &self.device,
                 command_buffer,
                 self.pipeline_objects.main_2d_graphics_pipeline,
+                self.pipeline_objects.text_2d_graphics_pipeline,
                 self.pipeline_layout_2d,
                 &self.textures,
+                &ui_batches,
             );
 
             self.device.cmd_end_rendering(command_buffer);

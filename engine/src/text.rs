@@ -401,15 +401,18 @@ impl GlyphAtlas {
         for character in text.chars() {
             let glyph_data = self
                 .get_glyph(character as u64, font_height)
-                .unwrap_or(&GlyphData {
-                    rect: Rect {
-                        x: 0,
-                        y: 0,
-                        width: 0,
-                        height: 0,
-                    },
-                    advance: (0, 0),
-                    is_empty: true,
+                .unwrap_or_else(|| {
+                    println!("failed to get glyph, falling back");
+                    &GlyphData {
+                        rect: Rect {
+                            x: 0,
+                            y: 0,
+                            width: 0,
+                            height: 0,
+                        },
+                        advance: (0, 0),
+                        is_empty: true,
+                    }
                 });
 
             glyphs.push(glyph_data)

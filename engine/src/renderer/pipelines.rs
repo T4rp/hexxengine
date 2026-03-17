@@ -9,7 +9,7 @@ pub struct RendererPipelines {
     pub shadow_graphics_pipeline: vk::Pipeline,
     pub main_transparent_graphics_pipeline: vk::Pipeline,
     pub skybox_graphics_pipeline: vk::Pipeline,
-    text_2d_graphics_pipeline: vk::Pipeline,
+    pub text_2d_graphics_pipeline: vk::Pipeline,
 }
 
 impl RendererPipelines {

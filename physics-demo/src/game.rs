@@ -4,7 +4,7 @@ use hexxengine::{
     assets::ASSET_PATH,
     glam::{self, Vec2, vec2},
     rand, rapier3d,
-    scene::{TextDrawCmd, UiFrame},
+    scene::{UiFrame, UiText},
     thunderdome, winit,
 };
 
@@ -198,13 +198,11 @@ impl Game {
             },
         );
 
-        scene
-            .ui
-            .push(UiFrame::new(vec2(0.0, 0.0), vec2(600.0, 300.0), 1));
+        // scene.push_ui_frame(UiFrame::new(vec2(0.0, 0.0), vec2(600.0, 300.0), 1));
 
-        scene.text_draws.push(TextDrawCmd::new(
+        scene.push_ui_text(UiText::new(
             vec2(0.0, 0.0),
-            16,
+            32,
             "the quick brown fox doesnt not concern himself with subpixel rendering",
         ));
 

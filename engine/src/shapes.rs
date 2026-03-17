@@ -1,4 +1,4 @@
-use glam::UVec2;
+use glam::{UVec2, Vec3};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
 pub struct Rect {

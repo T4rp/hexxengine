@@ -17,12 +17,20 @@ use crate::{
         renderer::TextureDescriptors,
         vkutils::{self, AllocatedBuffer},
     },
-    scene::RenderScene,
+    scene::{RenderScene, UiDraw},
     shapes::{Rect, Region2d},
     text::GlyphAtlas,
 };
 
 const MAX_VERTICES_2D: usize = 50000;
+
+pub struct UiBatch {
+    pub vertex_offset: u32,
+    pub index_offset: u32,
+    pub vertex_count: u32,
+    pub index_count: u32,
+    pub is_text: bool,
+}
 
 pub struct Resources {
     pub global_descriptor_set: vk::DescriptorSet,
@@ -108,12 +116,95 @@ impl Resources {
         vkutils::destroy_allocated_image(allocator, &mut self.glyph_atlas_image);
     }
 
-    pub fn update_buffers(&mut self, allocator: &vk_mem::Allocator, scene: &RenderScene) {
+    pub fn update_vertex_buffer(
+        &mut self,
+        allocator: &vk_mem::Allocator,
+        glyph_atlas: &GlyphAtlas,
+        scene: &RenderScene,
+    ) -> Vec<UiBatch> {
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
+        let mut ui_batches = Vec::new();
 
-        for ui_frame in scene.ui.iter() {
-            ui_frame.push_verts(&mut vertices, &mut indices);
+        let mut start_i = 0;
+        let ui_count = scene.ui.len();
+
+        let mut start_vertex = 0;
+        let mut start_index = 0;
+
+        while start_i < ui_count {
+            let ui = &scene.ui[start_i];
+
+            let is_text = match ui {
+                UiDraw::Text(_) => true,
+                _ => false,
+            };
+
+            let mut end_vertex = start_vertex;
+            let mut end_index = start_index;
+
+            match ui {
+                UiDraw::Frame(ui_frame) => {
+                    let (new_vertices, new_indices) =
+                        ui_frame.push_verts(&mut vertices, &mut indices);
+
+                    end_vertex += new_vertices;
+                    end_index += new_indices;
+                }
+                UiDraw::Text(ui_text) => {
+                    let (new_vertices, new_indices) =
+                        ui_text.push_verts(glyph_atlas, &mut vertices, &mut indices);
+
+                    end_vertex += new_vertices;
+                    end_index += new_indices;
+                }
+            }
+
+            let mut end_i = start_i + 1;
+
+            while end_i < ui_count {
+                let next_ui = &scene.ui[end_i];
+
+                let is_next_text = match next_ui {
+                    UiDraw::Text(_) => true,
+                    _ => false,
+                };
+
+                if is_text != is_next_text {
+                    break;
+                }
+
+                match next_ui {
+                    UiDraw::Frame(ui_frame) => {
+                        let (new_vertices, new_indices) =
+                            ui_frame.push_verts(&mut vertices, &mut indices);
+
+                        end_vertex += new_vertices;
+                        end_index += new_indices;
+                    }
+                    UiDraw::Text(ui_text) => {
+                        let (new_vertices, new_indices) =
+                            ui_text.push_verts(glyph_atlas, &mut vertices, &mut indices);
+
+                        end_vertex += new_vertices;
+                        end_index += new_indices;
+                    }
+                }
+
+                end_i += 1
+            }
+
+            ui_batches.push(UiBatch {
+                vertex_offset: start_vertex,
+                index_offset: start_index,
+                vertex_count: end_vertex - start_vertex,
+                index_count: end_index - start_index,
+                is_text: is_text,
+            });
+
+            start_i = end_i;
+            start_vertex = end_vertex;
+            start_index = end_index;
         }
 
         let vertex_alloc_info = allocator.get_allocation_info(&self.vertex_buffer.1);
@@ -134,6 +225,8 @@ impl Resources {
         };
 
         self.vertex_count = indices.len() as u32;
+
+        ui_batches
     }
 
     pub fn draw_scene(
@@ -141,8 +234,10 @@ impl Resources {
         device: &ash::Device,
         command_buffer: vk::CommandBuffer,
         scene_pipeline: vk::Pipeline,
+        text_pipeline: vk::Pipeline,
         pipeline_layout: vk::PipelineLayout,
         textures: &[TextureDescriptors],
+        draw_batches: &[UiBatch],
     ) {
         if self.vertex_count == 0 {
             return;
@@ -160,22 +255,43 @@ impl Resources {
                 &[],
             );
 
-            device.cmd_bind_pipeline(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                scene_pipeline,
-            );
+            let mut is_text = None;
 
-            device.cmd_bind_vertex_buffers(command_buffer, 0, &[self.vertex_buffer.0], &[0]);
+            for batch in draw_batches.iter() {
+                if is_text != Some(batch.is_text) {
+                    is_text = Some(batch.is_text);
 
-            device.cmd_bind_index_buffer(
-                command_buffer,
-                self.index_buffer.0,
-                0,
-                vk::IndexType::UINT16,
-            );
+                    if batch.is_text {
+                        device.cmd_bind_pipeline(
+                            command_buffer,
+                            vk::PipelineBindPoint::GRAPHICS,
+                            text_pipeline,
+                        );
+                    } else {
+                        device.cmd_bind_pipeline(
+                            command_buffer,
+                            vk::PipelineBindPoint::GRAPHICS,
+                            scene_pipeline,
+                        );
+                    }
+                }
 
-            device.cmd_draw_indexed(command_buffer, self.vertex_count, 1, 0, 0, 0);
+                device.cmd_bind_vertex_buffers(
+                    command_buffer,
+                    0,
+                    &[self.vertex_buffer.0],
+                    &[batch.vertex_offset as u64],
+                );
+
+                device.cmd_bind_index_buffer(
+                    command_buffer,
+                    self.index_buffer.0,
+                    batch.index_offset as u64,
+                    vk::IndexType::UINT16,
+                );
+
+                device.cmd_draw_indexed(command_buffer, batch.index_count, 1, 0, 0, 0);
+            }
         }
     }
 
@@ -288,7 +404,7 @@ impl Resources {
                 command_buffers[0],
                 self.glyph_atlas_image.0,
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 vk::ImageAspectFlags::COLOR,
             );
 
@@ -402,11 +518,13 @@ impl Resources {
 
     fn create_atlas_sampler(device: &ash::Device) -> VkResult<vk::Sampler> {
         let sampler_info = vk::SamplerCreateInfo::default()
-            .min_filter(vk::Filter::LINEAR)
-            .mag_filter(vk::Filter::LINEAR)
+            .min_filter(vk::Filter::NEAREST)
+            .mag_filter(vk::Filter::NEAREST)
             .unnormalized_coordinates(true)
             .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-            .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE);
+            .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+            .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+            .mipmap_mode(vk::SamplerMipmapMode::NEAREST);
 
         unsafe { device.create_sampler(&sampler_info, None) }
     }
@@ -422,12 +540,6 @@ impl Resources {
                 level_count: vk::REMAINING_MIP_LEVELS,
                 base_array_layer: 0,
                 layer_count: vk::REMAINING_ARRAY_LAYERS,
-            })
-            .components(vk::ComponentMapping {
-                r: vk::ComponentSwizzle::R,
-                g: vk::ComponentSwizzle::R,
-                b: vk::ComponentSwizzle::R,
-                a: vk::ComponentSwizzle::R,
             });
 
         unsafe { device.create_image_view(&image_view_info, None) }
@@ -448,13 +560,9 @@ impl Resources {
             .mip_levels(1)
             .array_layers(1)
             .format(vk::Format::R8_UNORM)
-            .tiling(vk::ImageTiling::LINEAR)
+            .tiling(vk::ImageTiling::OPTIMAL)
             .initial_layout(vk::ImageLayout::UNDEFINED)
-            .usage(
-                vk::ImageUsageFlags::COLOR_ATTACHMENT
-                    | vk::ImageUsageFlags::SAMPLED
-                    | vk::ImageUsageFlags::TRANSFER_DST,
-            )
+            .usage(vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST)
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
             .samples(vk::SampleCountFlags::TYPE_1)
             .flags(vk::ImageCreateFlags::empty());
