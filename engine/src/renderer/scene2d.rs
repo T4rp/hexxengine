@@ -11,8 +11,8 @@ use vk_mem::Alloc;
 use crate::{
     assets::ASSET_PATH,
     renderer::{
+        buffer_objects::scene2d::{CameraUniform2d, Vertex2d},
         images::transition_images,
-        mesh::{CameraUniform2d, Vertex2d},
         pipelines::VulkanPipelineBuilder,
         renderer::TextureDescriptors,
         vkutils::{self, AllocatedBuffer},

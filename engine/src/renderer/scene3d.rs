@@ -7,7 +7,7 @@ use vk_mem::Alloc;
 use crate::{
     assets::ASSET_PATH,
     renderer::{
-        mesh::{CameraUniform3d, InstanceVertex, MeshVertex, Scene3dUniform},
+        buffer_objects::scene3d::{CameraUniform3d, InstanceVertex, MeshVertex, Scene3dUniform},
         pipelines::VulkanPipelineBuilder,
         renderer::{MaterialDescriptor, MeshBuffer, MeshHandle, TextureDescriptors},
         textures::Texture,

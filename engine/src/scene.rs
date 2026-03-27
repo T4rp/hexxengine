@@ -4,7 +4,7 @@ use glam::{Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles, vec2, vec4};
 
 use crate::{
     renderer::{
-        mesh::{MeshVertex, Vertex2d},
+        buffer_objects::{scene2d::Vertex2d, scene3d::MeshVertex},
         renderer::MeshHandle,
     },
     text::GlyphAtlas,
