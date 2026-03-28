@@ -387,14 +387,14 @@ impl World {
 trait EntityComponent {}
 
 pub struct Entity {
-    pub parent: Option<thunderdome::Index>,
+    pub parent: thunderdome::Index,
     pub children: Vec<thunderdome::Index>,
     pub components: Vec<(TypeId, thunderdome::Index)>,
 }
 
 impl Entity {
     fn new() -> Self {
-        let parent = None;
+        let parent = thunderdome::Index::DANGLING;
         let children = Vec::new();
         let components = Vec::new();
 
