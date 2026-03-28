@@ -1,6 +1,12 @@
-use std::borrow::Cow;
+use std::{
+    any::{self, Any, TypeId},
+    borrow::Cow,
+    collections::HashMap,
+    rc::Rc,
+};
 
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles, vec2, vec4};
+use thunderdome::{Arena, Index};
 
 use crate::{
     renderer::{
@@ -275,4 +281,160 @@ impl RenderScene {
 pub struct MeshData {
     pub vertices: Vec<MeshVertex>,
     pub indices: Vec<u16>,
+}
+
+struct World {
+    pub storages: HashMap<TypeId, Box<dyn Any>>,
+    pub entities: Arena<Entity>,
+}
+
+impl World {
+    pub fn new() -> Self {
+        let storages = HashMap::new();
+        let entities = Arena::new();
+
+        Self { storages, entities }
+    }
+
+    pub fn add_entity(&mut self) -> Index {
+        self.entities.insert(Entity::new())
+    }
+
+    pub fn add_component<T: EntityComponent + 'static>(
+        &mut self,
+        entity_index: Index,
+        component: T,
+    ) -> Option<thunderdome::Index> {
+        let Some(entity) = self.entities.get(entity_index) else {
+            return None;
+        };
+
+        let type_id = TypeId::of::<T>();
+        if entity
+            .components
+            .iter()
+            .find(|comp| comp.0 == type_id)
+            .is_some()
+        {
+            return None;
+        };
+
+        let storage = self.get_storage_mut::<T>().unwrap();
+        let component_index = storage.insert(component);
+
+        self.entities
+            .get_mut(entity_index)
+            .unwrap()
+            .components
+            .push((type_id, component_index));
+
+        Some(component_index)
+    }
+
+    pub fn get_component<T: EntityComponent + 'static>(&self, entity_index: Index) -> Option<&T> {
+        let Some(entity) = self.entities.get(entity_index) else {
+            return None;
+        };
+
+        let type_id = TypeId::of::<T>();
+
+        let component_index = entity
+            .components
+            .iter()
+            .find_map(|comp| if comp.0 == type_id { Some(comp) } else { None });
+
+        let component_index = match component_index {
+            Some(ci) => ci,
+            None => return None,
+        };
+
+        if entity
+            .components
+            .iter()
+            .find(|comp| comp.0 == type_id)
+            .is_none()
+        {
+            return None;
+        };
+
+        let Some(storage) = self.get_storage_ref::<T>() else {
+            return None;
+        };
+
+        storage.get(component_index.1)
+    }
+
+    pub fn get_storage_mut<T: EntityComponent + 'static>(&mut self) -> Option<&mut Arena<T>> {
+        let type_id = TypeId::of::<T>();
+        let storage = self
+            .storages
+            .entry(type_id)
+            .or_insert_with(|| Box::new(Arena::<T>::new()));
+
+        storage.downcast_mut::<thunderdome::Arena<T>>()
+    }
+
+    pub fn get_storage_ref<T: EntityComponent + 'static>(&self) -> Option<&thunderdome::Arena<T>> {
+        let type_id = TypeId::of::<T>();
+        let Some(storage) = self.storages.get(&type_id) else {
+            return None;
+        };
+
+        storage.downcast_ref::<thunderdome::Arena<T>>()
+    }
+}
+
+trait EntityComponent {}
+
+pub struct Entity {
+    pub parent: Option<thunderdome::Index>,
+    pub children: Vec<thunderdome::Index>,
+    pub components: Vec<(TypeId, thunderdome::Index)>,
+}
+
+impl Entity {
+    fn new() -> Self {
+        let parent = None;
+        let children = Vec::new();
+        let components = Vec::new();
+
+        Self {
+            parent,
+            children,
+            components,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::scene::{Entity, EntityComponent, World};
+
+    #[derive(Debug)]
+    struct TestComponent {
+        foo: u32,
+    }
+    impl EntityComponent for TestComponent {}
+
+    #[test]
+    fn add_component() {
+        let mut world = World::new();
+        let entity = world.add_entity();
+        world
+            .add_component(entity, TestComponent { foo: 100 })
+            .unwrap();
+    }
+
+    #[test]
+    fn get_component() {
+        let mut world = World::new();
+        let entity = world.add_entity();
+
+        let comp_index = world
+            .add_component(entity, TestComponent { foo: 100 })
+            .unwrap();
+
+        let component = world.get_component::<TestComponent>(comp_index).unwrap();
+        assert_eq!(component.foo, 100)
+    }
 }
