@@ -1,6 +1,6 @@
-use glam::{UVec2, Vec3};
+use glam::UVec2;
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy, Default)]
 pub struct Rect {
     pub x: u32,
     pub y: u32,
@@ -8,7 +8,7 @@ pub struct Rect {
     pub height: u32,
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy, Default)]
 pub struct Boundsi32 {
     pub x_min: i32,
     pub y_min: i32,
@@ -16,7 +16,7 @@ pub struct Boundsi32 {
     pub y_max: i32,
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy, Default)]
 pub struct Boundsi64 {
     pub x_min: i64,
     pub y_min: i64,

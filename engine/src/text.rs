@@ -9,7 +9,7 @@ use paidtype::freetype::{
 use crate::{
     assets::ASSET_PATH,
     freetype::{Face, FreetypeError, FreetypeLibrary},
-    shapes::{Rect, Region2d},
+    shapes::{Boundsi64, Rect, Region2d},
 };
 
 const MIN_BIN_LENGTH: u32 = 8;
@@ -21,6 +21,8 @@ pub struct GlyphData {
     pub bitmap_top: i32,
     pub bitmap_left: i32,
     pub is_empty: bool,
+    pub glyph_index: u32,
+    pub cbox: Boundsi64,
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
@@ -276,6 +278,11 @@ impl GlyphAtlas {
             .load_glyph(glyph_index, FT_LOAD_DEFAULT)
             .map_err(|err| GlyphAtlasError::Freetype(err))?;
 
+        let cbox = self
+            .face
+            .get_glyph_cbox()
+            .map_err(|err| GlyphAtlasError::Freetype(err))?;
+
         match self.render_mode {
             GlyphRenderMode::Normal => self
                 .face
@@ -299,6 +306,8 @@ impl GlyphAtlas {
                 bitmap_top,
                 bitmap_left,
                 is_empty: true,
+                glyph_index,
+                cbox,
             };
 
             self.glyphs.insert(glyph_key, glyph);
@@ -335,6 +344,8 @@ impl GlyphAtlas {
             bitmap_top,
             bitmap_left,
             is_empty: false,
+            glyph_index,
+            cbox,
         };
 
         self.update_dirty_region(&glyph_bounds);
@@ -424,6 +435,13 @@ impl GlyphAtlas {
                     bitmap_top: 0,
                     bitmap_left: 0,
                     is_empty: true,
+                    glyph_index: 0,
+                    cbox: Boundsi64 {
+                        x_min: 0,
+                        y_min: 0,
+                        x_max: 0,
+                        y_max: 0,
+                    },
                 });
 
             glyphs.push(glyph_data)
