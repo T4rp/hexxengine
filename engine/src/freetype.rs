@@ -1,11 +1,14 @@
-use std::{ffi::CStr, fmt::Display, sync::Arc};
+use std::{ffi::CStr, fmt::Display, mem::MaybeUninit, sync::Arc};
 
 use paidtype::freetype::{
-    _bindgen_ty_2, FT_Bitmap_Size, FT_Done_Face, FT_Done_FreeType, FT_Err_Ok, FT_Error,
-    FT_Error_String, FT_F26Dot6, FT_Face, FT_FaceRec, FT_Get_Char_Index, FT_Init_FreeType,
+    _bindgen_ty_2, FT_BBox, FT_Bitmap_Size, FT_Done_Face, FT_Done_FreeType, FT_Done_Glyph,
+    FT_Err_Ok, FT_Error, FT_Error_String, FT_F26Dot6, FT_Face, FT_FaceRec, FT_Get_Char_Index,
+    FT_Get_Glyph, FT_Glyph_BBox_Mode__FT_GLYPH_BBOX_PIXELS, FT_Glyph_Get_CBox, FT_Init_FreeType,
     FT_Int32, FT_Library, FT_Library_Version, FT_Load_Glyph, FT_Long, FT_New_Memory_Face,
     FT_Render_Glyph, FT_Render_Mode, FT_Set_Char_Size, FT_Set_Pixel_Sizes, FT_UInt, FT_ULong,
 };
+
+use crate::shapes::Boundsi64;
 
 #[derive(Debug)]
 pub struct FreetypeError(pub u32);
@@ -45,6 +48,12 @@ impl Drop for FreetypeLibraryInner {
     fn drop(&mut self) {
         unsafe { FT_Done_FreeType(self.raw.cast()) };
     }
+}
+
+pub struct GlyphBitmap<'a> {
+    pub width: u32,
+    pub rows: u32,
+    pub buffer: &'a [u8],
 }
 
 #[derive(Clone)]
@@ -111,12 +120,6 @@ pub struct Face {
     face: FT_Face,
     _font_data: Vec<u8>,
     _lib: FreetypeLibrary,
-}
-
-pub struct GlyphBitmap<'a> {
-    pub width: u32,
-    pub rows: u32,
-    pub buffer: &'a [u8],
 }
 
 impl Face {
@@ -234,6 +237,39 @@ impl Face {
 
         (bitmap_left, bitmap_top)
     }
+
+    pub fn get_glyph_cbox(&self) -> Result<Boundsi64, FreetypeError> {
+        let glyph_slot = unsafe { self.raw_rec().glyph };
+
+        let mut cbox = FT_BBox {
+            xMin: 0,
+            yMin: 0,
+            xMax: 0,
+            yMax: 0,
+        };
+
+        unsafe {
+            let mut glyph = MaybeUninit::uninit();
+
+            let err = FT_Get_Glyph(glyph_slot, glyph.as_mut_ptr());
+            ft_check!(err);
+
+            FT_Glyph_Get_CBox(
+                *glyph.as_mut_ptr(),
+                FT_Glyph_BBox_Mode__FT_GLYPH_BBOX_PIXELS,
+                &mut cbox,
+            );
+
+            FT_Done_Glyph(*glyph.as_mut_ptr());
+        };
+
+        Ok(Boundsi64 {
+            x_min: cbox.xMin,
+            y_min: cbox.yMin,
+            x_max: cbox.xMax,
+            y_max: cbox.yMax,
+        })
+    }
 }
 
 impl Drop for Face {
@@ -319,5 +355,17 @@ mod tests {
             .unwrap();
 
         drop(freetype);
+    }
+
+    #[test]
+    fn glyph_cbox() {
+        let freetype = FreetypeLibrary::new().unwrap();
+        let face = freetype.new_memory_face(FONT_FILE, 0).unwrap();
+        face.set_pixel_sizes(0, 16).unwrap();
+        let glyph_index = face.get_char_index(0x40).unwrap();
+        face.load_glyph(glyph_index, FT_LOAD_DEFAULT).unwrap();
+
+        let cbox = face.get_glyph_cbox().unwrap();
+        println!("{:?}", cbox)
     }
 }

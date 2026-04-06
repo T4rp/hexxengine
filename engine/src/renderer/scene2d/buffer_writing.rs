@@ -1,8 +1,10 @@
+use ash::vk::Rect2D;
 use glam::{Vec2, Vec4, vec2};
 
 use crate::{
     renderer::buffer_objects::scene2d::Vertex2d,
     scene::{UiFrame, UiText},
+    shapes::{Boundsi32, Rect},
     text::GlyphAtlas,
 };
 
@@ -64,6 +66,13 @@ pub fn push_text_verts(
 
     let mut pen_x = ui_text.position.x;
     let mut pen_y = ui_text.position.y;
+
+    let mut text_box = Boundsi32 {
+        x_min: 5000,
+        y_min: 5000,
+        x_max: -5000,
+        y_max: -5000,
+    };
 
     for glyph in glyphs {
         if glyph.is_empty {

@@ -8,6 +8,22 @@ pub struct Rect {
     pub height: u32,
 }
 
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
+pub struct Boundsi32 {
+    pub x_min: i32,
+    pub y_min: i32,
+    pub x_max: i32,
+    pub y_max: i32,
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
+pub struct Boundsi64 {
+    pub x_min: i64,
+    pub y_min: i64,
+    pub x_max: i64,
+    pub y_max: i64,
+}
+
 impl Rect {
     pub fn contains(&self, rect: &Rect) -> bool {
         rect.x >= self.x

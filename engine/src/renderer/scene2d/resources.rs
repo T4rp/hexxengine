@@ -181,15 +181,22 @@ impl Resources {
 
                 match next_ui {
                     UiDraw::Frame(ui_frame) => {
-                        let (new_vertices, new_indices) =
-                            ui_frame.push_verts(&mut vertices, &mut indices);
+                        let (new_vertices, new_indices) = buffer_writing::push_frame_verts(
+                            &ui_frame,
+                            &mut vertices,
+                            &mut indices,
+                        );
 
                         end_vertex += new_vertices;
                         end_index += new_indices;
                     }
                     UiDraw::Text(ui_text) => {
-                        let (new_vertices, new_indices) =
-                            ui_text.push_verts(glyph_atlas, &mut vertices, &mut indices);
+                        let (new_vertices, new_indices) = buffer_writing::push_text_verts(
+                            &ui_text,
+                            glyph_atlas,
+                            &mut vertices,
+                            &mut indices,
+                        );
 
                         end_vertex += new_vertices;
                         end_index += new_indices;
