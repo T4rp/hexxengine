@@ -1042,8 +1042,12 @@ impl VulkanContext {
             scene3d_resources.update_uniform_buffers(&self.allocator, scene, self.swapchain_extent);
             scene2d_resources.update_uniform_buffers(&self.allocator, self.swapchain_extent);
 
-            let ui_batches =
-                scene2d_resources.update_vertex_buffer(&self.allocator, &self.glyph_atlas, scene);
+            let ui_batches = scene2d_resources.update_vertex_buffer(
+                &self.allocator,
+                self.swapchain_extent,
+                &self.glyph_atlas,
+                scene,
+            );
 
             let batch_info = scene3d_resources.update_instance_buffer(
                 &self.allocator,

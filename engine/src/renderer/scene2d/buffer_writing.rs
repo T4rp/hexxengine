@@ -1,4 +1,4 @@
-use ash::vk::Rect2D;
+use ash::vk::{self, Rect2D};
 use glam::{Vec2, Vec4, vec2};
 
 use crate::{
@@ -54,6 +54,7 @@ pub fn push_frame_verts(
 }
 
 pub fn push_text_verts(
+    window_extent: vk::Extent2D,
     ui_text: &UiText,
     glyph_atlas: &GlyphAtlas,
     vertices: &mut Vec<Vertex2d>,
@@ -67,24 +68,62 @@ pub fn push_text_verts(
     let mut pen_x = ui_text.position.x;
     let mut pen_y = ui_text.position.y;
 
-    let mut text_box = Boundsi32 {
-        x_min: 5000,
-        y_min: 5000,
-        x_max: -5000,
-        y_max: -5000,
-    };
+    let mut pen_positions = Vec::with_capacity(glyphs.len());
 
-    for glyph in glyphs {
+    for glyph in glyphs.iter() {
+        pen_positions.push((pen_x, pen_y));
+        pen_x += glyph.advance.0;
+        pen_y += glyph.advance.1;
+    }
+
+    // let mut text_box = Boundsi32 {
+    //         x_min: 5000,
+    //         y_min: 5000,
+    //         x_max: -5000,
+    //         y_max: -5000,
+    //     };
+    //
+    //     for (i, glyph) in glyphs.iter().enumerate() {
+    //         if (glyph.cbox.x_min as i32) < text_box.x_min {
+    //             text_box.x_min = glyph.cbox.x_min as i32;
+    //         }
+    //
+    //         if (glyph.cbox.x_max as i32) > text_box.x_max {
+    //             text_box.x_max = glyph.cbox.x_max as i32;
+    //         }
+    //
+    //         if (glyph.cbox.y_min as i32) < text_box.y_min {
+    //             text_box.y_min = glyph.cbox.y_min as i32;
+    //         }
+    //
+    //         if (glyph.cbox.y_max as i32) > text_box.y_max {
+    //             text_box.y_max = glyph.cbox.y_max as i32;
+    //         }
+    //
+    //         if text_box.x_min > text_box.x_max {
+    //             text_box.x_min = 0;
+    //             text_box.x_max = 0;
+    //             text_box.y_min = 0;
+    //             text_box.y_max = 0;
+    //         }
+    //     }
+    //
+    //     let box_width = text_box.x_max - text_box.x_min;
+    //     let box_height = text_box.y_max - text_box.y_min;
+    //
+    //     let start_x = (box_width as f32) / 2.0 + ui_text.position.x as f32;
+    //     let start_y = (box_height as f32) / 2.0 + ui_text.position.y as f32;
+    //
+    for (i, glyph) in glyphs.iter().enumerate() {
         if glyph.is_empty {
-            pen_x += glyph.advance.0 as f32;
-            pen_y += glyph.advance.1 as f32;
             continue;
         }
 
-        let vert_offset = vertices.len();
+        let glyph_position = pen_positions[i];
+        let pos_x = glyph_position.0 as f32 + glyph.bitmap_left as f32;
+        let pos_y = glyph_position.1 as f32 - glyph.bitmap_top as f32;
 
-        let pos_x = pen_x + glyph.bitmap_left as f32;
-        let pos_y = pen_y - glyph.bitmap_top as f32;
+        let vert_offset = vertices.len();
 
         let glyph_x = glyph.rect.x as f32;
         let glyph_y = glyph.rect.y as f32;
@@ -126,9 +165,6 @@ pub fn push_text_verts(
 
         vertex_count += 4;
         index_count += 6;
-
-        pen_x += glyph.advance.0 as f32;
-        pen_y += glyph.advance.1 as f32;
     }
 
     (vertex_count, index_count)

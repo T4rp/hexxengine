@@ -120,6 +120,7 @@ impl Resources {
     pub fn update_vertex_buffer(
         &mut self,
         allocator: &vk_mem::Allocator,
+        window_extent: vk::Extent2D,
         glyph_atlas: &GlyphAtlas,
         scene: &RenderScene,
     ) -> Vec<UiBatch> {
@@ -154,6 +155,7 @@ impl Resources {
                 }
                 UiDraw::Text(ui_text) => {
                     let (new_vertices, new_indices) = buffer_writing::push_text_verts(
+                        window_extent,
                         &ui_text,
                         glyph_atlas,
                         &mut vertices,
@@ -192,6 +194,7 @@ impl Resources {
                     }
                     UiDraw::Text(ui_text) => {
                         let (new_vertices, new_indices) = buffer_writing::push_text_verts(
+                            window_extent,
                             &ui_text,
                             glyph_atlas,
                             &mut vertices,

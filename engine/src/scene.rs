@@ -5,7 +5,7 @@ use std::{
     rc::Rc,
 };
 
-use glam::{Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles, vec2, vec4};
+use glam::{IVec2, Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles, vec2, vec4};
 use thunderdome::{Arena, Index};
 
 use crate::{
@@ -156,14 +156,14 @@ impl UiFrame {
 }
 
 pub struct UiText {
-    pub position: Vec2,
+    pub position: IVec2,
     pub font_height: u32,
     pub text: Cow<'static, str>,
     pub color: Vec3,
 }
 
 impl UiText {
-    pub fn new(position: Vec2, height: u32, text: impl Into<Cow<'static, str>>) -> Self {
+    pub fn new(position: IVec2, height: u32, text: impl Into<Cow<'static, str>>) -> Self {
         Self {
             position,
             font_height: height,

@@ -1752,7 +1752,7 @@ dependencies = [
 [[package]]
 name = "paidtype"
 version = "0.1.0"
-source = "git+https://github.com/T4rp/paidtype2#e9786a82fcea3da72247c8aa7a8a4b9b1d459c9f"
+source = "git+https://github.com/T4rp/paidtype2#2b594570552493ba35331bfad2efe94f58586217"
 dependencies = [
  "bindgen",
  "cmake",

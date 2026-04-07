@@ -3,7 +3,7 @@ use std::{rc::Rc, time::Instant};
 use hexxengine::{
     ash::khr::workgroup_memory_explicit_layout,
     assets::ASSET_PATH,
-    glam::{self, Vec2},
+    glam::{self, IVec2, Vec2},
     gltf::json::extensions::scene,
     physics::character_controller::{
         self, CharacterCollision, CharacterLength, KinematicCharacterController,
@@ -374,7 +374,7 @@ impl Game {
                 .floor();
 
             self.scene.push_ui_text(UiText::new(
-                Vec2::new(0.0, 100.0),
+                IVec2::new(0, 100),
                 32,
                 format!("speed: {}", horizontal_speed),
             ));

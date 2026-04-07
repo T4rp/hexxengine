@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use hexxengine::{
     assets::ASSET_PATH,
-    glam::{self, Vec2, vec2},
+    glam::{self, Vec2, ivec2, vec2},
     rand, rapier3d,
     scene::{UiFrame, UiText},
     thunderdome, winit,
@@ -201,7 +201,7 @@ impl Game {
         // scene.push_ui_frame(UiFrame::new(vec2(0.0, 0.0), vec2(600.0, 300.0), 1));
 
         scene.push_ui_text(UiText::new(
-            vec2(0.0, 0.0),
+            ivec2(0, 0),
             32,
             "the quick brown fox doesnt not concern himself with subpixel rendering",
         ));
