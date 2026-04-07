@@ -232,12 +232,12 @@ impl Game {
 
         character
             .controller
-            .move_dir(&mut self.physics_context, &mut character.transform, STEP_HZ);
+            .move_dir(&mut self.physics_context, STEP_HZ);
 
         self.physics_context.step();
     }
 
-    fn update_character_movement(&mut self) {
+    fn update_character_movement(&mut self, dt: f32) {
         let mut move_dir = Vec3::ZERO;
 
         if self.input_state.is_key_down(KeyCode::KeyA) {
@@ -256,7 +256,7 @@ impl Game {
             move_dir += Vec3::new(0.0, 0.0, 1.0)
         }
 
-        let character = self
+        let mut character = self
             .world
             .characters
             .get_mut(self.world.character_index.unwrap())
@@ -265,6 +265,10 @@ impl Game {
         if self.input_state.is_key_down(KeyCode::Space) {
             character.controller.jump = true;
         }
+
+        character
+            .controller
+            .update_position(dt, &mut character.transform);
 
         let mut world_move = self.scene.camera.orientation * move_dir;
         world_move.y = 0.0;
@@ -310,7 +314,7 @@ impl Game {
         camera.position = position
     }
 
-    fn update_parts(&mut self) {
+    fn update_parts(&mut self, dt: f32) {
         let mut to_remove = Vec::new();
 
         for (index, part) in self.world.parts.iter_mut() {
@@ -327,8 +331,10 @@ impl Game {
                 continue;
             }
 
-            part.transform.position = pose.translation;
-            part.transform.orientation = pose.rotation;
+            let pos_interpolated = rigid_body.predict_position_using_velocity(dt);
+
+            part.transform.position = pos_interpolated.translation;
+            part.transform.orientation = pos_interpolated.rotation;
         }
 
         for index in to_remove {
@@ -349,8 +355,6 @@ impl Game {
         self.accumulator += dt;
         self.draw_accumulator += dt;
 
-        self.update_character_movement();
-
         let gravity_y = self.physics_context.gravity.y;
 
         while self.accumulator > STEP_HZ {
@@ -358,7 +362,8 @@ impl Game {
             self.accumulator -= STEP_HZ;
         }
 
-        self.update_parts();
+        self.update_character_movement(self.accumulator);
+        self.update_parts(self.accumulator);
         self.update_camera(dt, window);
 
         self.scene.ui.clear();

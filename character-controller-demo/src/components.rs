@@ -109,6 +109,7 @@ pub struct CharacterControllerComponent {
     pub mass_properties: MassProperties,
     pub character_controller: KinematicCharacterController,
     pub move_dir: Vec3,
+    pub position: Vec3,
     pub velocity: Vec3,
     pub jump: bool,
     pub grounded: bool,
@@ -138,6 +139,7 @@ impl CharacterControllerComponent {
 
         Self {
             shape: capsule_shape,
+            position: transform.position,
             velocity: Vec3::ZERO,
             collider: collider_handle,
             character_controller,
@@ -216,12 +218,7 @@ impl CharacterControllerComponent {
             );
     }
 
-    pub fn move_dir(
-        &mut self,
-        phys_ctx: &mut PhysicsContext,
-        transform: &mut TransformComponent,
-        dt: f32,
-    ) {
+    pub fn move_dir(&mut self, phys_ctx: &mut PhysicsContext, dt: f32) {
         self.collisions.clear();
 
         if !self.grounded {
@@ -259,8 +256,8 @@ impl CharacterControllerComponent {
             &query_pipeline,
             self.shape.clone_dyn().as_ref(),
             &Pose3 {
-                rotation: transform.orientation,
-                translation: transform.position,
+                rotation: Quat::IDENTITY,
+                translation: self.position,
             },
             self.velocity * dt,
             |collision| self.collisions.push(collision),
@@ -268,9 +265,13 @@ impl CharacterControllerComponent {
 
         self.grounded = movement.grounded;
         self.velocity = movement.translation / dt;
-        transform.position += movement.translation;
+        self.position += movement.translation;
         self.jump = false;
 
         self.solve_colisions(phys_ctx, dt);
+    }
+
+    pub fn update_position(&self, dt: f32, transform: &mut TransformComponent) {
+        transform.position = self.position + self.velocity * dt;
     }
 }
