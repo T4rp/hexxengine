@@ -8,11 +8,12 @@ use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHand
 use winit::window::Window;
 
 use crate::assets::ASSET_PATH;
-use crate::renderer::buffer_objects::scene3d::{MaterialFlags, MaterialUniform, MeshVertex};
 use crate::renderer::images::{ImageTransition, transition_images};
 use crate::renderer::pipelines::RendererPipelines;
 use crate::renderer::scene2d;
-use crate::renderer::scene3d::{self, SHADOW_MAP_RESOLUTION};
+use crate::renderer::scene3d::{
+    self, MaterialFlags, MaterialUniform, MeshVertex, SHADOW_MAP_RESOLUTION,
+};
 use crate::renderer::textures::{SkyboxImageData, Texture};
 use crate::renderer::vkutils::create_command_pool;
 use crate::scene::{RenderScene, UiDraw};

@@ -2,7 +2,7 @@ use ash::vk::{self, Rect2D};
 use glam::{Vec2, Vec4, vec2};
 
 use crate::{
-    renderer::buffer_objects::scene2d::Vertex2d,
+    renderer::scene2d::Vertex2d,
     scene::{UiFrame, UiText},
     shapes::{Boundsi32, Rect},
     text::GlyphAtlas,

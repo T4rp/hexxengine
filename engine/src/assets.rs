@@ -3,9 +3,7 @@ use glam::{Vec2, Vec3};
 use image::{EncodableLayout, GenericImage};
 
 use crate::{
-    renderer::{
-        buffer_objects::scene3d::MeshVertex, renderer::VulkanContext, textures::SkyboxImageData,
-    },
+    renderer::{renderer::VulkanContext, scene3d::MeshVertex, textures::SkyboxImageData},
     scene::MeshData,
 };
 

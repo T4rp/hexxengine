@@ -5,25 +5,21 @@ use ash::{
     vk::{self, ComponentMapping, ImageAspectFlags},
 };
 use glam::{Mat4, UVec2};
-use nalgebra::base;
 use vk_mem::Alloc;
 
 use crate::{
     assets::ASSET_PATH,
     renderer::{
-        buffer_objects::scene2d::{CameraUniform2d, Vertex2d},
         images::transition_images,
         pipelines::VulkanPipelineBuilder,
         renderer::TextureDescriptors,
-        scene2d::buffer_writing,
+        scene2d::{CameraUniform2d, MAX_VERTICES_2D, Vertex2d, buffer_writing},
         vkutils::{self, AllocatedBuffer},
     },
     scene::{RenderScene, UiDraw},
     shapes::{Rect, Region2d},
     text::GlyphAtlas,
 };
-
-const MAX_VERTICES_2D: usize = 50000;
 
 pub struct UiBatch {
     pub vertex_offset: u32,
