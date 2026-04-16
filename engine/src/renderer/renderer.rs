@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::{ffi, mem};
 
+use ash::vk::Handle;
 use ash::{khr, vk};
 use glam::Vec2;
 use vk_mem::Alloc;
@@ -15,12 +16,15 @@ use crate::renderer::scene3d::{
     self, MaterialFlags, MaterialUniform, MeshVertex, SHADOW_MAP_RESOLUTION,
 };
 use crate::renderer::textures::{SkyboxImageData, Texture};
+use crate::renderer::vk_deletion_queue::VulkanDeletionQueue;
 use crate::renderer::vkutils::create_command_pool;
 use crate::scene::{RenderScene, UiDraw};
 use crate::text::{GlyphAtlas, GlyphRenderMode};
 
+use super::vk_deletion_queue;
+
 const USE_VALIDATION_LAYERS: bool = true;
-const MAX_FRAMES: usize = 2;
+pub const MAX_FRAMES: usize = 2;
 
 const DESCRIPTOR_RATIOS: &[(vk::DescriptorType, u32)] = &[
     (vk::DescriptorType::COMBINED_IMAGE_SAMPLER, 1),
@@ -153,13 +157,14 @@ impl RenderFrame {
         &mut self,
         device: &ash::Device,
         allocator: &vk_mem::Allocator,
+        deletion_queue: &mut VulkanDeletionQueue,
         command_pool: vk::CommandPool,
         queue: vk::Queue,
         window_extent: vk::Extent2D,
     ) {
-        unsafe {
-            device.destroy_semaphore(self.swapchain_semaphore, None);
-        };
+        deletion_queue.push(vk_deletion_queue::Resource::Semaphore(
+            self.swapchain_semaphore,
+        ));
 
         let semaphore_create_info =
             vk::SemaphoreCreateInfo::default().flags(vk::SemaphoreCreateFlags::empty());
@@ -173,7 +178,14 @@ impl RenderFrame {
         self.swapchain_semaphore = new_semaphore;
 
         self.scene3d_resources
-            .target_resized(device, allocator, command_pool, queue, window_extent)
+            .target_resized(
+                device,
+                allocator,
+                deletion_queue,
+                command_pool,
+                queue,
+                window_extent,
+            )
             .unwrap();
     }
 
@@ -521,6 +533,8 @@ pub struct VulkanContext {
     material_descriptors: Vec<MaterialDescriptor>,
     skybox_textures: Vec<Texture>,
     current_skybox: Option<u32>,
+
+    deletion_queue: VulkanDeletionQueue,
 
     glyph_atlas: GlyphAtlas,
 }
@@ -926,6 +940,8 @@ impl VulkanContext {
 
         materials.push(base_material);
 
+        let deletion_queue = VulkanDeletionQueue::new();
+
         Self {
             entry,
             instance,
@@ -958,6 +974,7 @@ impl VulkanContext {
             surface_loader,
             swapchain_loader,
             glyph_atlas,
+            deletion_queue,
         }
     }
 
@@ -1003,6 +1020,9 @@ impl VulkanContext {
             self.device
                 .wait_for_fences(&[in_flight_fence], true, 1000000000)
                 .unwrap();
+
+            self.deletion_queue
+                .clean(&self.allocator, &self.device, &self.swapchain_loader);
 
             let (image_index, should_recreate) = match self.swapchain_loader.acquire_next_image(
                 self.swapchain,
@@ -1338,6 +1358,7 @@ impl VulkanContext {
         }
 
         self.current_frame += 1;
+        self.deletion_queue.current_frame = self.current_frame;
     }
 
     pub fn handle_resize(&mut self, window_size: (u32, u32)) {
@@ -1361,14 +1382,13 @@ impl VulkanContext {
                 Err(err) => panic!("{}", err),
             };
 
-        for &image_view in self.swapchain_image_views.iter() {
-            unsafe { self.device.destroy_image_view(image_view, None) };
-        }
+        self.deletion_queue
+            .push(vk_deletion_queue::Resource::Swapchain(self.swapchain));
 
-        unsafe {
-            self.swapchain_loader
-                .destroy_swapchain(self.swapchain, None)
-        };
+        for &image_view in self.swapchain_image_views.iter() {
+            self.deletion_queue
+                .push(vk_deletion_queue::Resource::ImageView(image_view));
+        }
 
         self.swapchain = swapchain;
         self.swapchain_images = swapchain_images;
@@ -1380,6 +1400,7 @@ impl VulkanContext {
             frame.handle_resize(
                 &self.device,
                 &self.allocator,
+                &mut self.deletion_queue,
                 self.command_pool,
                 self.graphics_queue,
                 swapchain_extent,

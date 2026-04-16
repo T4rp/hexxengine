@@ -12,6 +12,7 @@ use crate::{
             Scene3dUniform,
         },
         textures::Texture,
+        vk_deletion_queue::{self, VulkanDeletionQueue},
         vkutils,
     },
     scene::RenderScene,
@@ -123,14 +124,17 @@ impl Resources {
         &mut self,
         device: &ash::Device,
         allocator: &vk_mem::Allocator,
+        deletion_queue: &mut VulkanDeletionQueue,
         command_pool: vk::CommandPool,
         queue: vk::Queue,
         window_extent: vk::Extent2D,
     ) -> VkResult<()> {
-        vkutils::destroy_allocated_image(allocator, &mut self.depth_image);
-        unsafe {
-            device.destroy_image_view(self.depth_image_view, None);
-        }
+        deletion_queue.push(vk_deletion_queue::Resource::ImageView(
+            self.depth_image_view,
+        ));
+        deletion_queue.push(vk_deletion_queue::Resource::AllocatedImage(
+            self.depth_image,
+        ));
 
         let depth_image = Self::create_depth_image(
             device,

@@ -1,5 +1,6 @@
 mod images;
 mod pipelines;
+mod vk_deletion_queue;
 mod vkutils;
 
 pub mod renderer;
