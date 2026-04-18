@@ -525,8 +525,8 @@ pub struct VulkanContext {
     descriptor_set_layouts: DescriptorSetLayouts,
     descriptor_pool: vk::DescriptorPool,
     pipeline_layout_3d: vk::PipelineLayout,
-    pipeline_objects: RendererPipelines,
     pipeline_layout_2d: vk::PipelineLayout,
+    pipeline_objects: RendererPipelines,
 
     mesh_buffers: Vec<MeshBuffer>,
     textures: Vec<TextureDescriptors>,

@@ -44,7 +44,6 @@ impl VulkanDeletionQueue {
         device: &ash::Device,
         swapchain_fn: &ash::khr::swapchain::Device,
     ) {
-        let mut count = 0;
         loop {
             let Some(resource) = self
                 .queue
@@ -70,12 +69,6 @@ impl VulkanDeletionQueue {
                     device.destroy_semaphore(semaphore, None);
                 },
             }
-
-            count += 1;
-        }
-
-        if count > 0 {
-            println!("deleted {} resource/s", count)
         }
     }
 }
