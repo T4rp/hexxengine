@@ -4,6 +4,7 @@ use std::{ffi, mem};
 use ash::vk::Handle;
 use ash::{khr, vk};
 use glam::Vec2;
+use thunderdome::{Arena, Index};
 use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
@@ -30,6 +31,11 @@ const DESCRIPTOR_RATIOS: &[(vk::DescriptorType, u32)] = &[
     (vk::DescriptorType::COMBINED_IMAGE_SAMPLER, 1),
     (vk::DescriptorType::UNIFORM_BUFFER, 2),
 ];
+
+pub const FALLBACK_TEXTURE_INDEX: Index = Index::from_bits(1 << 32 | 0).unwrap();
+pub const WHITE_TEXTURE_INDEX: Index = Index::from_bits(1 << 32 | 1).unwrap();
+pub const FALLBACK_SKYBOX_INDEX: Index = Index::from_bits(1 << 32 | 0).unwrap();
+pub const BASE_MATERIAL_INDEX: Index = Index::from_bits(1 << 32 | 1).unwrap();
 
 unsafe extern "system" fn debug_messager_callback(
     message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
@@ -528,11 +534,11 @@ pub struct VulkanContext {
     pipeline_layout_2d: vk::PipelineLayout,
     pipeline_objects: RendererPipelines,
 
-    mesh_buffers: Vec<MeshBuffer>,
-    textures: Vec<TextureDescriptors>,
-    material_descriptors: Vec<MaterialDescriptor>,
-    skybox_textures: Vec<Texture>,
-    current_skybox: Option<u32>,
+    mesh_buffers: Arena<MeshBuffer>,
+    textures: Arena<TextureDescriptors>,
+    material_descriptors: Arena<MaterialDescriptor>,
+    skybox_textures: Arena<Texture>,
+    current_skybox: Option<Index>,
 
     deletion_queue: VulkanDeletionQueue,
 
@@ -817,7 +823,7 @@ impl VulkanContext {
 
         let command_pool = create_command_pool(&device, graphics_queue_family_index).unwrap();
 
-        let mut skybox_textures = Vec::new();
+        let mut skybox_textures = Arena::new();
 
         let fallback_skybox = Texture::from_skybox_data(
             &device,
@@ -850,7 +856,7 @@ impl VulkanContext {
         )
         .unwrap();
 
-        skybox_textures.push(fallback_skybox);
+        skybox_textures.insert_at(FALLBACK_TEXTURE_INDEX, fallback_skybox);
 
         let render_frames = Self::create_render_frames(
             &device,
@@ -904,9 +910,9 @@ impl VulkanContext {
         )
         .unwrap();
 
-        let mesh_buffers = Vec::new();
-        let mut textures = Vec::new();
-        let mut materials = Vec::new();
+        let mesh_buffers = Arena::new();
+        let mut textures = Arena::new();
+        let mut materials = Arena::new();
 
         let fallback_texture = TextureDescriptors::create_texture(
             &device,
@@ -924,8 +930,8 @@ impl VulkanContext {
             Some(nearest_neighbor_sampler),
         );
 
-        textures.push(fallback_texture);
-        textures.push(white_texture);
+        textures.insert_at(FALLBACK_TEXTURE_INDEX, fallback_texture);
+        textures.insert_at(WHITE_TEXTURE_INDEX, white_texture);
 
         let base_material = MaterialDescriptor::new(
             &device,
@@ -938,7 +944,7 @@ impl VulkanContext {
             32.0,
         );
 
-        materials.push(base_material);
+        materials.insert_at(BASE_MATERIAL_INDEX, base_material);
 
         let deletion_queue = VulkanDeletionQueue::new();
 
@@ -1045,7 +1051,7 @@ impl VulkanContext {
             if current_frame.skybox_dirty {
                 scene3d_resources.update_skybox(
                     &self.device,
-                    &self.skybox_textures[scene.lighting.skybox_id as usize],
+                    &self.skybox_textures.get(scene.lighting.skybox_id).unwrap(),
                 );
                 current_frame.skybox_dirty = false;
             }
@@ -1408,7 +1414,7 @@ impl VulkanContext {
         }
     }
 
-    pub fn load_mesh(&mut self, vertices: &[MeshVertex], indices: &[u16]) -> MeshHandle {
+    pub fn load_mesh(&mut self, vertices: &[MeshVertex], indices: &[u16]) -> Index {
         let mesh = MeshBuffer::allocate_mesh(
             &self.device,
             &self.allocator,
@@ -1418,9 +1424,8 @@ impl VulkanContext {
             indices,
         );
 
-        self.mesh_buffers.push(mesh);
-
-        MeshHandle((self.mesh_buffers.len() - 1) as u32)
+        let index = self.mesh_buffers.insert(mesh);
+        index
     }
 
     pub fn load_rgba_texture(&mut self, width: u32, height: u32, data: &[u8]) -> u32 {
@@ -1445,7 +1450,7 @@ impl VulkanContext {
             None,
         );
 
-        self.textures.push(texture);
+        self.textures.insert(texture);
 
         (self.textures.len() - 1) as u32
     }
@@ -1454,7 +1459,7 @@ impl VulkanContext {
         &mut self,
         sampler_filter: vk::Filter,
         skybox_data: &SkyboxImageData,
-    ) -> u32 {
+    ) -> Index {
         let skybox_texture = Texture::from_skybox_data(
             &self.device,
             &self.allocator,
@@ -1465,8 +1470,8 @@ impl VulkanContext {
         )
         .unwrap();
 
-        self.skybox_textures.push(skybox_texture);
-        (self.skybox_textures.len() - 1) as u32
+        let index = self.skybox_textures.insert(skybox_texture);
+        index
     }
 
     fn create_3d_pipeline_layout(
@@ -1656,19 +1661,19 @@ impl Drop for VulkanContext {
         unsafe {
             let _ = self.device.device_wait_idle();
 
-            for skybox_texture in self.skybox_textures.iter_mut() {
+            for (_, skybox_texture) in self.skybox_textures.iter_mut() {
                 skybox_texture.destroy(&self.device, &self.allocator);
             }
 
-            for mesh_buffer in self.mesh_buffers.iter_mut() {
+            for (_, mesh_buffer) in self.mesh_buffers.iter_mut() {
                 mesh_buffer.destroy(&self.allocator);
             }
 
-            for texture in self.textures.iter_mut() {
+            for (_, texture) in self.textures.iter_mut() {
                 texture.destroy(&self.device, &self.allocator);
             }
 
-            for material in self.material_descriptors.iter_mut() {
+            for (_, material) in self.material_descriptors.iter_mut() {
                 material.destroy(&self.allocator);
             }
 

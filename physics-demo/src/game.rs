@@ -4,8 +4,10 @@ use hexxengine::{
     assets::ASSET_PATH,
     glam::{self, Vec2, ivec2, vec2},
     rand, rapier3d,
+    renderer::renderer::BASE_MATERIAL_INDEX,
     scene::{UiFrame, UiText},
-    thunderdome, winit,
+    thunderdome::{self, Index},
+    winit,
 };
 
 use glam::{EulerRot, Quat, Vec3, vec3};
@@ -35,10 +37,10 @@ const CAMERA_SPEED: f32 = 100.0;
 const STEP_HZ: f32 = 1.0 / 60.0;
 
 struct GameResources {
-    cube_mesh: MeshHandle,
-    sphere_mesh: MeshHandle,
-    skybox1: u32,
-    skybox2: u32,
+    cube_mesh: Index,
+    sphere_mesh: Index,
+    skybox1: Index,
+    skybox2: Index,
 }
 
 pub struct Game {
@@ -424,7 +426,7 @@ impl Game {
                         color: part.color,
                         opacity: 1.0,
                         mesh_id: self.resources.cube_mesh,
-                        material_id: 1,
+                        material_id: BASE_MATERIAL_INDEX,
                     });
                 }
                 PartShape::Sphere(radius) => {
@@ -435,7 +437,7 @@ impl Game {
                         color: part.color,
                         opacity: 1.0,
                         mesh_id: self.resources.sphere_mesh,
-                        material_id: 0,
+                        material_id: BASE_MATERIAL_INDEX,
                     });
                 }
             }

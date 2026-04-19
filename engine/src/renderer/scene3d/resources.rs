@@ -2,11 +2,15 @@ use std::mem;
 
 use ash::{prelude::VkResult, vk};
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
+use thunderdome::{Arena, Index};
 use vk_mem::Alloc;
 
 use crate::{
     renderer::{
-        renderer::{MaterialDescriptor, MeshBuffer, MeshHandle, TextureDescriptors},
+        renderer::{
+            BASE_MATERIAL_INDEX, FALLBACK_TEXTURE_INDEX, MaterialDescriptor, MeshBuffer,
+            MeshHandle, TextureDescriptors, WHITE_TEXTURE_INDEX,
+        },
         scene3d::{
             CameraUniform3d, InstanceVertex, MAX_INSTANCE_COUNT, SHADOW_MAP_RESOLUTION,
             Scene3dUniform,
@@ -20,8 +24,8 @@ use crate::{
 
 #[derive(Debug)]
 pub struct MeshBatch {
-    pub mesh_id: MeshHandle,
-    pub material_id: u32,
+    pub mesh_id: Index,
+    pub material_id: Index,
     pub instance_offset: u64,
     pub instance_count: u32,
     pub is_opaque: bool,
@@ -423,8 +427,8 @@ impl Resources {
         command_buffer: vk::CommandBuffer,
         shadow_pipeline: vk::Pipeline,
         pipeline_layout: vk::PipelineLayout,
-        meshes: &[MeshBuffer],
-        textures: &[TextureDescriptors],
+        meshes: &Arena<MeshBuffer>,
+        textures: &Arena<TextureDescriptors>,
         batch_info: &[MeshBatch],
     ) {
         unsafe {
@@ -434,8 +438,10 @@ impl Resources {
                 shadow_pipeline,
             );
 
-            let shadow_descriptor_sets =
-                [self.shadow_pass_descriptor_set, textures[1].descriptor_set];
+            let shadow_descriptor_sets = [
+                self.shadow_pass_descriptor_set,
+                textures.get(WHITE_TEXTURE_INDEX).unwrap().descriptor_set,
+            ];
 
             device.cmd_bind_descriptor_sets(
                 command_buffer,
@@ -453,7 +459,7 @@ impl Resources {
                     break;
                 }
 
-                let mesh_buffer = &meshes[batch.mesh_id.0 as usize];
+                let mesh_buffer = &meshes.get(batch.mesh_id).unwrap();
 
                 device.cmd_bind_vertex_buffers(
                     command_buffer,
@@ -487,15 +493,15 @@ impl Resources {
         command_buffer: vk::CommandBuffer,
         skybox_pipeline: vk::Pipeline,
         pipeline_layout: vk::PipelineLayout,
-        meshes: &[MeshBuffer],
-        textures: &[TextureDescriptors],
-        materials: &[MaterialDescriptor],
+        meshes: &Arena<MeshBuffer>,
+        textures: &Arena<TextureDescriptors>,
+        materials: &Arena<MaterialDescriptor>,
     ) {
         unsafe {
             let main_descriptor_sets = [
                 self.main_pass_descriptor_set,
-                textures[0].descriptor_set,
-                materials[0].descriptor_set,
+                textures.get(FALLBACK_TEXTURE_INDEX).unwrap().descriptor_set,
+                materials.get(BASE_MATERIAL_INDEX).unwrap().descriptor_set,
             ];
 
             device.cmd_bind_descriptor_sets(
@@ -513,7 +519,7 @@ impl Resources {
                 skybox_pipeline,
             );
 
-            let cube_mesh = &meshes[0];
+            let cube_mesh = meshes.get_by_slot(0).unwrap().1;
 
             device.cmd_bind_vertex_buffers(command_buffer, 0, &[cube_mesh.vertex_buffer.0], &[0]);
 
@@ -535,9 +541,9 @@ impl Resources {
         opaque_scene_pipeline: vk::Pipeline,
         transparent_scene_pipeline: vk::Pipeline,
         pipeline_layout: vk::PipelineLayout,
-        meshes: &[MeshBuffer],
-        textures: &[TextureDescriptors],
-        _materials: &[MaterialDescriptor],
+        meshes: &Arena<MeshBuffer>,
+        textures: &Arena<TextureDescriptors>,
+        _materials: &Arena<MaterialDescriptor>,
         batch_info: &[MeshBatch],
     ) {
         unsafe {
@@ -564,7 +570,7 @@ impl Resources {
                 if last_material != Some(batch.material_id) {
                     last_material = Some(batch.material_id);
 
-                    let descriptor_sets = [textures[batch.material_id as usize].descriptor_set];
+                    let descriptor_sets = [textures.get(batch.material_id).unwrap().descriptor_set];
 
                     device.cmd_bind_descriptor_sets(
                         command_buffer,
@@ -576,7 +582,7 @@ impl Resources {
                     );
                 }
 
-                let mesh_buffer = &meshes[batch.mesh_id.0 as usize];
+                let mesh_buffer = &meshes.get(batch.mesh_id).unwrap();
 
                 device.cmd_bind_vertex_buffers(
                     command_buffer,

@@ -38,8 +38,8 @@ pub struct HierarchyComponent<T> {
 
 pub struct MeshComponent {
     pub color: Vec3,
-    pub mesh_id: u32,
-    pub material: u32,
+    pub mesh_id: Index,
+    pub material: Index,
     pub opacity: f32,
 }
 

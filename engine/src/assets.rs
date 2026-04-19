@@ -1,6 +1,7 @@
 use ash::vk;
 use glam::{Vec2, Vec3};
 use image::{EncodableLayout, GenericImage};
+use thunderdome::Index;
 
 use crate::{
     renderer::{renderer::VulkanContext, scene3d::MeshVertex, textures::SkyboxImageData},
@@ -52,7 +53,7 @@ pub fn get_first_gltf_mesh(filename: &str) -> MeshData {
     process_gltf_mesh(&mesh, &buffers)
 }
 
-pub fn load_skybox<'a>(render: &mut VulkanContext, file_path: &str) -> u32 {
+pub fn load_skybox<'a>(render: &mut VulkanContext, file_path: &str) -> Index {
     let mut skybox_image = image::open(file_path).unwrap().into_rgba8();
 
     let top_image = skybox_image.sub_image(512, 0, 512, 512).to_image();

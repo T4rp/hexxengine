@@ -13,8 +13,10 @@ use hexxengine::{
         self,
         prelude::{MassProperties, QueryFilter, QueryPipeline, Shape, ShapeType, SharedShape},
     },
+    renderer::renderer::{BASE_MATERIAL_INDEX, WHITE_TEXTURE_INDEX},
     scene::UiText,
-    thunderdome, winit,
+    thunderdome::{self, Index},
+    winit,
 };
 
 use glam::{EulerRot, Quat, Vec3, vec3};
@@ -54,9 +56,9 @@ const CHARACTER_HEIGHT: f32 = 10.0;
 const CHARACTER_RADIUS: f32 = 2.0;
 
 struct GameResources {
-    cube_mesh: MeshHandle,
-    sphere_mesh: MeshHandle,
-    skybox1: u32,
+    cube_mesh: Index,
+    sphere_mesh: Index,
+    skybox1: Index,
 }
 
 pub struct Game {
@@ -132,8 +134,8 @@ impl Game {
             transform: baseplate_transform,
             mesh: MeshComponent {
                 color: vec3(0.2, 0.2, 0.2),
-                mesh_id: resources.cube_mesh.0,
-                material: 1,
+                mesh_id: resources.cube_mesh,
+                material: BASE_MATERIAL_INDEX,
                 opacity: 1.0,
             },
             rigid_body: RigidBodyComponent::new(
@@ -166,8 +168,8 @@ impl Game {
                 transform,
                 mesh: MeshComponent {
                     color: hsv_to_rgb(rng.random::<f32>() * 360.0, 0.8, 1.0),
-                    mesh_id: resources.cube_mesh.0,
-                    material: 1,
+                    mesh_id: resources.cube_mesh,
+                    material: BASE_MATERIAL_INDEX,
                     opacity: 1.0,
                 },
                 rigid_body: RigidBodyComponent::new(
@@ -195,8 +197,8 @@ impl Game {
             transform: character_transform,
             mesh: MeshComponent {
                 color: Vec3::ZERO,
-                mesh_id: resources.cube_mesh.0,
-                material: 1,
+                mesh_id: resources.cube_mesh,
+                material: BASE_MATERIAL_INDEX,
                 opacity: 1.0,
             },
             controller: CharacterControllerComponent::new(
@@ -398,7 +400,7 @@ impl Game {
                 size: part.transform.size,
                 color: part.mesh.color,
                 opacity: part.mesh.opacity,
-                mesh_id: MeshHandle(part.mesh.mesh_id),
+                mesh_id: part.mesh.mesh_id,
                 material_id: part.mesh.material,
             });
         }
@@ -410,7 +412,7 @@ impl Game {
                 size: character.transform.size,
                 color: character.mesh.color,
                 opacity: character.mesh.opacity,
-                mesh_id: MeshHandle(character.mesh.mesh_id),
+                mesh_id: character.mesh.mesh_id,
                 material_id: character.mesh.material,
             });
         }

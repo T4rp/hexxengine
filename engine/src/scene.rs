@@ -75,7 +75,7 @@ pub struct Lighting {
     pub sun_color: Vec3,
     pub sun_power: f32,
     pub ambient_color: Vec3,
-    pub skybox_id: u32,
+    pub skybox_id: Index,
 }
 
 #[derive(Clone)]
@@ -85,8 +85,8 @@ pub struct MeshNode {
     pub size: Vec3,
     pub color: Vec3,
     pub opacity: f32,
-    pub mesh_id: MeshHandle,
-    pub material_id: u32,
+    pub mesh_id: Index,
+    pub material_id: Index,
 }
 
 pub struct UiFrame {

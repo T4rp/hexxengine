@@ -5,6 +5,7 @@ use ash::{
     vk::{self, ComponentMapping, ImageAspectFlags},
 };
 use glam::{Mat4, UVec2};
+use thunderdome::Arena;
 use vk_mem::Alloc;
 
 use crate::{
@@ -12,7 +13,7 @@ use crate::{
     renderer::{
         images::transition_images,
         pipelines::VulkanPipelineBuilder,
-        renderer::TextureDescriptors,
+        renderer::{TextureDescriptors, WHITE_TEXTURE_INDEX},
         scene2d::{CameraUniform2d, MAX_VERTICES_2D, Vertex2d, buffer_writing},
         vkutils::{self, AllocatedBuffer},
     },
@@ -247,7 +248,7 @@ impl Resources {
         scene_pipeline: vk::Pipeline,
         text_pipeline: vk::Pipeline,
         pipeline_layout: vk::PipelineLayout,
-        textures: &[TextureDescriptors],
+        textures: &Arena<TextureDescriptors>,
         draw_batches: &[UiBatch],
     ) {
         if self.vertex_count == 0 {
@@ -255,7 +256,10 @@ impl Resources {
         }
 
         unsafe {
-            let descriptor_sets = [self.global_descriptor_set, textures[1].descriptor_set];
+            let descriptor_sets = [
+                self.global_descriptor_set,
+                textures.get(WHITE_TEXTURE_INDEX).unwrap().descriptor_set,
+            ];
 
             device.cmd_bind_descriptor_sets(
                 command_buffer,
