@@ -1,0 +1,8 @@
+[package]
+name = "level-editor"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+hexxengine = { path = "../engine/" }
