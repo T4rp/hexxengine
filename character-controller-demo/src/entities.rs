@@ -1,11 +1,10 @@
 use hexxengine::{
+    components::{MeshComponent, RigidBodyComponent, TransformComponent},
     physics::context::PhysicsContext,
     thunderdome::{Arena, Index},
 };
 
-use crate::components::{
-    CharacterControllerComponent, MeshComponent, RigidBodyComponent, TransformComponent,
-};
+use crate::components::CharacterControllerComponent;
 
 pub struct Part {
     pub transform: TransformComponent,
