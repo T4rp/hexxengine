@@ -2,11 +2,12 @@ use std::time::Instant;
 
 use hexxengine::{
     ash::vk,
-    assets::{get_first_gltf_mesh, load_skybox, ASSET_PATH},
-    glam::{vec3, EulerRot, Quat, Vec3},
+    assets::{ASSET_PATH, get_first_gltf_mesh, load_skybox},
+    glam::{EulerRot, Quat, Vec3, vec3},
     input::InputState,
-    renderer::renderer::{VulkanContext, FALLBACK_SKYBOX_INDEX},
+    renderer::renderer::{FALLBACK_SKYBOX_INDEX, VulkanContext},
     scene::{Camera, Lighting, RenderScene},
+    thunderdome::Arena,
     winit::{
         self,
         event::{DeviceEvent, WindowEvent},

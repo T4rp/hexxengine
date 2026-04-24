@@ -1,22 +1,11 @@
 use hexxengine::{
     components::{MeshComponent, RigidBodyComponent, TransformComponent},
+    entities::Part,
     physics::context::PhysicsContext,
     thunderdome::{Arena, Index},
 };
 
 use crate::components::CharacterControllerComponent;
-
-pub struct Part {
-    pub transform: TransformComponent,
-    pub mesh: MeshComponent,
-    pub rigid_body: RigidBodyComponent,
-}
-
-impl Part {
-    pub fn destroy(self, phys_ctx: &mut PhysicsContext) {
-        self.rigid_body.destroy(phys_ctx);
-    }
-}
 
 pub struct Character {
     pub transform: TransformComponent,

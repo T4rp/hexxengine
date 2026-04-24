@@ -4,6 +4,7 @@ use hexxengine::{
     ash::khr::workgroup_memory_explicit_layout,
     assets::ASSET_PATH,
     components::{MeshComponent, RigidBodyComponent, TransformComponent},
+    entities::Part,
     glam::{self, IVec2, Vec2},
     gltf::json::extensions::scene,
     physics::character_controller::{
@@ -42,7 +43,7 @@ use hexxengine::{
 
 use crate::{
     components::CharacterControllerComponent,
-    entities::{Character, Part, World},
+    entities::{Character, World},
 };
 
 const FRAMERATE_LIMIT_HZ: f32 = 1.0 / 80.0;
