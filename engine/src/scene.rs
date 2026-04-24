@@ -94,12 +94,12 @@ pub struct UiFrame {
     pub anchor: Vec2,
     pub size: Vec2,
     pub color: Vec4,
-    pub texture_id: u32,
+    pub texture_id: Index,
     pub uvs: [Vec2; 4],
 }
 
 impl UiFrame {
-    pub fn new(position: Vec2, size: Vec2, texture_id: u32) -> Self {
+    pub fn new(position: Vec2, size: Vec2, texture_id: Index) -> Self {
         Self {
             position,
             size,

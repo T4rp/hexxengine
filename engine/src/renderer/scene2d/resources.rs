@@ -277,6 +277,15 @@ impl Resources {
 
             let mut is_text = None;
 
+            device.cmd_bind_vertex_buffers(command_buffer, 0, &[self.vertex_buffer.0], &[0 as u64]);
+
+            device.cmd_bind_index_buffer(
+                command_buffer,
+                self.index_buffer.0,
+                0 as u64,
+                vk::IndexType::UINT16,
+            );
+
             for batch in draw_batches.iter() {
                 if is_text != Some(batch.is_text) {
                     is_text = Some(batch.is_text);
@@ -296,21 +305,14 @@ impl Resources {
                     }
                 }
 
-                device.cmd_bind_vertex_buffers(
+                device.cmd_draw_indexed(
                     command_buffer,
+                    batch.index_count,
+                    1,
+                    batch.index_offset,
                     0,
-                    &[self.vertex_buffer.0],
-                    &[batch.vertex_offset as u64],
+                    0,
                 );
-
-                device.cmd_bind_index_buffer(
-                    command_buffer,
-                    self.index_buffer.0,
-                    batch.index_offset as u64,
-                    vk::IndexType::UINT16,
-                );
-
-                device.cmd_draw_indexed(command_buffer, batch.index_count, 1, 0, 0, 0);
             }
         }
     }

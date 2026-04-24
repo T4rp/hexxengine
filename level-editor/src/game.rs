@@ -20,6 +20,8 @@ use hexxengine::{
     },
 };
 
+use crate::editor_ui::EditorUi;
+
 const CAMERA_SPEED: f32 = 100.0;
 const CAMERA_SENSITIVITY: f32 = 0.38;
 const STEP_HZ: f32 = 1.0 / 60.0;
@@ -38,12 +40,15 @@ impl World {
 
 pub struct Game {
     vk_ctx: VulkanContext,
+    physics_context: PhysicsContext,
     input_state: InputState,
     render_scene: RenderScene,
     world: World,
+
+    editor_ui: EditorUi,
+
     start_time: Instant,
     last_frame: Instant,
-    physics_context: PhysicsContext,
     accumulator: f32,
 }
 
@@ -105,6 +110,8 @@ impl Game {
 
         world.parts.insert(baseplate);
 
+        let editor_ui = EditorUi::new();
+
         Game {
             vk_ctx,
             input_state,
@@ -114,6 +121,7 @@ impl Game {
             last_frame: start_time,
             world,
             accumulator: 0.0,
+            editor_ui,
         }
     }
 
@@ -181,6 +189,9 @@ impl Game {
 
     fn draw(&mut self) {
         self.render_scene.meshes.clear();
+        self.render_scene.ui.clear();
+
+        self.editor_ui.render(&mut self.render_scene);
 
         for (_i, part) in self.world.parts.iter() {
             self.render_scene.meshes.push(MeshNode {

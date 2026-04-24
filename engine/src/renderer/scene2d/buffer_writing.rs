@@ -77,44 +77,6 @@ pub fn push_text_verts(
         pen_y += glyph.advance.1;
     }
 
-    // let mut text_box = Boundsi32 {
-    //         x_min: 5000,
-    //         y_min: 5000,
-    //         x_max: -5000,
-    //         y_max: -5000,
-    //     };
-    //
-    //     for (i, glyph) in glyphs.iter().enumerate() {
-    //         if (glyph.cbox.x_min as i32) < text_box.x_min {
-    //             text_box.x_min = glyph.cbox.x_min as i32;
-    //         }
-    //
-    //         if (glyph.cbox.x_max as i32) > text_box.x_max {
-    //             text_box.x_max = glyph.cbox.x_max as i32;
-    //         }
-    //
-    //         if (glyph.cbox.y_min as i32) < text_box.y_min {
-    //             text_box.y_min = glyph.cbox.y_min as i32;
-    //         }
-    //
-    //         if (glyph.cbox.y_max as i32) > text_box.y_max {
-    //             text_box.y_max = glyph.cbox.y_max as i32;
-    //         }
-    //
-    //         if text_box.x_min > text_box.x_max {
-    //             text_box.x_min = 0;
-    //             text_box.x_max = 0;
-    //             text_box.y_min = 0;
-    //             text_box.y_max = 0;
-    //         }
-    //     }
-    //
-    //     let box_width = text_box.x_max - text_box.x_min;
-    //     let box_height = text_box.y_max - text_box.y_min;
-    //
-    //     let start_x = (box_width as f32) / 2.0 + ui_text.position.x as f32;
-    //     let start_y = (box_height as f32) / 2.0 + ui_text.position.y as f32;
-    //
     for (i, glyph) in glyphs.iter().enumerate() {
         if glyph.is_empty {
             continue;
