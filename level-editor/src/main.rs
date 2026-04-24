@@ -1,3 +1,4 @@
+mod entities;
 mod game;
 
 use hexxengine::winit::{self, event::ElementState, window::Fullscreen};

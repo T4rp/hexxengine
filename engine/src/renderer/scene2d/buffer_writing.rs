@@ -9,11 +9,15 @@ use crate::{
 };
 
 pub fn push_frame_verts(
+    window_extent: vk::Extent2D,
     ui_frame: &UiFrame,
     vertices: &mut Vec<Vertex2d>,
     indices: &mut Vec<u16>,
 ) -> (u32, u32) {
     let vert_offset = vertices.len();
+
+    let position = ui_frame.position;
+    let size = ui_frame.size;
 
     vertices.push(Vertex2d {
         pos: ui_frame.position,
@@ -22,22 +26,19 @@ pub fn push_frame_verts(
     });
 
     vertices.push(Vertex2d {
-        pos: vec2(ui_frame.position.x, ui_frame.position.y + ui_frame.size.y),
+        pos: vec2(position.x, position.y + size.y),
         uv: ui_frame.uvs[1],
         color: ui_frame.color,
     });
 
     vertices.push(Vertex2d {
-        pos: vec2(
-            ui_frame.position.x + ui_frame.size.x,
-            ui_frame.position.y + ui_frame.size.y,
-        ),
+        pos: vec2(position.x + size.x, position.y + size.y),
         uv: ui_frame.uvs[2],
         color: ui_frame.color,
     });
 
     vertices.push(Vertex2d {
-        pos: vec2(ui_frame.position.x + ui_frame.size.x, ui_frame.position.y),
+        pos: vec2(position.x + size.x, position.y),
         uv: ui_frame.uvs[3],
         color: ui_frame.color,
     });

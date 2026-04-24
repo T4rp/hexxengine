@@ -3,6 +3,7 @@ use std::{rc::Rc, time::Instant};
 use hexxengine::{
     ash::khr::workgroup_memory_explicit_layout,
     assets::ASSET_PATH,
+    components::{MeshComponent, RigidBodyComponent, TransformComponent},
     glam::{self, IVec2, Vec2},
     gltf::json::extensions::scene,
     physics::character_controller::{
@@ -40,9 +41,7 @@ use hexxengine::{
 };
 
 use crate::{
-    components::{
-        CharacterControllerComponent, MeshComponent, RigidBodyComponent, TransformComponent,
-    },
+    components::CharacterControllerComponent,
     entities::{Character, Part, World},
 };
 

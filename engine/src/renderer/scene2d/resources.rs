@@ -144,8 +144,12 @@ impl Resources {
 
             match ui {
                 UiDraw::Frame(ui_frame) => {
-                    let (new_vertices, new_indices) =
-                        buffer_writing::push_frame_verts(&ui_frame, &mut vertices, &mut indices);
+                    let (new_vertices, new_indices) = buffer_writing::push_frame_verts(
+                        window_extent,
+                        &ui_frame,
+                        &mut vertices,
+                        &mut indices,
+                    );
 
                     end_vertex += new_vertices;
                     end_index += new_indices;
@@ -181,6 +185,7 @@ impl Resources {
                 match next_ui {
                     UiDraw::Frame(ui_frame) => {
                         let (new_vertices, new_indices) = buffer_writing::push_frame_verts(
+                            window_extent,
                             &ui_frame,
                             &mut vertices,
                             &mut indices,

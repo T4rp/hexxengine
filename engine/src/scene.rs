@@ -91,6 +91,7 @@ pub struct MeshNode {
 
 pub struct UiFrame {
     pub position: Vec2,
+    pub anchor: Vec2,
     pub size: Vec2,
     pub color: Vec4,
     pub texture_id: u32,
@@ -110,6 +111,7 @@ impl UiFrame {
                 vec2(1.0, 1.0),
                 vec2(1.0, 0.0),
             ],
+            anchor: Vec2::ZERO,
         }
     }
 
@@ -154,6 +156,7 @@ impl UiFrame {
 
 pub struct UiText {
     pub position: IVec2,
+    pub anchor: Vec2,
     pub font_height: u32,
     pub text: Cow<'static, str>,
     pub color: Vec3,
@@ -163,6 +166,7 @@ impl UiText {
     pub fn new(position: IVec2, height: u32, text: impl Into<Cow<'static, str>>) -> Self {
         Self {
             position,
+            anchor: Vec2::ZERO,
             font_height: height,
             text: text.into(),
             color: Vec3::ZERO,

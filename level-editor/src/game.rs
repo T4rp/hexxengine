@@ -1,10 +1,11 @@
 use std::time::Instant;
 
 use hexxengine::{
-    assets::{ASSET_PATH, get_first_gltf_mesh},
-    glam::{EulerRot, Quat, Vec3, vec3},
+    ash::vk,
+    assets::{get_first_gltf_mesh, load_skybox, ASSET_PATH},
+    glam::{vec3, EulerRot, Quat, Vec3},
     input::InputState,
-    renderer::renderer::{FALLBACK_SKYBOX_INDEX, VulkanContext},
+    renderer::renderer::{VulkanContext, FALLBACK_SKYBOX_INDEX},
     scene::{Camera, Lighting, RenderScene},
     winit::{
         self,
@@ -34,7 +35,16 @@ impl Game {
         let cube_mesh = get_first_gltf_mesh(format!("{}/cube.gltf", ASSET_PATH).as_str());
         vk_ctx.load_mesh(&cube_mesh.vertices, &cube_mesh.indices);
 
-        let render_scene = RenderScene::new(
+        let skybox = load_skybox(
+            &mut vk_ctx,
+            format!(
+                "{}/cloudy-skyboxes/Cubemap/Cubemap_Sky_04-512x512.png",
+                ASSET_PATH
+            )
+            .as_str(),
+        );
+
+        let mut render_scene = RenderScene::new(
             Camera::new(
                 vec3(0.0, 100.0, 100.0),
                 Quat::from_euler(EulerRot::ZXY, 0.0, f32::to_radians(-45.0), 0.0),
@@ -48,6 +58,8 @@ impl Game {
                 skybox_id: FALLBACK_SKYBOX_INDEX,
             },
         );
+
+        render_scene.lighting.skybox_id = skybox;
 
         Game {
             vk_ctx,
