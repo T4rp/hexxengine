@@ -357,8 +357,6 @@ impl Game {
         self.accumulator += dt;
         self.draw_accumulator += dt;
 
-        let gravity_y = self.physics_context.gravity.y;
-
         while self.accumulator > STEP_HZ {
             self.update_fixed();
             self.accumulator -= STEP_HZ;

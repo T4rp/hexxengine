@@ -3,10 +3,14 @@ use std::time::Instant;
 use hexxengine::{
     ash::vk,
     assets::{ASSET_PATH, get_first_gltf_mesh, load_skybox},
+    components::{MeshComponent, TransformComponent},
+    entities::Part,
     glam::{EulerRot, Quat, Vec3, vec3},
     input::InputState,
-    renderer::renderer::{FALLBACK_SKYBOX_INDEX, VulkanContext},
-    scene::{Camera, Lighting, RenderScene},
+    physics::context::PhysicsContext,
+    rapier3d::prelude::{RigidBodyType, ShapeType},
+    renderer::renderer::{BASE_MATERIAL_INDEX, FALLBACK_SKYBOX_INDEX, VulkanContext},
+    scene::{Camera, Lighting, MeshNode, RenderScene},
     thunderdome::Arena,
     winit::{
         self,
@@ -18,13 +22,29 @@ use hexxengine::{
 
 const CAMERA_SPEED: f32 = 100.0;
 const CAMERA_SENSITIVITY: f32 = 0.38;
+const STEP_HZ: f32 = 1.0 / 60.0;
+
+pub struct World {
+    parts: Arena<Part>,
+}
+
+impl World {
+    fn new() -> Self {
+        Self {
+            parts: Arena::new(),
+        }
+    }
+}
 
 pub struct Game {
     vk_ctx: VulkanContext,
     input_state: InputState,
     render_scene: RenderScene,
+    world: World,
     start_time: Instant,
     last_frame: Instant,
+    physics_context: PhysicsContext,
+    accumulator: f32,
 }
 
 impl Game {
@@ -34,7 +54,7 @@ impl Game {
         let start_time = Instant::now();
 
         let cube_mesh = get_first_gltf_mesh(format!("{}/cube.gltf", ASSET_PATH).as_str());
-        vk_ctx.load_mesh(&cube_mesh.vertices, &cube_mesh.indices);
+        let cube_mesh_id = vk_ctx.load_mesh(&cube_mesh.vertices, &cube_mesh.indices);
 
         let skybox = load_skybox(
             &mut vk_ctx,
@@ -62,12 +82,38 @@ impl Game {
 
         render_scene.lighting.skybox_id = skybox;
 
+        let mut physics_context = PhysicsContext::new();
+
+        let mut world = World::new();
+
+        let baseplate = Part::new(
+            &mut physics_context,
+            TransformComponent {
+                position: vec3(0.0, -25.0, 0.0),
+                orientation: Quat::IDENTITY,
+                size: vec3(2048.0, 50.0, 2048.0),
+            },
+            MeshComponent {
+                color: vec3(0.2, 0.2, 0.2),
+                mesh_id: cube_mesh_id,
+                material: BASE_MATERIAL_INDEX,
+                opacity: 1.0,
+            },
+            RigidBodyType::Fixed,
+            ShapeType::Cuboid,
+        );
+
+        world.parts.insert(baseplate);
+
         Game {
             vk_ctx,
             input_state,
             render_scene,
             start_time,
+            physics_context,
             last_frame: start_time,
+            world,
+            accumulator: 0.0,
         }
     }
 
@@ -115,16 +161,39 @@ impl Game {
         }
     }
 
+    fn fixed_update(&mut self) {}
+
     fn update(&mut self, window: &Window) {
         let now = Instant::now();
         let dt = (now - self.last_frame).as_secs_f32();
         let elapsed = (now - self.start_time).as_secs_f32();
+        self.last_frame = now;
 
         self.update_camera(dt, window);
+
+        while self.accumulator > STEP_HZ {
+            self.fixed_update();
+            self.accumulator -= STEP_HZ;
+        }
+
         self.input_state.clear();
     }
 
     fn draw(&mut self) {
+        self.render_scene.meshes.clear();
+
+        for (_i, part) in self.world.parts.iter() {
+            self.render_scene.meshes.push(MeshNode {
+                position: part.transform.position,
+                orientation: part.transform.orientation,
+                size: part.transform.size,
+                color: part.mesh.color,
+                opacity: part.mesh.opacity,
+                mesh_id: part.mesh.mesh_id,
+                material_id: part.mesh.material,
+            });
+        }
+
         self.vk_ctx.draw(&self.render_scene);
     }
 
