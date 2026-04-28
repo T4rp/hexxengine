@@ -2,6 +2,7 @@ mod components;
 mod editor_ui;
 mod entities;
 mod game;
+mod ui;
 
 use hexxengine::winit::{self, event::ElementState, window::Fullscreen};
 use winit::{

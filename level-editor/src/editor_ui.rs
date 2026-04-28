@@ -6,32 +6,32 @@ use hexxengine::{
     thunderdome::{Arena, Index},
 };
 
-struct UiNode {
-    parent: Option<Index>,
-    children: Vec<Index>,
-    world_position: Vec2,
-    element: UiElement,
+pub struct UiNode {
+    pub parent: Option<Index>,
+    pub children: Vec<Index>,
+    pub world_position: Vec2,
+    pub element: UiElement,
 }
 
 #[derive(Default)]
-struct UiRect {
-    color: Vec3,
-    position: Vec2,
-    size: Vec2,
+pub struct UiRect {
+    pub color: Vec3,
+    pub position: Vec2,
+    pub size: Vec2,
 }
 
 impl UiRect {
-    fn to_elem(self) -> UiElement {
+    pub fn to_elem(self) -> UiElement {
         UiElement::Rect(self)
     }
 }
 
-enum UiElement {
+pub enum UiElement {
     Rect(UiRect),
 }
 
 impl UiElement {
-    fn position(&self) -> Vec2 {
+    pub fn position(&self) -> Vec2 {
         match self {
             UiElement::Rect(ui_rect) => ui_rect.position,
         }
@@ -39,19 +39,24 @@ impl UiElement {
 }
 
 pub struct UiContext {
-    elements: Arena<UiNode>,
-    root: Vec<Index>,
+    pub elements: Arena<UiNode>,
+    pub root: Vec<Index>,
 }
 
 impl UiContext {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             elements: Arena::new(),
             root: Vec::new(),
         }
     }
 
-    fn parent(&mut self, child: Index, parent: Index) {
+    pub fn clear(&mut self) {
+        self.elements.clear();
+        self.root.clear();
+    }
+
+    pub fn parent(&mut self, child: Index, parent: Index) {
         let parent_element = self.elements.get_mut(parent).unwrap();
         parent_element.children.push(child);
 
@@ -59,11 +64,11 @@ impl UiContext {
         child_element.parent = Some(parent);
     }
 
-    fn root(&mut self, root_element: Index) {
+    pub fn root(&mut self, root_element: Index) {
         self.root.push(root_element);
     }
 
-    fn new_elem(&mut self, element: UiElement) -> Index {
+    pub fn new_elem(&mut self, element: UiElement) -> Index {
         let element = UiNode {
             parent: None,
             children: Vec::new(),
@@ -76,8 +81,7 @@ impl UiContext {
         index
     }
 
-    fn build_draws(&mut self) -> Vec<UiDraw> {
-        let mut ui_draws = Vec::new();
+    pub fn build_draws(&mut self, ui_draws: &mut Vec<UiDraw>) {
         let mut elements = self.root.clone();
 
         while elements.len() > 0 {
@@ -114,8 +118,6 @@ impl UiContext {
                 _ => {}
             }
         }
-
-        ui_draws
     }
 }
 
@@ -123,7 +125,10 @@ impl UiContext {
 mod tests {
     use hexxengine::glam::{vec2, vec3};
 
-    use crate::editor_ui::{UiContext, UiRect};
+    use crate::{
+        editor_ui::{UiContext, UiRect},
+        ui,
+    };
 
     #[test]
     fn build_tree() {
@@ -149,6 +154,7 @@ mod tests {
         );
         ctx.parent(inner_pane, pane);
 
-        ctx.build_draws();
+        let mut ui_draws = Vec::new();
+        ctx.build_draws(&mut ui_draws);
     }
 }

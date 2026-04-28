@@ -1,7 +1,6 @@
 use std::time::Instant;
 
 use hexxengine::{
-    ash::vk,
     assets::{ASSET_PATH, get_first_gltf_mesh, load_skybox},
     components::{MeshComponent, TransformComponent},
     entities::Part,
@@ -19,6 +18,8 @@ use hexxengine::{
         window::Window,
     },
 };
+
+use crate::{editor_ui::UiContext, ui};
 
 const CAMERA_SPEED: f32 = 100.0;
 const CAMERA_SENSITIVITY: f32 = 0.38;
@@ -42,6 +43,8 @@ pub struct Game {
     input_state: InputState,
     render_scene: RenderScene,
     world: World,
+
+    ui_context: UiContext,
 
     start_time: Instant,
     last_frame: Instant,
@@ -106,6 +109,9 @@ impl Game {
 
         world.parts.insert(baseplate);
 
+        let mut ui_context = UiContext::new();
+        ui::render(&mut render_scene, &mut ui_context);
+
         Game {
             vk_ctx,
             input_state,
@@ -115,6 +121,7 @@ impl Game {
             last_frame: start_time,
             world,
             accumulator: 0.0,
+            ui_context,
         }
     }
 
@@ -182,7 +189,6 @@ impl Game {
 
     fn draw(&mut self) {
         self.render_scene.meshes.clear();
-        self.render_scene.ui.clear();
 
         for (_i, part) in self.world.parts.iter() {
             self.render_scene.meshes.push(MeshNode {
