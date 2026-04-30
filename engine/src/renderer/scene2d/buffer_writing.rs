@@ -66,8 +66,8 @@ pub fn push_text_verts(
     let mut vertex_count = 0;
     let mut index_count = 0;
 
-    let mut pen_x = ui_text.position.x;
-    let mut pen_y = ui_text.position.y;
+    let mut pen_x = ui_text.position.x as i32;
+    let mut pen_y = ui_text.position.y as i32;
 
     let mut pen_positions = Vec::with_capacity(glyphs.len());
 

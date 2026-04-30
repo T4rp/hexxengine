@@ -1,6 +1,8 @@
+use std::borrow::Cow;
+
 use hexxengine::glam::{Vec4, vec2};
 use hexxengine::renderer::renderer::WHITE_TEXTURE_INDEX;
-use hexxengine::scene::{UiDraw, UiFrame};
+use hexxengine::scene::{UiDraw, UiFrame, UiText};
 use hexxengine::{
     glam::{Vec2, Vec3},
     thunderdome::{Arena, Index},
@@ -20,6 +22,13 @@ pub struct UiRect {
     pub size: Vec2,
 }
 
+pub struct UiTextBox {
+    pub color: Vec3,
+    pub position: Vec2,
+    pub font_size: u32,
+    pub text: Cow<'static, str>,
+}
+
 impl UiRect {
     pub fn to_elem(self) -> UiElement {
         UiElement::Rect(self)
@@ -28,12 +37,14 @@ impl UiRect {
 
 pub enum UiElement {
     Rect(UiRect),
+    Text(UiTextBox),
 }
 
 impl UiElement {
     pub fn position(&self) -> Vec2 {
         match self {
             UiElement::Rect(ui_rect) => ui_rect.position,
+            UiElement::Text(ui_text) => ui_text.position,
         }
     }
 }
@@ -115,6 +126,15 @@ impl UiContext {
                         uvs: Default::default(),
                     }));
                 }
+                UiElement::Text(ui_text) => {
+                    ui_draws.push(UiDraw::Text(UiText {
+                        position: ui_text.position,
+                        anchor: Vec2::ZERO,
+                        font_height: ui_text.font_size,
+                        text: ui_text.text.clone(),
+                        color: ui_text.color,
+                    }));
+                }
                 _ => {}
             }
         }
@@ -125,10 +145,7 @@ impl UiContext {
 mod tests {
     use hexxengine::glam::{vec2, vec3};
 
-    use crate::{
-        editor_ui::{UiContext, UiRect},
-        ui,
-    };
+    use crate::editor_ui::{UiContext, UiRect};
 
     #[test]
     fn build_tree() {

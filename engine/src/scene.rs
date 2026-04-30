@@ -155,7 +155,7 @@ impl UiFrame {
 }
 
 pub struct UiText {
-    pub position: IVec2,
+    pub position: Vec2,
     pub anchor: Vec2,
     pub font_height: u32,
     pub text: Cow<'static, str>,
@@ -163,7 +163,7 @@ pub struct UiText {
 }
 
 impl UiText {
-    pub fn new(position: IVec2, height: u32, text: impl Into<Cow<'static, str>>) -> Self {
+    pub fn new(position: Vec2, height: u32, text: impl Into<Cow<'static, str>>) -> Self {
         Self {
             position,
             anchor: Vec2::ZERO,

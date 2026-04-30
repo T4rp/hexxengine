@@ -379,7 +379,7 @@ impl Game {
                 .floor();
 
             self.scene.push_ui_text(UiText::new(
-                IVec2::new(0, 100),
+                Vec2::new(0.0, 100.0),
                 32,
                 format!("speed: {}", horizontal_speed),
             ));

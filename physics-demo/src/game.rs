@@ -203,7 +203,7 @@ impl Game {
         // scene.push_ui_frame(UiFrame::new(vec2(0.0, 0.0), vec2(600.0, 300.0), 1));
 
         scene.push_ui_text(UiText::new(
-            ivec2(0, 0),
+            vec2(0.0, 0.0),
             32,
             "the quick brown fox doesnt not concern himself with subpixel rendering",
         ));
