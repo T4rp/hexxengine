@@ -2,8 +2,6 @@
 - [ ] lighting
     - [ ] multiple lights
     - [x] sunlight
-- [ ] textures
-    - [ ] generational handles api
 - [ ] materials
     - [ ] generational handles api
     - [x] textures
@@ -12,37 +10,46 @@
         - [ ] emissive
 - [ ] loading gltf tree into renderer
 - [ ] meshes
-    - [ ] generational handles api
+    - [x] generational handles api
     - [ ] loading meshes from gltf
         - [x] better mesh loading
 - [ ] dynamic descriptor pool sizes
 - [ ] descriptor indexing for textures
 - [ ] window controls
     - [ ] mouse capture api
-- [ ] transparent rendering
+- [x] transparent rendering
 
 ## Doing
+- [ ] declarative ui
+    - [x] quads
+        - [ ] relative sizing
+    - [ ] inputs
+    - [ ] text
+        - [ ] relative sizing
+        - [ ] text bounds calculation
+        - [x] text drawing
+- [ ] level editor
+    - [ ] game-agnostic library
 
 ## Done
 - [x] Shadow map
     - [x] working
     - [x] based on camera position
+- [x] textures
+    - [x] generational handles api
+- [x] basic physics
+- [x] fps character controller demo
+    - [x] source/quake-like movement
+- [x] 2d rendering
+    - [x] text drawing
+    - [x] quad drawing
 
 ## Wants
-- [ ] ui
-    - [ ] quads
-    - [ ] inputs
-    - [ ] text
 - [ ] optimization
     - [ ] frustrum culling
     - [x] instancing
     - [ ] parallel processing
-- [ ] level editor
 - [ ] rigid 3d skeletal animations
-- [ ] physics
-- [ ] fps character controller
-    - [ ] source/quake-like movement
-        - [ ] surfing
 - [ ] post processing
     - [ ] FXAA
     - [ ] bloom
