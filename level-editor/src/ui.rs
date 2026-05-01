@@ -1,9 +1,9 @@
 use hexxengine::{
-    glam::{vec2, vec3},
+    glam::{Vec2, vec2, vec3},
     scene::RenderScene,
 };
 
-use crate::editor_ui::{UiContext, UiRect};
+use crate::editor_ui::{UiContext, UiRect, UiTextBox};
 
 pub fn render(scene: &mut RenderScene, ctx: &mut UiContext) {
     let pane = ctx.new_elem(
@@ -25,6 +25,17 @@ pub fn render(scene: &mut RenderScene, ctx: &mut UiContext) {
         .to_elem(),
     );
     ctx.parent(inner_pane, pane);
+
+    let label = ctx.new_elem(
+        UiTextBox {
+            color: vec3(1.0, 1.0, 1.0),
+            position: Vec2::ZERO,
+            font_size: 18,
+            text: "label".into(),
+        }
+        .to_elem(),
+    );
+    ctx.parent(label, inner_pane);
 
     ctx.build_draws(&mut scene.ui);
 }

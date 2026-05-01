@@ -22,6 +22,12 @@ pub struct UiRect {
     pub size: Vec2,
 }
 
+impl UiRect {
+    pub fn to_elem(self) -> UiElement {
+        UiElement::Rect(self)
+    }
+}
+
 pub struct UiTextBox {
     pub color: Vec3,
     pub position: Vec2,
@@ -29,9 +35,9 @@ pub struct UiTextBox {
     pub text: Cow<'static, str>,
 }
 
-impl UiRect {
+impl UiTextBox {
     pub fn to_elem(self) -> UiElement {
-        UiElement::Rect(self)
+        UiElement::Text(self)
     }
 }
 
@@ -128,7 +134,7 @@ impl UiContext {
                 }
                 UiElement::Text(ui_text) => {
                     ui_draws.push(UiDraw::Text(UiText {
-                        position: ui_text.position,
+                        position: elem.world_position,
                         anchor: Vec2::ZERO,
                         font_height: ui_text.font_size,
                         text: ui_text.text.clone(),
