@@ -280,7 +280,9 @@ impl Drop for Face {
 
 #[cfg(test)]
 mod tests {
-    use paidtype::freetype::{FT_LOAD_DEFAULT, FT_Render_Mode__FT_RENDER_MODE_MONO};
+    use paidtype::freetype::{
+        FT_LOAD_DEFAULT, FT_Render_Mode__FT_RENDER_MODE_MONO, FT_Render_Mode__FT_RENDER_MODE_NORMAL,
+    };
 
     use super::FreetypeLibrary;
 
@@ -351,7 +353,7 @@ mod tests {
 
         let glyph_index = face.get_char_index(0x40).unwrap();
         face.load_glyph(glyph_index, FT_LOAD_DEFAULT).unwrap();
-        face.render_glyph(FT_Render_Mode__FT_RENDER_MODE_MONO)
+        face.render_glyph(FT_Render_Mode__FT_RENDER_MODE_NORMAL)
             .unwrap();
 
         drop(freetype);
