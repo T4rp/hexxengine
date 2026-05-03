@@ -47,7 +47,7 @@ impl VulkanDeletionQueue {
         loop {
             let Some(resource) = self
                 .queue
-                .pop_back_if(|r| r.future_frame >= self.current_frame)
+                .pop_back_if(|r| r.future_frame <= self.current_frame)
             else {
                 break;
             };
