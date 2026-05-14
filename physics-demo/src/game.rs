@@ -1,7 +1,12 @@
-use std::time::Instant;
+use std::{
+    fs,
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 
 use hexxengine::{
     assets::ASSET_PATH,
+    font_manager::{FontHandle, FontManager},
     glam::{self, Vec2, ivec2, vec2},
     rand, rapier3d,
     renderer::renderer::BASE_MATERIAL_INDEX,
@@ -41,9 +46,11 @@ struct GameResources {
     sphere_mesh: Index,
     skybox1: Index,
     skybox2: Index,
+    font: FontHandle,
 }
 
 pub struct Game {
+    font_manager: Arc<Mutex<FontManager>>,
     vk_ctx: VulkanContext,
     input_state: InputState,
     scene: RenderScene,
@@ -149,7 +156,12 @@ impl Part {
 
 impl Game {
     pub fn new(window: &Window) -> Self {
-        let mut vk_ctx = VulkanContext::new(&window);
+        let mut font_manager = FontManager::new();
+        let font_data = fs::read(format!("{}/unifont-17.0.03.otf", ASSET_PATH)).unwrap();
+        let font_handle = font_manager.load_font(&font_data).unwrap();
+
+        let font_manager = Arc::new(Mutex::new(font_manager));
+        let mut vk_ctx = VulkanContext::new(&window, font_manager.clone());
 
         let cube_mesh = get_first_gltf_mesh(format!("{}/cube.gltf", ASSET_PATH).as_str());
         let sphere_mesh = get_first_gltf_mesh(format!("{}/sphere.gltf", ASSET_PATH).as_str());
@@ -176,6 +188,7 @@ impl Game {
         );
 
         let resources = GameResources {
+            font: font_handle,
             cube_mesh,
             sphere_mesh,
             skybox1: skybox1_id,
@@ -203,8 +216,9 @@ impl Game {
         // scene.push_ui_frame(UiFrame::new(vec2(0.0, 0.0), vec2(600.0, 300.0), 1));
 
         scene.push_ui_text(UiText::new(
-            vec2(0.0, 0.0),
-            32,
+            font_handle,
+            vec2(0.0, 16.0),
+            16,
             "the quick brown fox doesnt not concern himself with subpixel rendering",
         ));
 
@@ -248,6 +262,7 @@ impl Game {
         let input_state = InputState::new();
 
         Self {
+            font_manager,
             vk_ctx,
             scene,
             last_frame,

@@ -1,10 +1,16 @@
-use std::{rc::Rc, time::Instant};
+use std::{
+    fs,
+    rc::Rc,
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 
 use hexxengine::{
     ash::khr::workgroup_memory_explicit_layout,
     assets::ASSET_PATH,
     components::{MeshComponent, RigidBodyComponent, TransformComponent},
     entities::Part,
+    font_manager::{FontHandle, FontManager},
     glam::{self, IVec2, Vec2},
     gltf::json::extensions::scene,
     physics::character_controller::{
@@ -56,12 +62,14 @@ const CHARACTER_HEIGHT: f32 = 10.0;
 const CHARACTER_RADIUS: f32 = 2.0;
 
 struct GameResources {
+    font: FontHandle,
     cube_mesh: Index,
     sphere_mesh: Index,
     skybox1: Index,
 }
 
 pub struct Game {
+    font_manager: Arc<Mutex<FontManager>>,
     vk_ctx: VulkanContext,
     input_state: InputState,
     scene: RenderScene,
@@ -77,7 +85,12 @@ pub struct Game {
 
 impl Game {
     pub fn new(window: &Window) -> Self {
-        let mut vk_ctx = VulkanContext::new(&window);
+        let mut font_manager = FontManager::new();
+        let font_data = fs::read(format!("{}/unifont-17.0.03.otf", ASSET_PATH)).unwrap();
+        let font_handle = font_manager.load_font(&font_data).unwrap();
+
+        let font_manager = Arc::new(Mutex::new(font_manager));
+        let mut vk_ctx = VulkanContext::new(&window, font_manager.clone());
 
         let cube_mesh = get_first_gltf_mesh(format!("{}/cube.gltf", ASSET_PATH).as_str());
         let sphere_mesh = get_first_gltf_mesh(format!("{}/sphere.gltf", ASSET_PATH).as_str());
@@ -95,6 +108,7 @@ impl Game {
         );
 
         let resources = GameResources {
+            font: font_handle,
             cube_mesh,
             sphere_mesh,
             skybox1: skybox1_id,
@@ -222,6 +236,7 @@ impl Game {
             physics_context,
             accumulator: 0.0,
             draw_accumulator: 0.0,
+            font_manager,
         }
     }
 
@@ -379,6 +394,7 @@ impl Game {
                 .floor();
 
             self.scene.push_ui_text(UiText::new(
+                self.resources.font,
                 Vec2::new(0.0, 100.0),
                 32,
                 format!("speed: {}", horizontal_speed),
