@@ -9,6 +9,7 @@ use glam::{IVec2, Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles, vec2, vec4};
 use thunderdome::{Arena, Index};
 
 use crate::{
+    font_manager::FontHandle,
     renderer::{renderer::MeshHandle, scene2d::Vertex2d, scene3d::MeshVertex},
     text::GlyphAtlas,
 };
@@ -155,6 +156,7 @@ impl UiFrame {
 }
 
 pub struct UiText {
+    pub font: FontHandle,
     pub position: Vec2,
     pub anchor: Vec2,
     pub font_height: u32,
@@ -163,8 +165,14 @@ pub struct UiText {
 }
 
 impl UiText {
-    pub fn new(position: Vec2, height: u32, text: impl Into<Cow<'static, str>>) -> Self {
+    pub fn new(
+        font: FontHandle,
+        position: Vec2,
+        height: u32,
+        text: impl Into<Cow<'static, str>>,
+    ) -> Self {
         Self {
+            font,
             position,
             anchor: Vec2::ZERO,
             font_height: height,

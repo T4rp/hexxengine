@@ -8,6 +8,7 @@ use paidtype::freetype::{
 
 use crate::{
     assets::ASSET_PATH,
+    font_manager::{FontHandle, FontManager, FontManagerError, GlyphRenderMode},
     freetype::{Face, FreetypeError, FreetypeLibrary},
     shapes::{Boundsi64, Rect, Region2d},
 };
@@ -15,40 +16,34 @@ use crate::{
 const MIN_BIN_LENGTH: u32 = 8;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct GlyphData {
+pub struct GlyphAtlasRect {
     pub rect: Rect,
-    pub advance: (i32, i32),
-    pub bitmap_top: i32,
-    pub bitmap_left: i32,
     pub is_empty: bool,
-    pub glyph_index: u32,
-    pub cbox: Boundsi64,
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
-pub struct GlyphKey {
+pub struct GlyphAtlasKey {
+    font_handle: FontHandle,
     glyph: u64,
     font_height: u32,
 }
 
-impl GlyphKey {
-    fn new(glyph: u64, font_height: u32) -> Self {
-        Self { glyph, font_height }
+impl GlyphAtlasKey {
+    fn new(font_handle: FontHandle, glyph: u64, font_height: u32) -> Self {
+        Self {
+            font_handle,
+            glyph,
+            font_height,
+        }
     }
-}
-
-pub enum GlyphRenderMode {
-    Normal,
-    Sdf,
 }
 
 pub struct GlyphAtlas {
     pub bitmap: Vec<u8>,
     pub width: u32,
     pub height: u32,
-    pub face: Face,
     pub bins: Vec<Rect>,
-    pub glyphs: HashMap<GlyphKey, GlyphData>,
+    pub glyphs: HashMap<GlyphAtlasKey, GlyphAtlasRect>,
     pub render_mode: GlyphRenderMode,
     pub dirty_region: Option<Region2d>,
 }
@@ -56,42 +51,19 @@ pub struct GlyphAtlas {
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum GlyphAtlasError {
-    Freetype(FreetypeError),
+    FontManager(FontManagerError),
     NoGlyphIndex(u64),
     NoBinFit,
 }
 
-impl Display for GlyphAtlasError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            GlyphAtlasError::Freetype(freetype_error) => {
-                write!(f, "freetype error: {}", freetype_error)
-            }
-            GlyphAtlasError::NoGlyphIndex(glyph) => {
-                write!(f, "failed to load glyph '': {}", glyph)
-            }
-            GlyphAtlasError::NoBinFit => {
-                write!(f, "couldnt fit glyph render into bitmap")
-            }
-
-            err => {
-                write!(f, "{:?}", err)
-            }
-        }
+impl From<FontManagerError> for GlyphAtlasError {
+    fn from(value: FontManagerError) -> Self {
+        GlyphAtlasError::FontManager(value)
     }
 }
 
 impl GlyphAtlas {
-    pub fn new(
-        render_mode: GlyphRenderMode,
-        font_path: &str,
-        width: u32,
-        height: u32,
-    ) -> GlyphAtlas {
-        let library = FreetypeLibrary::new().unwrap();
-        let font_data = fs::read(font_path).unwrap();
-        let face = library.new_memory_face(&font_data, 0).unwrap();
-
+    pub fn new(render_mode: GlyphRenderMode, width: u32, height: u32) -> GlyphAtlas {
         let pixel_width = width;
         let bitmap: Vec<u8> = vec![0; (pixel_width * height) as usize];
 
@@ -108,7 +80,6 @@ impl GlyphAtlas {
             bitmap,
             width,
             height,
-            face,
             bins,
             glyphs,
             render_mode,
@@ -258,56 +229,32 @@ impl GlyphAtlas {
         self.prune_bins();
     }
 
-    pub fn load_glyph(&mut self, glyph: u64, font_heigth: u32) -> Result<(), GlyphAtlasError> {
-        let glyph_key = GlyphKey::new(glyph, font_heigth);
+    pub fn render_glyph(
+        &mut self,
+        font_manager: &mut FontManager,
+        font_handle: FontHandle,
+        glyph: u64,
+        font_height: u32,
+    ) -> Result<(), GlyphAtlasError> {
+        let glyph_key = GlyphAtlasKey::new(font_handle, glyph, font_height);
 
         if self.glyphs.contains_key(&glyph_key) {
             return Ok(());
         }
 
-        let glyph_index = self
-            .face
-            .get_char_index(glyph_key.glyph)
-            .ok_or(GlyphAtlasError::NoGlyphIndex(glyph_key.glyph))?;
+        let bitmap_data = font_manager
+            .render_glyph(self.render_mode, font_handle, glyph, font_height)
+            .unwrap();
 
-        self.face
-            .set_pixel_sizes(0, glyph_key.font_height)
-            .map_err(|err| GlyphAtlasError::Freetype(err))?;
-
-        self.face
-            .load_glyph(glyph_index, FT_LOAD_DEFAULT)
-            .map_err(|err| GlyphAtlasError::Freetype(err))?;
-
-        let cbox = self
-            .face
-            .get_glyph_cbox()
-            .map_err(|err| GlyphAtlasError::Freetype(err))?;
-
-        match self.render_mode {
-            GlyphRenderMode::Normal => self
-                .face
-                .render_glyph(FT_Render_Mode__FT_RENDER_MODE_NORMAL),
-            GlyphRenderMode::Sdf => self.face.render_glyph(FT_Render_Mode__FT_RENDER_MODE_SDF),
-        }
-        .map_err(|err| GlyphAtlasError::Freetype(err))?;
-
-        let (advance_x, advance_y) = self.face.get_glyph_advance();
-        let (bitmap_left, bitmap_top) = self.face.get_glyph_left_top();
-
-        let Some(bitmap_data) = self.face.get_bitmap_data() else {
-            let glyph = GlyphData {
+        let Some(bitmap_data) = bitmap_data else {
+            let glyph = GlyphAtlasRect {
                 rect: Rect {
                     x: 0,
                     y: 0,
                     width: 0,
                     height: 0,
                 },
-                advance: (advance_x, advance_y),
-                bitmap_top,
-                bitmap_left,
                 is_empty: true,
-                glyph_index,
-                cbox,
             };
 
             self.glyphs.insert(glyph_key, glyph);
@@ -338,14 +285,9 @@ impl GlyphAtlas {
             }
         }
 
-        let glyph = GlyphData {
+        let glyph = GlyphAtlasRect {
             rect: glyph_bounds,
-            advance: (advance_x, advance_y),
-            bitmap_top,
-            bitmap_left,
             is_empty: false,
-            glyph_index,
-            cbox,
         };
 
         self.update_dirty_region(&glyph_bounds);
@@ -413,60 +355,65 @@ impl GlyphAtlas {
         img_buff
     }
 
-    pub fn get_glyph(&self, glyph: u64, font_height: u32) -> Option<&GlyphData> {
-        let glyph_key = GlyphKey::new(glyph, font_height);
+    pub fn get_glyph(
+        &self,
+        font_handle: FontHandle,
+        glyph: u64,
+        font_height: u32,
+    ) -> Option<&GlyphAtlasRect> {
+        let glyph_key = GlyphAtlasKey::new(font_handle, glyph, font_height);
         self.glyphs.get(&glyph_key)
     }
 
-    pub fn get_glyphs(&self, text: &str, font_height: u32) -> Vec<&GlyphData> {
-        let mut glyphs = Vec::with_capacity(text.chars().count());
+    pub fn get_glyphs(
+        &self,
+        font_handle: FontHandle,
+        text: &str,
+        font_height: u32,
+    ) -> Vec<&GlyphAtlasRect> {
+        let mut rects = Vec::new();
 
-        for character in text.chars() {
-            let glyph_data = self
-                .get_glyph(character as u64, font_height)
-                .unwrap_or_else(|| &GlyphData {
+        for char in text.chars() {
+            let glyph_key = GlyphAtlasKey::new(font_handle, char as u64, font_height);
+
+            match self.glyphs.get(&glyph_key) {
+                Some(rect) => rects.push(rect),
+                None => rects.push(&GlyphAtlasRect {
                     rect: Rect {
                         x: 0,
                         y: 0,
                         width: 0,
                         height: 0,
                     },
-                    advance: (0, 0),
-                    bitmap_top: 0,
-                    bitmap_left: 0,
                     is_empty: true,
-                    glyph_index: 0,
-                    cbox: Boundsi64 {
-                        x_min: 0,
-                        y_min: 0,
-                        x_max: 0,
-                        y_max: 0,
-                    },
-                });
-
-            glyphs.push(glyph_data)
+                }),
+            }
         }
 
-        glyphs
+        rects
     }
 
-    pub fn has_glyph(&self, glyph: u64, font_height: u32) -> bool {
-        let glyph_key = GlyphKey::new(glyph, font_height);
-        self.glyphs.contains_key(&glyph_key)
-    }
-
-    pub fn load_glyphs(&mut self, text: &str, font_height: u32) -> Result<(), GlyphAtlasError> {
+    pub fn load_glyphs(
+        &mut self,
+        font_manager: &mut FontManager,
+        font_handle: FontHandle,
+        text: &str,
+        font_height: u32,
+    ) {
         for char in text.chars() {
-            self.load_glyph(char as u64, font_height)?;
+            self.render_glyph(font_manager, font_handle, char as u64, font_height);
         }
-
-        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::text::{ASSET_PATH, GlyphAtlas, GlyphRenderMode};
+    use std::fs;
+
+    use crate::{
+        font_manager::{self, FontManager, FontManagerError},
+        text::{ASSET_PATH, GlyphAtlas, GlyphRenderMode},
+    };
 
     fn get_unifont_path() -> String {
         format!("{}/unifont-17.0.03.otf", ASSET_PATH)
@@ -474,16 +421,22 @@ mod tests {
 
     #[test]
     fn creation() {
-        GlyphAtlas::new(GlyphRenderMode::Normal, &get_unifont_path(), 256, 256);
+        GlyphAtlas::new(GlyphRenderMode::Normal, 256, 256);
     }
 
     #[test]
     fn load_glyph_normal() {
-        let mut atlas = GlyphAtlas::new(GlyphRenderMode::Normal, &get_unifont_path(), 256, 256);
+        let mut font_manager = FontManager::new();
+        let font_data = fs::read(get_unifont_path()).unwrap();
+        let font = font_manager.load_font(&font_data).unwrap();
+
+        let mut atlas = GlyphAtlas::new(GlyphRenderMode::Normal, 256, 256);
 
         for height in [32, 24, 18, 16, 12] {
             for i in 32..128 {
-                atlas.load_glyph(i as u64, height).unwrap();
+                atlas
+                    .render_glyph(&mut font_manager, font, i, height)
+                    .unwrap()
             }
         }
 
@@ -492,10 +445,14 @@ mod tests {
 
     #[test]
     fn load_glyph_sdf() {
-        let mut atlas = GlyphAtlas::new(GlyphRenderMode::Sdf, &get_unifont_path(), 512, 512);
+        let mut font_manager = FontManager::new();
+        let font_data = fs::read(get_unifont_path()).unwrap();
+        let font = font_manager.load_font(&font_data).unwrap();
+
+        let mut atlas = GlyphAtlas::new(GlyphRenderMode::Sdf, 512, 512);
 
         for i in 32..128 {
-            atlas.load_glyph(i as u64, 48).unwrap();
+            atlas.render_glyph(&mut font_manager, font, i, 48).unwrap()
         }
 
         atlas
@@ -506,31 +463,47 @@ mod tests {
 
     #[test]
     fn get_glyphs() {
-        let mut atlas = GlyphAtlas::new(GlyphRenderMode::Normal, &get_unifont_path(), 128, 128);
+        let mut font_manager = FontManager::new();
+        let font_data = fs::read(get_unifont_path()).unwrap();
+        let font = font_manager.load_font(&font_data).unwrap();
+
+        let mut atlas = GlyphAtlas::new(GlyphRenderMode::Normal, 128, 128);
 
         for height in [18] {
             for i in 32..128 {
-                atlas.load_glyph(i as u64, height).unwrap();
+                atlas
+                    .render_glyph(&mut font_manager, font, i as u64, height)
+                    .unwrap();
             }
         }
 
-        atlas.get_glyphs("the quick brown fox jumps over the lazy dog", 18);
+        atlas.get_glyphs(font, "the quick brown fox jumps over the lazy dog", 18);
     }
 
     #[test]
     fn dirty_region() {
-        let mut atlas = GlyphAtlas::new(GlyphRenderMode::Normal, &get_unifont_path(), 256, 256);
+        let mut font_manager = FontManager::new();
+        let font_data = fs::read(get_unifont_path()).unwrap();
+        let font = font_manager.load_font(&font_data).unwrap();
 
-        atlas.load_glyph(67 as u64, 18).unwrap();
+        let mut atlas = GlyphAtlas::new(GlyphRenderMode::Normal, 256, 256);
+
+        atlas
+            .render_glyph(&mut font_manager, font, 67 as u64, 18)
+            .unwrap();
         assert_eq!(atlas.dirty_region.is_some(), true);
 
         atlas.flush_dirty_region();
         assert_eq!(atlas.dirty_region, None);
 
-        atlas.load_glyph(67 as u64, 18).unwrap();
+        atlas
+            .render_glyph(&mut font_manager, font, 67 as u64, 18)
+            .unwrap();
         assert_eq!(atlas.dirty_region, None);
 
-        atlas.load_glyph(67 as u64, 24).unwrap();
+        atlas
+            .render_glyph(&mut font_manager, font, 67 as u64, 24)
+            .unwrap();
         assert_eq!(atlas.dirty_region.is_some(), true);
     }
 }

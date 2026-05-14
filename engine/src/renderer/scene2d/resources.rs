@@ -10,6 +10,7 @@ use vk_mem::Alloc;
 
 use crate::{
     assets::ASSET_PATH,
+    font_manager::{self, FontManager},
     renderer::{
         images::transition_images,
         pipelines::VulkanPipelineBuilder,
@@ -118,6 +119,7 @@ impl Resources {
         &mut self,
         allocator: &vk_mem::Allocator,
         window_extent: vk::Extent2D,
+        font_manager: &FontManager,
         glyph_atlas: &GlyphAtlas,
         scene: &RenderScene,
     ) -> Vec<UiBatch> {
@@ -158,6 +160,7 @@ impl Resources {
                     let (new_vertices, new_indices) = buffer_writing::push_text_verts(
                         window_extent,
                         &ui_text,
+                        font_manager,
                         glyph_atlas,
                         &mut vertices,
                         &mut indices,
@@ -198,6 +201,7 @@ impl Resources {
                         let (new_vertices, new_indices) = buffer_writing::push_text_verts(
                             window_extent,
                             &ui_text,
+                            font_manager,
                             glyph_atlas,
                             &mut vertices,
                             &mut indices,

@@ -2,6 +2,7 @@ use ash::vk::{self, Rect2D};
 use glam::{Vec2, Vec4, vec2};
 
 use crate::{
+    font_manager::{self, FontManager},
     renderer::scene2d::Vertex2d,
     scene::{UiFrame, UiText},
     shapes::{Boundsi32, Rect},
@@ -57,42 +58,40 @@ pub fn push_frame_verts(
 pub fn push_text_verts(
     window_extent: vk::Extent2D,
     ui_text: &UiText,
+    font_manager: &FontManager,
     glyph_atlas: &GlyphAtlas,
     vertices: &mut Vec<Vertex2d>,
     indices: &mut Vec<u16>,
 ) -> (u32, u32) {
-    let glyphs = glyph_atlas.get_glyphs(&ui_text.text, ui_text.font_height);
-
     let mut vertex_count = 0;
     let mut index_count = 0;
 
     let mut pen_x = ui_text.position.x as i32;
     let mut pen_y = ui_text.position.y as i32;
 
-    let mut pen_positions = Vec::with_capacity(glyphs.len());
+    for character in ui_text.text.chars() {
+        let glyph_atlas_rect = glyph_atlas
+            .get_glyph(ui_text.font, character as u64, ui_text.font_height)
+            .unwrap();
 
-    for glyph in glyphs.iter() {
-        pen_positions.push((pen_x, pen_y));
-        pen_x += glyph.advance.0;
-        pen_y += glyph.advance.1;
-    }
+        println!("{}", character);
+        let glyph_data = font_manager
+            .get_glyph(ui_text.font, character as u64, ui_text.font_height)
+            .unwrap();
 
-    for (i, glyph) in glyphs.iter().enumerate() {
-        if glyph.is_empty {
-            continue;
-        }
+        pen_x += glyph_data.advance.0;
+        pen_y -= glyph_data.advance.1;
 
-        let glyph_position = pen_positions[i];
-        let pos_x = glyph_position.0 as f32 + glyph.bitmap_left as f32;
-        let pos_y = glyph_position.1 as f32 - glyph.bitmap_top as f32;
+        let pos_x = pen_x as f32 + glyph_data.bitmap_left as f32;
+        let pos_y = pen_y as f32 - glyph_data.bitmap_top as f32;
 
         let vert_offset = vertices.len();
 
-        let glyph_x = glyph.rect.x as f32;
-        let glyph_y = glyph.rect.y as f32;
+        let glyph_x = glyph_atlas_rect.rect.x as f32;
+        let glyph_y = glyph_atlas_rect.rect.y as f32;
 
-        let glyph_width = glyph.rect.width as f32;
-        let glyph_height = glyph.rect.height as f32;
+        let glyph_width = glyph_atlas_rect.rect.width as f32;
+        let glyph_height = glyph_atlas_rect.rect.height as f32;
 
         vertices.push(Vertex2d {
             pos: Vec2::new(pos_x, pos_y),

@@ -1,5 +1,6 @@
 use std::borrow::Cow;
-use std::{ffi, mem};
+use std::sync::{Arc, Mutex};
+use std::{ffi, fs, mem};
 
 use ash::vk::Handle;
 use ash::{khr, vk};
@@ -10,6 +11,7 @@ use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHand
 use winit::window::Window;
 
 use crate::assets::ASSET_PATH;
+use crate::font_manager::{self, FontHandle, FontManager, GlyphRenderMode};
 use crate::renderer::images::{ImageTransition, transition_images};
 use crate::renderer::pipelines::RendererPipelines;
 use crate::renderer::scene2d;
@@ -20,7 +22,7 @@ use crate::renderer::textures::{SkyboxImageData, Texture};
 use crate::renderer::vk_deletion_queue::VulkanDeletionQueue;
 use crate::renderer::vkutils::create_command_pool;
 use crate::scene::{RenderScene, UiDraw};
-use crate::text::{GlyphAtlas, GlyphRenderMode};
+use crate::text::GlyphAtlas;
 
 use super::vk_deletion_queue;
 
@@ -542,6 +544,7 @@ pub struct VulkanContext {
 
     deletion_queue: VulkanDeletionQueue,
 
+    font_manager: Arc<Mutex<FontManager>>,
     glyph_atlas: GlyphAtlas,
 }
 
@@ -697,13 +700,8 @@ fn create_submit_semaphores(device: &ash::Device, count: usize) -> Vec<vk::Semap
 }
 
 impl VulkanContext {
-    pub fn new(window: &Window) -> Self {
-        let glyph_atlas = GlyphAtlas::new(
-            GlyphRenderMode::Normal,
-            &format!("{}/unifont-17.0.03.otf", ASSET_PATH),
-            1024,
-            1024,
-        );
+    pub fn new(window: &Window, font_manager: Arc<Mutex<FontManager>>) -> Self {
+        let glyph_atlas = GlyphAtlas::new(GlyphRenderMode::Normal, 1024, 1024);
 
         let raw_window_handle = window.window_handle().unwrap().as_raw();
         let raw_display_handle = window.display_handle().unwrap().as_raw();
@@ -981,6 +979,7 @@ impl VulkanContext {
             swapchain_loader,
             glyph_atlas,
             deletion_queue,
+            font_manager,
         }
     }
 
@@ -998,9 +997,13 @@ impl VulkanContext {
 
         for ui_draws in scene.ui.iter() {
             if let UiDraw::Text(text_draw) = ui_draws {
-                self.glyph_atlas
-                    .load_glyphs(text_draw.text.as_ref(), text_draw.font_height)
-                    .unwrap();
+                let mut font_manager = self.font_manager.lock().unwrap();
+                self.glyph_atlas.load_glyphs(
+                    &mut font_manager,
+                    text_draw.font,
+                    text_draw.text.as_ref(),
+                    text_draw.font_height,
+                )
             }
         }
 
@@ -1069,9 +1072,12 @@ impl VulkanContext {
             scene3d_resources.update_uniform_buffers(&self.allocator, scene, self.swapchain_extent);
             scene2d_resources.update_uniform_buffers(&self.allocator, self.swapchain_extent);
 
+            let font_manager = self.font_manager.lock().unwrap();
+
             let ui_batches = scene2d_resources.update_vertex_buffer(
                 &self.allocator,
                 self.swapchain_extent,
+                &font_manager,
                 &self.glyph_atlas,
                 scene,
             );
