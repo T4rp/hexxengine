@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use hexxengine::font_manager::FontHandle;
 use hexxengine::glam::{Vec4, vec2};
 use hexxengine::renderer::renderer::WHITE_TEXTURE_INDEX;
 use hexxengine::scene::{UiDraw, UiFrame, UiText};
@@ -29,6 +30,7 @@ impl UiRect {
 }
 
 pub struct UiTextBox {
+    pub font: FontHandle,
     pub color: Vec3,
     pub position: Vec2,
     pub font_size: u32,
@@ -134,6 +136,7 @@ impl UiContext {
                 }
                 UiElement::Text(ui_text) => {
                     ui_draws.push(UiDraw::Text(UiText {
+                        font: ui_text.font,
                         position: elem.world_position,
                         anchor: Vec2::ZERO,
                         font_height: ui_text.font_size,

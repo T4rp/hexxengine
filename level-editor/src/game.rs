@@ -1,9 +1,14 @@
-use std::time::Instant;
+use std::{
+    fs,
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 
 use hexxengine::{
     assets::{ASSET_PATH, get_first_gltf_mesh, load_skybox},
     components::{MeshComponent, TransformComponent},
     entities::Part,
+    font_manager::{FontHandle, FontManager},
     glam::{EulerRot, Quat, Vec3, vec3},
     input::InputState,
     physics::context::PhysicsContext,
@@ -38,6 +43,9 @@ impl World {
 }
 
 pub struct Game {
+    font_manager: Arc<Mutex<FontManager>>,
+    font: FontHandle,
+
     vk_ctx: VulkanContext,
     physics_context: PhysicsContext,
     input_state: InputState,
@@ -53,7 +61,13 @@ pub struct Game {
 
 impl Game {
     pub fn new(window: &Window) -> Self {
-        let mut vk_ctx = VulkanContext::new(&window);
+        let mut font_manager = FontManager::new();
+        let font_data = fs::read(format!("{}/unifont-17.0.03.otf", ASSET_PATH)).unwrap();
+        let font_handle = font_manager.load_font(&font_data).unwrap();
+
+        let font_manager = Arc::new(Mutex::new(font_manager));
+
+        let mut vk_ctx = VulkanContext::new(&window, font_manager.clone());
         let input_state = InputState::new();
         let start_time = Instant::now();
 
@@ -110,7 +124,7 @@ impl Game {
         world.parts.insert(baseplate);
 
         let mut ui_context = UiContext::new();
-        ui::render(&mut render_scene, &mut ui_context);
+        ui::render(&mut render_scene, &mut ui_context, font_handle);
 
         Game {
             vk_ctx,
@@ -122,6 +136,8 @@ impl Game {
             world,
             accumulator: 0.0,
             ui_context,
+            font_manager,
+            font: font_handle,
         }
     }
 

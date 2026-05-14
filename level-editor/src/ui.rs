@@ -1,11 +1,12 @@
 use hexxengine::{
+    font_manager::FontHandle,
     glam::{Vec2, vec2, vec3},
     scene::RenderScene,
 };
 
 use crate::editor_ui::{UiContext, UiRect, UiTextBox};
 
-pub fn render(scene: &mut RenderScene, ctx: &mut UiContext) {
+pub fn render(scene: &mut RenderScene, ctx: &mut UiContext, font: FontHandle) {
     let pane = ctx.new_elem(
         UiRect {
             position: vec2(100.0, 100.0),
@@ -28,6 +29,7 @@ pub fn render(scene: &mut RenderScene, ctx: &mut UiContext) {
 
     let label = ctx.new_elem(
         UiTextBox {
+            font: font,
             color: vec3(1.0, 1.0, 1.0),
             position: Vec2::ZERO,
             font_size: 18,
