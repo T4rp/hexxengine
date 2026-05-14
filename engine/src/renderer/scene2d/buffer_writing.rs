@@ -74,7 +74,6 @@ pub fn push_text_verts(
             .get_glyph(ui_text.font, character as u64, ui_text.font_height)
             .unwrap();
 
-        println!("{}", character);
         let glyph_data = font_manager
             .get_glyph(ui_text.font, character as u64, ui_text.font_height)
             .unwrap();
