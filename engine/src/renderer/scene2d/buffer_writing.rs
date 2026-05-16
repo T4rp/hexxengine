@@ -78,9 +78,6 @@ pub fn push_text_verts(
             .get_glyph(ui_text.font, character as u64, ui_text.font_height)
             .unwrap();
 
-        pen_x += glyph_data.advance.0;
-        pen_y -= glyph_data.advance.1;
-
         let pos_x = pen_x as f32 + glyph_data.bitmap_left as f32;
         let pos_y = pen_y as f32 - glyph_data.bitmap_top as f32;
 
@@ -123,6 +120,9 @@ pub fn push_text_verts(
         indices.push(vert_offset as u16);
         indices.push(vert_offset as u16 + 2);
         indices.push(vert_offset as u16 + 3);
+
+        pen_x += glyph_data.advance.0;
+        pen_y += glyph_data.advance.1;
 
         vertex_count += 4;
         index_count += 6;

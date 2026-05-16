@@ -405,7 +405,8 @@ impl GlyphAtlas {
         font_height: u32,
     ) {
         for char in text.chars() {
-            self.render_glyph(font_manager, font_handle, char as u64, font_height);
+            self.render_glyph(font_manager, font_handle, char as u64, font_height)
+                .unwrap();
         }
     }
 }

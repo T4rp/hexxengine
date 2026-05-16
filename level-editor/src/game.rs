@@ -62,7 +62,11 @@ pub struct Game {
 impl Game {
     pub fn new(window: &Window) -> Self {
         let mut font_manager = FontManager::new();
-        let font_data = fs::read(format!("{}/unifont-17.0.03.otf", ASSET_PATH)).unwrap();
+        let font_data = fs::read(format!(
+            "{}/Noto_Sans/NotoSans-VariableFont_wdth,wght.ttf",
+            ASSET_PATH
+        ))
+        .unwrap();
         let font_handle = font_manager.load_font(&font_data).unwrap();
 
         let font_manager = Arc::new(Mutex::new(font_manager));
