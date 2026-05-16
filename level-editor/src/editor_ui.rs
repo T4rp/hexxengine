@@ -13,14 +13,15 @@ pub struct UiNode {
     pub parent: Option<Index>,
     pub children: Vec<Index>,
     pub world_position: Vec2,
+    pub world_size: Vec2,
     pub element: UiElement,
 }
 
 #[derive(Default)]
 pub struct UiRect {
     pub color: Vec3,
-    pub position: Vec2,
-    pub size: Vec2,
+    pub position: Vec4,
+    pub size: Vec4,
 }
 
 impl UiRect {
@@ -32,7 +33,8 @@ impl UiRect {
 pub struct UiTextBox {
     pub font: FontHandle,
     pub color: Vec3,
-    pub position: Vec2,
+    pub position: Vec4,
+    pub size: Vec4,
     pub font_size: u32,
     pub text: Cow<'static, str>,
 }
@@ -49,10 +51,17 @@ pub enum UiElement {
 }
 
 impl UiElement {
-    pub fn position(&self) -> Vec2 {
+    pub fn position(&self) -> Vec4 {
         match self {
             UiElement::Rect(ui_rect) => ui_rect.position,
             UiElement::Text(ui_text) => ui_text.position,
+        }
+    }
+
+    pub fn size(&self) -> Vec4 {
+        match self {
+            UiElement::Rect(ui_rect) => ui_rect.size,
+            UiElement::Text(ui_text) => ui_text.size,
         }
     }
 }
@@ -60,6 +69,7 @@ impl UiElement {
 pub struct UiContext {
     pub elements: Arena<UiNode>,
     pub root: Vec<Index>,
+    pub root_size: Vec2,
 }
 
 impl UiContext {
@@ -67,6 +77,7 @@ impl UiContext {
         Self {
             elements: Arena::new(),
             root: Vec::new(),
+            root_size: Vec2::ZERO,
         }
     }
 
@@ -87,11 +98,16 @@ impl UiContext {
         self.root.push(root_element);
     }
 
+    pub fn set_root_size(&mut self, size: Vec2) {
+        self.root_size = size;
+    }
+
     pub fn new_elem(&mut self, element: UiElement) -> Index {
         let element = UiNode {
             parent: None,
             children: Vec::new(),
-            world_position: element.position(),
+            world_position: Vec2::ZERO,
+            world_size: Vec2::ZERO,
             element,
         };
 
@@ -107,16 +123,26 @@ impl UiContext {
             let elem_i = elements.pop().unwrap();
             let elem = self.elements.get(elem_i).unwrap();
 
+            let elem_position = elem.element.position();
+            let elem_size = elem.element.size();
+
             let parent_elem = elem.parent.map_or(None, |i| self.elements.get_mut(i));
 
-            let parent_pos = if let Some(parent) = parent_elem {
-                parent.world_position
+            let (parent_pos, parent_size) = if let Some(parent) = parent_elem {
+                (parent.world_position, parent.world_size)
             } else {
-                Vec2::ZERO
+                (Vec2::ZERO, self.root_size)
             };
 
+            let position = parent_pos * vec2(elem_position.x, elem_position.z)
+                + vec2(elem_position.y, elem_position.w);
+
+            let size =
+                parent_size * vec2(elem_size.x, elem_size.z) + vec2(elem_size.y, elem_size.w);
+
             let elem = self.elements.get_mut(elem_i).unwrap();
-            elem.world_position = parent_pos + elem.element.position();
+            elem.world_position = position;
+            elem.world_size = size;
 
             for child in elem.children.iter() {
                 elements.push(*child);
@@ -128,7 +154,7 @@ impl UiContext {
                     ui_draws.push(UiDraw::Frame(UiFrame {
                         position: elem.world_position,
                         anchor: Vec2::ZERO,
-                        size: ui_rect.size,
+                        size: elem.world_size,
                         color: Vec4::new(color.x, color.y, color.z, 1.0),
                         texture_id: WHITE_TEXTURE_INDEX,
                         uvs: Default::default(),
@@ -152,7 +178,7 @@ impl UiContext {
 
 #[cfg(test)]
 mod tests {
-    use hexxengine::glam::{vec2, vec3};
+    use hexxengine::glam::{vec2, vec3, vec4};
 
     use crate::editor_ui::{UiContext, UiRect};
 
@@ -162,8 +188,8 @@ mod tests {
 
         let pane = ctx.new_elem(
             UiRect {
-                position: vec2(0.0, 0.0),
-                size: vec2(100.0, 50.0),
+                position: vec4(0.0, 0.0, 0.0, 0.0),
+                size: vec4(0.0, 100.0, 0.0, 50.0),
                 color: vec3(1.0, 1.0, 1.0),
                 ..Default::default()
             }
@@ -173,7 +199,7 @@ mod tests {
 
         let inner_pane = ctx.new_elem(
             UiRect {
-                size: vec2(100.0, 50.0),
+                size: vec4(0.0, 100.0, 0.0, 50.0),
                 ..Default::default()
             }
             .to_elem(),

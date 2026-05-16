@@ -9,7 +9,7 @@ use hexxengine::{
     components::{MeshComponent, TransformComponent},
     entities::Part,
     font_manager::{FontHandle, FontManager},
-    glam::{EulerRot, Quat, Vec3, vec3},
+    glam::{EulerRot, Quat, Vec2, Vec3, vec3},
     input::InputState,
     physics::context::PhysicsContext,
     rapier3d::prelude::{RigidBodyType, ShapeType},
@@ -128,7 +128,6 @@ impl Game {
         world.parts.insert(baseplate);
 
         let mut ui_context = UiContext::new();
-        ui::render(&mut render_scene, &mut ui_context, font_handle);
 
         Game {
             vk_ctx,
@@ -197,6 +196,10 @@ impl Game {
         let elapsed = (now - self.start_time).as_secs_f32();
         self.last_frame = now;
 
+        let inner_size = window.inner_size();
+        self.ui_context
+            .set_root_size(Vec2::new(inner_size.width as f32, inner_size.height as f32));
+
         self.update_camera(dt, window);
 
         while self.accumulator > STEP_HZ {
@@ -209,6 +212,10 @@ impl Game {
 
     fn draw(&mut self) {
         self.render_scene.meshes.clear();
+        self.render_scene.ui.clear();
+
+        self.ui_context.clear();
+        ui::render(&mut self.render_scene, &mut self.ui_context, self.font);
 
         for (_i, part) in self.world.parts.iter() {
             self.render_scene.meshes.push(MeshNode {
