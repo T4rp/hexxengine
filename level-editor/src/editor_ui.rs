@@ -134,7 +134,8 @@ impl UiContext {
                 (Vec2::ZERO, self.root_size)
             };
 
-            let position = parent_pos * vec2(elem_position.x, elem_position.z)
+            let position = parent_pos
+                + parent_size * vec2(elem_position.x, elem_position.z)
                 + vec2(elem_position.y, elem_position.w);
 
             let size =
