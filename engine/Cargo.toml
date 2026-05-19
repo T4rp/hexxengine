@@ -19,5 +19,6 @@ thunderdome = "0.6.1"
 vk-mem = "0.5.0"
 winit = "0.30.12"
 paidtype = { git = "https://github.com/T4rp/paidtype2" }
+arfbuzz = { git = "https://github.com/T4rp/arfbuzz", features=["freetype"] }
 
 
