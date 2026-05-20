@@ -6,11 +6,11 @@ use std::{
 
 use hexxengine::{
     assets::ASSET_PATH,
-    font_manager::{FontHandle, FontManager},
     glam::{self, Vec2, ivec2, vec2},
     rand, rapier3d,
     renderer::renderer::BASE_MATERIAL_INDEX,
     scene::{UiFrame, UiText},
+    text::{FontHandle, FontManager},
     thunderdome::{self, Index},
     winit,
 };

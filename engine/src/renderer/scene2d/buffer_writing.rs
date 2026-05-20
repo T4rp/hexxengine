@@ -2,11 +2,10 @@ use ash::vk::{self, Rect2D};
 use glam::{Vec2, Vec4, vec2};
 
 use crate::{
-    font_manager::{self, FontManager},
     renderer::scene2d::Vertex2d,
     scene::{UiFrame, UiText},
     shapes::{Boundsi32, Rect},
-    text::GlyphAtlas,
+    text::{self, FontManager, GlyphAtlas},
 };
 
 pub fn push_frame_verts(

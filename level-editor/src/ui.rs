@@ -1,7 +1,7 @@
 use hexxengine::{
-    font_manager::FontHandle,
     glam::{Vec2, Vec4, vec2, vec3, vec4},
     scene::RenderScene,
+    text::FontHandle,
 };
 
 use crate::editor_ui::{UiContext, UiRect, UiTextBox};

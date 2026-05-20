@@ -8,8 +8,8 @@ use paidtype::freetype::{
 
 use crate::{
     assets::ASSET_PATH,
-    font_manager::{FontHandle, FontManager, FontManagerError, GlyphRenderMode},
     shapes::{Boundsi64, Rect, Region2d},
+    text::{FontHandle, FontManager, FontManagerError, GlyphRenderMode},
 };
 
 const MIN_BIN_LENGTH: u32 = 8;
@@ -416,8 +416,7 @@ mod tests {
 
     use crate::{
         assets::ASSET_PATH,
-        font_manager::{self, FontManager, FontManagerError, GlyphRenderMode},
-        text::glyph_atlas::GlyphAtlas,
+        text::{self, FontManager, FontManagerError, GlyphAtlas, GlyphRenderMode},
     };
 
     fn get_unifont_path() -> String {

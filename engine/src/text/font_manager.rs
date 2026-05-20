@@ -90,7 +90,7 @@ impl FontManager {
         font_handle: FontHandle,
         glyph: u64,
         font_height: u32,
-    ) -> Result<Option<GlyphBitmap>, FontManagerError> {
+    ) -> Result<Option<GlyphBitmap<'_>>, FontManagerError> {
         let font = self.fonts.get_mut(font_handle.0).unwrap();
 
         let glyph_index = font
@@ -168,7 +168,7 @@ impl FontManager {
 mod tests {
     use std::fs;
 
-    use crate::{assets::ASSET_PATH, font_manager::FontManager};
+    use crate::{assets::ASSET_PATH, text::FontManager};
 
     #[test]
     fn init() {

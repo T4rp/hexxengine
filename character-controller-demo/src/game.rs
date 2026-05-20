@@ -10,7 +10,6 @@ use hexxengine::{
     assets::ASSET_PATH,
     components::{MeshComponent, RigidBodyComponent, TransformComponent},
     entities::Part,
-    font_manager::{FontHandle, FontManager},
     glam::{self, IVec2, Vec2},
     gltf::json::extensions::scene,
     physics::character_controller::{
@@ -23,6 +22,7 @@ use hexxengine::{
     },
     renderer::renderer::{BASE_MATERIAL_INDEX, WHITE_TEXTURE_INDEX},
     scene::UiText,
+    text::{FontHandle, FontManager},
     thunderdome::{self, Index},
     winit,
 };

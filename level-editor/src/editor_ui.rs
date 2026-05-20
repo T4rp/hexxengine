@@ -1,9 +1,9 @@
 use std::borrow::Cow;
 
-use hexxengine::font_manager::FontHandle;
 use hexxengine::glam::{Vec4, vec2};
 use hexxengine::renderer::renderer::WHITE_TEXTURE_INDEX;
 use hexxengine::scene::{UiDraw, UiFrame, UiText};
+use hexxengine::text::FontHandle;
 use hexxengine::{
     glam::{Vec2, Vec3},
     thunderdome::{Arena, Index},

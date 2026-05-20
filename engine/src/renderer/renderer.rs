@@ -11,7 +11,6 @@ use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHand
 use winit::window::Window;
 
 use crate::assets::ASSET_PATH;
-use crate::font_manager::{self, FontHandle, FontManager, GlyphRenderMode};
 use crate::renderer::images::{ImageTransition, transition_images};
 use crate::renderer::pipelines::RendererPipelines;
 use crate::renderer::scene2d;
@@ -22,7 +21,7 @@ use crate::renderer::textures::{SkyboxImageData, Texture};
 use crate::renderer::vk_deletion_queue::VulkanDeletionQueue;
 use crate::renderer::vkutils::create_command_pool;
 use crate::scene::{RenderScene, UiDraw};
-use crate::text::GlyphAtlas;
+use crate::text::{self, FontHandle, FontManager, GlyphAtlas, GlyphRenderMode};
 
 use super::vk_deletion_queue;
 

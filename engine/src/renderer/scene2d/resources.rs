@@ -10,7 +10,6 @@ use vk_mem::Alloc;
 
 use crate::{
     assets::ASSET_PATH,
-    font_manager::{self, FontManager},
     renderer::{
         images::transition_images,
         pipelines::VulkanPipelineBuilder,
@@ -20,7 +19,7 @@ use crate::{
     },
     scene::{RenderScene, UiDraw},
     shapes::{Rect, Region2d},
-    text::GlyphAtlas,
+    text::{self, FontManager, GlyphAtlas},
 };
 
 pub struct UiBatch {

@@ -9,9 +9,8 @@ use glam::{IVec2, Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles, vec2, vec4};
 use thunderdome::{Arena, Index};
 
 use crate::{
-    font_manager::FontHandle,
     renderer::{renderer::MeshHandle, scene2d::Vertex2d, scene3d::MeshVertex},
-    text::GlyphAtlas,
+    text::{FontHandle, GlyphAtlas},
 };
 
 pub struct Camera {
