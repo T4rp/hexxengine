@@ -28,7 +28,10 @@ pub struct TextBox {
     pub font: FontHandle,
     pub size: Vec2,
     pub text: Cow<'static, str>,
+
     pub glyph_positions: Vec<GlyphPositions>,
+    pub layout_size: Vec2,
+
     pub is_dirty: bool,
 }
 
@@ -42,6 +45,7 @@ impl TextBox {
             text: "".into(),
             is_dirty: true,
             glyph_positions: Vec::new(),
+            layout_size: Vec2::ZERO,
             font_height: 16,
         }
     }
@@ -56,10 +60,27 @@ impl TextBox {
         let mut pen_x = 0;
         let mut pen_y = 0;
 
+        let mut width = 0;
+        let mut max_ascent = 0;
+        let mut max_descent = 0;
+
         for character in self.text.chars() {
             let glyph_data = font_manager
                 .get_glyph(self.font, character as u64, self.font_height)
                 .unwrap();
+
+            width += glyph_data.metrics.hori_advance;
+
+            let ascent = glyph_data.metrics.hori_bearing_y;
+            let descent = glyph_data.metrics.height - ascent;
+
+            if ascent > max_ascent {
+                max_ascent = ascent
+            }
+
+            if descent > max_descent {
+                max_descent = descent
+            }
 
             self.glyph_positions.push(GlyphPositions {
                 glyph_index: glyph_data.glyph_index,
@@ -69,6 +90,11 @@ impl TextBox {
             pen_x += glyph_data.advance.0;
             pen_y += glyph_data.advance.1;
         }
+
+        self.layout_size = Vec2::new(
+            width as f32 / 64.0,
+            (max_ascent + max_descent) as f32 / 64.0,
+        );
 
         self.is_dirty = false
     }
