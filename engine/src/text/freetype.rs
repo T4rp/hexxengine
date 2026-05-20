@@ -313,7 +313,7 @@ mod tests {
 
     use super::FreetypeLibrary;
 
-    const FONT_FILE: &[u8] = include_bytes!("../../assets/unifont-17.0.03.otf");
+    const FONT_FILE: &[u8] = include_bytes!("../../../assets/unifont-17.0.03.otf");
 
     #[test]
     fn library_init() {

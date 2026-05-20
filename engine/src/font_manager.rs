@@ -6,8 +6,8 @@ use paidtype::freetype::{
 use thunderdome::{Arena, Index};
 
 use crate::{
-    freetype::{Face, FreetypeError, FreetypeLibrary, GlyphBitmap, GlyphMetrics},
     shapes::{Boundsi64, Rect},
+    text::freetype::{Face, FreetypeError, FreetypeLibrary, GlyphBitmap, GlyphMetrics},
 };
 
 #[derive(Clone, Copy, Hash, PartialEq, PartialOrd, Eq, Debug, Ord)]

@@ -9,7 +9,6 @@ use paidtype::freetype::{
 use crate::{
     assets::ASSET_PATH,
     font_manager::{FontHandle, FontManager, FontManagerError, GlyphRenderMode},
-    freetype::{Face, FreetypeError, FreetypeLibrary},
     shapes::{Boundsi64, Rect, Region2d},
 };
 
@@ -416,8 +415,9 @@ mod tests {
     use std::fs;
 
     use crate::{
-        font_manager::{self, FontManager, FontManagerError},
-        text::{ASSET_PATH, GlyphAtlas, GlyphRenderMode},
+        assets::ASSET_PATH,
+        font_manager::{self, FontManager, FontManagerError, GlyphRenderMode},
+        text::glyph_atlas::GlyphAtlas,
     };
 
     fn get_unifont_path() -> String {
