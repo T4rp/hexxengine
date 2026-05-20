@@ -56,6 +56,18 @@ pub struct GlyphBitmap<'a> {
     pub buffer: &'a [u8],
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct GlyphMetrics {
+    pub width: i64,
+    pub height: i64,
+    pub hori_bearing_x: i64,
+    pub hori_bearing_y: i64,
+    pub hori_advance: i64,
+    pub vert_bearing_x: i64,
+    pub vert_bearing_y: i64,
+    pub vert_advance: i64,
+}
+
 #[derive(Clone)]
 pub struct FreetypeLibrary {
     // Arc :(
@@ -269,6 +281,21 @@ impl Face {
             x_max: cbox.xMax,
             y_max: cbox.yMax,
         })
+    }
+
+    pub fn get_glyph_metrics(&self) -> GlyphMetrics {
+        let glyph_slot = unsafe { self.raw_rec().glyph };
+        let glyph_metrics = unsafe { (*glyph_slot).metrics };
+        GlyphMetrics {
+            width: glyph_metrics.width as i64,
+            height: glyph_metrics.height as i64,
+            hori_bearing_x: glyph_metrics.horiBearingX as i64,
+            hori_bearing_y: glyph_metrics.horiBearingY as i64,
+            hori_advance: glyph_metrics.horiAdvance as i64,
+            vert_bearing_x: glyph_metrics.vertBearingX as i64,
+            vert_bearing_y: glyph_metrics.vertBearingY as i64,
+            vert_advance: glyph_metrics.vertAdvance as i64,
+        }
     }
 }
 

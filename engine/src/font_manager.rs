@@ -6,7 +6,7 @@ use paidtype::freetype::{
 use thunderdome::{Arena, Index};
 
 use crate::{
-    freetype::{Face, FreetypeError, FreetypeLibrary, GlyphBitmap},
+    freetype::{Face, FreetypeError, FreetypeLibrary, GlyphBitmap, GlyphMetrics},
     shapes::{Boundsi64, Rect},
 };
 
@@ -19,6 +19,7 @@ pub struct GlyphData {
     pub bitmap_top: i32,
     pub bitmap_left: i32,
     pub glyph_index: u32,
+    pub metrics: GlyphMetrics,
     pub cbox: Boundsi64,
 }
 
@@ -146,6 +147,7 @@ impl FontManager {
         let cbox = font.face.get_glyph_cbox()?;
         let (advance_x, advance_y) = font.face.get_glyph_advance();
         let (bitmap_left, bitmap_top) = font.face.get_glyph_left_top();
+        let metrics = font.face.get_glyph_metrics();
 
         let glyph_data = GlyphData {
             advance: (advance_x, advance_y),
@@ -153,6 +155,7 @@ impl FontManager {
             bitmap_left,
             glyph_index,
             cbox,
+            metrics,
         };
 
         font.glyph_cache.insert(glyph_key, glyph_data);
