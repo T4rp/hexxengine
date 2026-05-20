@@ -1,5 +1,6 @@
 mod freetype;
 mod text;
+mod texts;
 
 pub mod assets;
 pub mod color;
