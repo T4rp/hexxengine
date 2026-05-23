@@ -1,16 +1,9 @@
-use std::{
-    any::{self, Any, TypeId},
-    borrow::Cow,
-    collections::HashMap,
-    rc::Rc,
-};
-
-use glam::{IVec2, Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles, vec2, vec4};
-use thunderdome::{Arena, Index};
+use glam::{Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles, vec2, vec4};
+use thunderdome::Index;
 
 use crate::{
-    renderer::{renderer::MeshHandle, scene2d::Vertex2d, scene3d::MeshVertex},
-    text::{FontHandle, GlyphAtlas, GlyphPositions, TextBox},
+    renderer::{scene2d::Vertex2d, scene3d::MeshVertex},
+    text::{FontHandle, GlyphPositions, TextBox},
 };
 
 pub struct Camera {

@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use ash::vk::{self, Image};
+use ash::vk::{self};
 
 use crate::renderer::renderer::MAX_FRAMES;
 

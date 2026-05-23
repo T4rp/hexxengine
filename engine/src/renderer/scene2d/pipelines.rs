@@ -1,25 +1,17 @@
-use std::{fs, mem, ptr};
+use std::fs;
 
 use ash::{
     prelude::VkResult,
-    vk::{self, ComponentMapping, ImageAspectFlags},
+    vk::{self},
 };
-use glam::{Mat4, UVec2};
-use nalgebra::base;
-use vk_mem::Alloc;
 
 use crate::{
     assets::ASSET_PATH,
     renderer::{
-        images::transition_images,
         pipelines::VulkanPipelineBuilder,
-        renderer::TextureDescriptors,
         scene2d::Vertex2d,
-        vkutils::{self, AllocatedBuffer},
+        vkutils::{self},
     },
-    scene::{RenderScene, UiDraw},
-    shapes::{Rect, Region2d},
-    text::GlyphAtlas,
 };
 
 pub struct Pipelines {

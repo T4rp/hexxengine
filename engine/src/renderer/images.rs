@@ -38,7 +38,7 @@ pub fn transition_images(
     command_buffer: vk::CommandBuffer,
     barriers: &[vk::ImageMemoryBarrier2],
 ) {
-    let dep_info = vk::DependencyInfo::default().image_memory_barriers(&barriers);
+    let dep_info = vk::DependencyInfo::default().image_memory_barriers(barriers);
 
     unsafe { device.cmd_pipeline_barrier2(command_buffer, &dep_info) };
 }

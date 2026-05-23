@@ -106,7 +106,7 @@ impl Part {
             shape: PartShape::Cube(size),
             color,
             collider: collider_handle,
-            rigid_body_handle: rigid_body_handle,
+            rigid_body_handle,
         }
     }
 
@@ -138,7 +138,7 @@ impl Part {
             shape: PartShape::Sphere(radius),
             color,
             collider: collider_handle,
-            rigid_body_handle: rigid_body_handle,
+            rigid_body_handle,
         }
     }
 
@@ -161,7 +161,7 @@ impl Game {
         let font_handle = font_manager.load_font(&font_data).unwrap();
 
         let font_manager = Arc::new(Mutex::new(font_manager));
-        let mut vk_ctx = VulkanContext::new(&window, font_manager.clone());
+        let mut vk_ctx = VulkanContext::new(window, font_manager.clone());
 
         let cube_mesh = get_first_gltf_mesh(format!("{}/cube.gltf", ASSET_PATH).as_str());
         let sphere_mesh = get_first_gltf_mesh(format!("{}/sphere.gltf", ASSET_PATH).as_str());
@@ -443,7 +443,7 @@ impl Game {
                     self.scene.meshes.push(MeshNode {
                         position: part.position,
                         orientation: part.orientation,
-                        size: size,
+                        size,
                         color: part.color,
                         opacity: 1.0,
                         mesh_id: self.resources.cube_mesh,
@@ -468,12 +468,9 @@ impl Game {
     }
 
     pub fn handle_device_event(&mut self, event: &DeviceEvent) {
-        match event {
-            DeviceEvent::MouseMotion { delta } => {
-                self.input_state
-                    .mouse_motion((delta.0 as f32, delta.1 as f32));
-            }
-            _ => {}
+        if let DeviceEvent::MouseMotion { delta } = event {
+            self.input_state
+                .mouse_motion((delta.0 as f32, delta.1 as f32));
         }
     }
 

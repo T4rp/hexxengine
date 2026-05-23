@@ -111,22 +111,20 @@ impl UiContext {
             element,
         };
 
-        let index = self.elements.insert(element);
-
-        index
+        self.elements.insert(element)
     }
 
     pub fn build_draws(&mut self, font_manager: &mut FontManager, ui_draws: &mut Vec<UiDraw>) {
         let mut elements = self.root.clone();
 
-        while elements.len() > 0 {
+        while !elements.is_empty() {
             let elem_i = elements.pop().unwrap();
             let elem = self.elements.get(elem_i).unwrap();
 
             let elem_position = elem.element.position();
             let elem_size = elem.element.size();
 
-            let parent_elem = elem.parent.map_or(None, |i| self.elements.get_mut(i));
+            let parent_elem = elem.parent.and_then(|i| self.elements.get_mut(i));
 
             let (parent_pos, parent_size) = if let Some(parent) = parent_elem {
                 (parent.world_position, parent.world_size)

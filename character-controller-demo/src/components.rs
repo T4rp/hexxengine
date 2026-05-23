@@ -7,9 +7,7 @@ use hexxengine::{
     },
     rapier3d::{
         math::Pose3,
-        prelude::{
-            ColliderBuilder, ColliderHandle, MassProperties, QueryFilter, SharedShape,
-        },
+        prelude::{ColliderBuilder, ColliderHandle, MassProperties, QueryFilter, SharedShape},
     },
     thunderdome::Index,
 };

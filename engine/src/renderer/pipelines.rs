@@ -103,7 +103,7 @@ impl<'a> VulkanPipelineBuilder<'a> {
             };
 
         let colorblend_state_info = vk::PipelineColorBlendStateCreateInfo::default()
-            .attachments(&colorblend_state_attachments);
+            .attachments(colorblend_state_attachments);
 
         let dynamic_state_info = vk::PipelineDynamicStateCreateInfo::default()
             .dynamic_states(&[vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR]);
@@ -119,7 +119,7 @@ impl<'a> VulkanPipelineBuilder<'a> {
             .depth_attachment_format(depth_attachment_format);
 
         let graphics_pipeline_create_info = &[vk::GraphicsPipelineCreateInfo::default()
-            .stages(&shader_stages)
+            .stages(shader_stages)
             .vertex_input_state(&vertex_input_state_info)
             .input_assembly_state(&input_assembly_state_info)
             .dynamic_state(&dynamic_state_info)

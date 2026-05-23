@@ -75,7 +75,7 @@ impl Pipelines {
         let scene_attribute_descriptions: Vec<vk::VertexInputAttributeDescription> =
             MeshVertex::get_attribute_descriptions()
                 .into_iter()
-                .chain(InstanceVertex::get_attribute_descriptions().into_iter())
+                .chain(InstanceVertex::get_attribute_descriptions())
                 .collect();
 
         let scene_binding_descriptions = [

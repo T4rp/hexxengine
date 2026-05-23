@@ -1,25 +1,22 @@
-use std::{fs, mem, ptr};
+use std::{mem, ptr};
 
 use ash::{
     prelude::VkResult,
-    vk::{self, ComponentMapping, ImageAspectFlags},
+    vk::{self},
 };
 use glam::{Mat4, UVec2};
 use thunderdome::Arena;
 use vk_mem::Alloc;
 
 use crate::{
-    assets::ASSET_PATH,
     renderer::{
-        images::transition_images,
-        pipelines::VulkanPipelineBuilder,
         renderer::{TextureDescriptors, WHITE_TEXTURE_INDEX},
         scene2d::{CameraUniform2d, MAX_VERTICES_2D, Vertex2d, buffer_writing},
         vkutils::{self, AllocatedBuffer},
     },
     scene::{RenderScene, UiDraw},
-    shapes::{Rect, Region2d},
-    text::{self, FontManager, GlyphAtlas},
+    shapes::Region2d,
+    text::{FontManager, GlyphAtlas},
 };
 
 pub struct UiBatch {
@@ -147,7 +144,7 @@ impl Resources {
                 UiDraw::Frame(ui_frame) => {
                     let (new_vertices, new_indices) = buffer_writing::push_frame_verts(
                         window_extent,
-                        &ui_frame,
+                        ui_frame,
                         &mut vertices,
                         &mut indices,
                     );
@@ -158,7 +155,7 @@ impl Resources {
                 UiDraw::Text(ui_text) => {
                     let (new_vertices, new_indices) = buffer_writing::push_text_verts(
                         window_extent,
-                        &ui_text,
+                        ui_text,
                         font_manager,
                         glyph_atlas,
                         &mut vertices,
@@ -188,7 +185,7 @@ impl Resources {
                     UiDraw::Frame(ui_frame) => {
                         let (new_vertices, new_indices) = buffer_writing::push_frame_verts(
                             window_extent,
-                            &ui_frame,
+                            ui_frame,
                             &mut vertices,
                             &mut indices,
                         );
@@ -199,7 +196,7 @@ impl Resources {
                     UiDraw::Text(ui_text) => {
                         let (new_vertices, new_indices) = buffer_writing::push_text_verts(
                             window_extent,
-                            &ui_text,
+                            ui_text,
                             font_manager,
                             glyph_atlas,
                             &mut vertices,
@@ -219,7 +216,7 @@ impl Resources {
                 index_offset: start_index,
                 vertex_count: end_vertex - start_vertex,
                 index_count: end_index - start_index,
-                is_text: is_text,
+                is_text,
             });
 
             start_i = end_i;
@@ -280,12 +277,12 @@ impl Resources {
 
             let mut is_text = None;
 
-            device.cmd_bind_vertex_buffers(command_buffer, 0, &[self.vertex_buffer.0], &[0 as u64]);
+            device.cmd_bind_vertex_buffers(command_buffer, 0, &[self.vertex_buffer.0], &[0_u64]);
 
             device.cmd_bind_index_buffer(
                 command_buffer,
                 self.index_buffer.0,
-                0 as u64,
+                0_u64,
                 vk::IndexType::UINT16,
             );
 
@@ -522,7 +519,7 @@ impl Resources {
     }
 
     fn create_atlas_staging_buffer(
-        device: &ash::Device,
+        _device: &ash::Device,
         allocator: &vk_mem::Allocator,
         width: u32,
         height: u32,
@@ -578,8 +575,8 @@ impl Resources {
         let image_info = vk::ImageCreateInfo::default()
             .image_type(vk::ImageType::TYPE_2D)
             .extent(vk::Extent3D {
-                width: width,
-                height: height,
+                width,
+                height,
                 depth: 1,
             })
             .mip_levels(1)

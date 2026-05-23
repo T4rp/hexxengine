@@ -1,14 +1,10 @@
-use std::{collections::HashMap, fmt::Display, fs};
+use std::collections::HashMap;
 
 use glam::UVec2;
 use image::{ImageBuffer, RgbaImage};
-use paidtype::freetype::{
-    FT_LOAD_DEFAULT, FT_Render_Mode__FT_RENDER_MODE_NORMAL, FT_Render_Mode__FT_RENDER_MODE_SDF,
-};
 
 use crate::{
-    assets::ASSET_PATH,
-    shapes::{Boundsi64, Rect, Region2d},
+    shapes::{Rect, Region2d},
     text::{FontHandle, FontManager, FontManagerError, GlyphRenderMode},
 };
 
@@ -101,7 +97,7 @@ impl GlyphAtlas {
 
             let rating = rating_x + rating_y;
 
-            if chosen_bin_rating.map_or(true, |f| f > rating) {
+            if chosen_bin_rating.is_none_or(|f| f > rating) {
                 chosen_bin_rating = Some(rating);
                 chosen_bin = Some(i);
             }
@@ -176,7 +172,7 @@ impl GlyphAtlas {
         for i in 0..initial_len {
             let bin = &self.bins[i];
             if !bin.intersects(&rect) {
-                self.bins.push(bin.clone());
+                self.bins.push(*bin);
                 continue;
             };
 

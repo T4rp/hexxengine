@@ -10,14 +10,11 @@ use hexxengine::{
     entities::Part,
     glam::{self, Vec2},
     rand,
-    rapier3d::{
-        self,
-        prelude::ShapeType,
-    },
+    rapier3d::{self, prelude::ShapeType},
     renderer::renderer::BASE_MATERIAL_INDEX,
     scene::UiText,
     text::{FontHandle, FontManager, TextBox},
-    thunderdome::{self, Index},
+    thunderdome::Index,
     winit,
 };
 
@@ -85,7 +82,7 @@ impl Game {
         let font_handle = font_manager.load_font(&font_data).unwrap();
 
         let font_manager = Arc::new(Mutex::new(font_manager));
-        let mut vk_ctx = VulkanContext::new(&window, font_manager.clone());
+        let mut vk_ctx = VulkanContext::new(window, font_manager.clone());
 
         let cube_mesh = get_first_gltf_mesh(format!("{}/cube.gltf", ASSET_PATH).as_str());
         let sphere_mesh = get_first_gltf_mesh(format!("{}/sphere.gltf", ASSET_PATH).as_str());

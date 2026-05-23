@@ -1,11 +1,11 @@
 use std::{ffi::CStr, fmt::Display, mem::MaybeUninit, sync::Arc};
 
 use paidtype::freetype::{
-    _bindgen_ty_2, FT_BBox, FT_Bitmap_Size, FT_Done_Face, FT_Done_FreeType, FT_Done_Glyph,
-    FT_Err_Ok, FT_Error, FT_Error_String, FT_F26Dot6, FT_Face, FT_FaceRec, FT_Get_Char_Index,
-    FT_Get_Glyph, FT_Glyph_BBox_Mode__FT_GLYPH_BBOX_PIXELS, FT_Glyph_Get_CBox, FT_Init_FreeType,
-    FT_Int32, FT_Library, FT_Library_Version, FT_Load_Glyph, FT_Long, FT_New_Memory_Face,
-    FT_Render_Glyph, FT_Render_Mode, FT_Set_Char_Size, FT_Set_Pixel_Sizes, FT_UInt, FT_ULong,
+    _bindgen_ty_2, FT_BBox, FT_Done_Face, FT_Done_FreeType, FT_Done_Glyph, FT_Err_Ok, FT_Error,
+    FT_Error_String, FT_F26Dot6, FT_Face, FT_FaceRec, FT_Get_Char_Index, FT_Get_Glyph,
+    FT_Glyph_BBox_Mode__FT_GLYPH_BBOX_PIXELS, FT_Glyph_Get_CBox, FT_Init_FreeType, FT_Int32,
+    FT_Library, FT_Library_Version, FT_Load_Glyph, FT_Long, FT_New_Memory_Face, FT_Render_Glyph,
+    FT_Render_Mode, FT_Set_Char_Size, FT_Set_Pixel_Sizes, FT_UInt, FT_ULong,
 };
 
 use crate::shapes::Boundsi64;
@@ -244,8 +244,8 @@ impl Face {
     pub fn get_glyph_left_top(&self) -> (i32, i32) {
         let glyph_slot = unsafe { *self.raw_rec().glyph };
 
-        let bitmap_left = glyph_slot.bitmap_left as i32;
-        let bitmap_top = glyph_slot.bitmap_top as i32;
+        let bitmap_left = glyph_slot.bitmap_left;
+        let bitmap_top = glyph_slot.bitmap_top;
 
         (bitmap_left, bitmap_top)
     }
@@ -287,14 +287,14 @@ impl Face {
         let glyph_slot = unsafe { self.raw_rec().glyph };
         let glyph_metrics = unsafe { (*glyph_slot).metrics };
         GlyphMetrics {
-            width: glyph_metrics.width as i64,
-            height: glyph_metrics.height as i64,
-            hori_bearing_x: glyph_metrics.horiBearingX as i64,
-            hori_bearing_y: glyph_metrics.horiBearingY as i64,
-            hori_advance: glyph_metrics.horiAdvance as i64,
-            vert_bearing_x: glyph_metrics.vertBearingX as i64,
-            vert_bearing_y: glyph_metrics.vertBearingY as i64,
-            vert_advance: glyph_metrics.vertAdvance as i64,
+            width: glyph_metrics.width,
+            height: glyph_metrics.height,
+            hori_bearing_x: glyph_metrics.horiBearingX,
+            hori_bearing_y: glyph_metrics.horiBearingY,
+            hori_advance: glyph_metrics.horiAdvance,
+            vert_bearing_x: glyph_metrics.vertBearingX,
+            vert_bearing_y: glyph_metrics.vertBearingY,
+            vert_advance: glyph_metrics.vertAdvance,
         }
     }
 }

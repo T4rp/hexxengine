@@ -6,7 +6,7 @@ use paidtype::freetype::{
 use thunderdome::{Arena, Index};
 
 use crate::{
-    shapes::{Boundsi64, Rect},
+    shapes::Boundsi64,
     text::freetype::{Face, FreetypeError, FreetypeLibrary, GlyphBitmap, GlyphMetrics},
 };
 
@@ -64,6 +64,12 @@ pub struct FontManager {
     fonts: Arena<FontData>,
 }
 
+impl Default for FontManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FontManager {
     pub fn new() -> Self {
         let freetype = FreetypeLibrary::new().unwrap();
@@ -73,7 +79,7 @@ impl FontManager {
     }
 
     pub fn load_font(&mut self, font_data: &[u8]) -> Result<FontHandle, FreetypeError> {
-        let face = self.freetype.new_memory_face(&font_data, 0)?;
+        let face = self.freetype.new_memory_face(font_data, 0)?;
 
         let face_data = FontData {
             face,
@@ -119,7 +125,7 @@ impl FontManager {
     ) -> Option<GlyphData> {
         let glyph_key = GlyphKey::new(glyph, font_height);
         let font = self.fonts.get(font_handle.0).unwrap();
-        font.glyph_cache.get(&glyph_key).map(|data| *data)
+        font.glyph_cache.get(&glyph_key).copied()
     }
 
     pub fn load_glyph(

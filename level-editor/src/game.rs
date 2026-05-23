@@ -71,7 +71,7 @@ impl Game {
 
         let font_manager = Arc::new(Mutex::new(font_manager));
 
-        let mut vk_ctx = VulkanContext::new(&window, font_manager.clone());
+        let mut vk_ctx = VulkanContext::new(window, font_manager.clone());
         let input_state = InputState::new();
         let start_time = Instant::now();
 

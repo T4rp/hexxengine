@@ -1,15 +1,14 @@
-use ash::vk::{self, Rect2D};
+use ash::vk::{self};
 use glam::{Vec2, Vec4, vec2};
 
 use crate::{
     renderer::scene2d::Vertex2d,
     scene::{UiFrame, UiText},
-    shapes::{Boundsi32, Rect},
-    text::{self, FontManager, GlyphAtlas},
+    text::{FontManager, GlyphAtlas},
 };
 
 pub fn push_frame_verts(
-    window_extent: vk::Extent2D,
+    _window_extent: vk::Extent2D,
     ui_frame: &UiFrame,
     vertices: &mut Vec<Vertex2d>,
     indices: &mut Vec<u16>,
@@ -55,7 +54,7 @@ pub fn push_frame_verts(
 }
 
 pub fn push_text_verts(
-    window_extent: vk::Extent2D,
+    _window_extent: vk::Extent2D,
     ui_text: &UiText,
     font_manager: &FontManager,
     glyph_atlas: &GlyphAtlas,
@@ -77,10 +76,8 @@ pub fn push_text_verts(
             .get_glyph(ui_text.font, character.glyph, ui_text.font_height)
             .unwrap();
 
-        let pos_x =
-            ui_text.position.x as f32 + character.offset.x as f32 + glyph_data.bitmap_left as f32;
-        let pos_y =
-            ui_text.position.y as f32 + character.offset.y as f32 - glyph_data.bitmap_top as f32;
+        let pos_x = ui_text.position.x + character.offset.x + glyph_data.bitmap_left as f32;
+        let pos_y = ui_text.position.y + character.offset.y - glyph_data.bitmap_top as f32;
 
         let vert_offset = vertices.len();
 

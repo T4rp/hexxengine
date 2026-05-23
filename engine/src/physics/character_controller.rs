@@ -446,26 +446,26 @@ impl KinematicCharacterController {
         dims: Vector2<Real>,
         result: &mut EffectiveCharacterMovement,
     ) -> Option<(ColliderHandle, ShapeCastHit)> {
-        if let Some(snap_distance) = self.snap_to_ground {
-            if result.translation.dot(self.up) < -1.0e-5 {
-                let snap_distance = snap_distance.eval(dims.y);
-                let offset = self.offset.eval(dims.y);
-                if let Some((hit_handle, hit)) = queries.cast_shape(
-                    character_pos,
-                    -self.up,
-                    character_shape,
-                    ShapeCastOptions {
-                        target_distance: offset,
-                        stop_at_penetration: false,
-                        max_time_of_impact: snap_distance,
-                        compute_impact_geometry_on_penetration: true,
-                    },
-                ) {
-                    // Apply the snap.
-                    result.translation -= self.up * hit.time_of_impact;
-                    result.grounded = true;
-                    return Some((hit_handle, hit));
-                }
+        if let Some(snap_distance) = self.snap_to_ground
+            && result.translation.dot(self.up) < -1.0e-5
+        {
+            let snap_distance = snap_distance.eval(dims.y);
+            let offset = self.offset.eval(dims.y);
+            if let Some((hit_handle, hit)) = queries.cast_shape(
+                character_pos,
+                -self.up,
+                character_shape,
+                ShapeCastOptions {
+                    target_distance: offset,
+                    stop_at_penetration: false,
+                    max_time_of_impact: snap_distance,
+                    compute_impact_geometry_on_penetration: true,
+                },
+            ) {
+                // Apply the snap.
+                result.translation -= self.up * hit.time_of_impact;
+                result.grounded = true;
+                return Some((hit_handle, hit));
             }
         }
 
@@ -894,26 +894,25 @@ impl KinematicCharacterController {
             .loosened(prediction);
 
         for (_, collider) in queries.as_ref().intersect_aabb_conservative(character_aabb) {
-            if let Some(parent) = collider.parent() {
-                if let Some(body) = queries.bodies.get(parent) {
-                    if body.is_dynamic() {
-                        manifolds.clear();
-                        let pos12 = collision.character_pos.inv_mul(collider.position());
-                        let prev_manifolds_len = manifolds.len();
-                        let _ = dispatcher.contact_manifolds(
-                            &pos12,
-                            character_shape,
-                            collider.shape(),
-                            prediction,
-                            &mut manifolds,
-                            &mut None,
-                        );
+            if let Some(parent) = collider.parent()
+                && let Some(body) = queries.bodies.get(parent)
+                && body.is_dynamic()
+            {
+                manifolds.clear();
+                let pos12 = collision.character_pos.inv_mul(collider.position());
+                let prev_manifolds_len = manifolds.len();
+                let _ = dispatcher.contact_manifolds(
+                    &pos12,
+                    character_shape,
+                    collider.shape(),
+                    prediction,
+                    &mut manifolds,
+                    &mut None,
+                );
 
-                        for m in &mut manifolds[prev_manifolds_len..] {
-                            m.data.rigid_body2 = Some(parent);
-                            m.data.normal = collision.character_pos.rotation * m.local_n1;
-                        }
-                    }
+                for m in &mut manifolds[prev_manifolds_len..] {
+                    m.data.rigid_body2 = Some(parent);
+                    m.data.normal = collision.character_pos.rotation * m.local_n1;
                 }
             }
         }
@@ -952,8 +951,6 @@ fn subtract_hit(translation: Vector, hit: &ShapeCastHit) -> Vector {
 }
 
 mod test {
-    use crate::physics::character_controller::{CharacterLength, KinematicCharacterController};
-    use rapier3d::prelude::*;
 
     #[test]
     fn character_controller_climb_test() {

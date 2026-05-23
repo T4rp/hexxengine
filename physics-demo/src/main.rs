@@ -64,11 +64,9 @@ impl ApplicationHandler for App {
                 device_id: _,
                 ref event,
                 is_synthetic: _,
-            } => {
-                if PhysicalKey::Code(KeyCode::Escape) == event.physical_key {
-                    event_loop.exit();
-                    return;
-                }
+            } if PhysicalKey::Code(KeyCode::Escape) == event.physical_key => {
+                event_loop.exit();
+                return;
             }
             WindowEvent::RedrawRequested => {
                 self.window.as_ref().unwrap().request_redraw();

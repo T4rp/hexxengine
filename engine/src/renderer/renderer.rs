@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::sync::{Arc, Mutex};
-use std::{ffi, fs, mem};
+use std::{ffi, mem};
 
 use ash::vk::Handle;
 use ash::{khr, vk};
@@ -10,7 +10,6 @@ use vk_mem::Alloc;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use winit::window::Window;
 
-use crate::assets::ASSET_PATH;
 use crate::renderer::images::{ImageTransition, transition_images};
 use crate::renderer::pipelines::RendererPipelines;
 use crate::renderer::scene2d;
@@ -21,7 +20,7 @@ use crate::renderer::textures::{SkyboxImageData, Texture};
 use crate::renderer::vk_deletion_queue::VulkanDeletionQueue;
 use crate::renderer::vkutils::create_command_pool;
 use crate::scene::{RenderScene, UiDraw};
-use crate::text::{self, FontHandle, FontManager, GlyphAtlas, GlyphRenderMode};
+use crate::text::{FontManager, GlyphAtlas, GlyphRenderMode};
 
 use super::vk_deletion_queue;
 
@@ -33,9 +32,9 @@ const DESCRIPTOR_RATIOS: &[(vk::DescriptorType, u32)] = &[
     (vk::DescriptorType::UNIFORM_BUFFER, 2),
 ];
 
-pub const FALLBACK_TEXTURE_INDEX: Index = Index::from_bits(1 << 32 | 0).unwrap();
+pub const FALLBACK_TEXTURE_INDEX: Index = Index::from_bits((1 << 32)).unwrap();
 pub const WHITE_TEXTURE_INDEX: Index = Index::from_bits(1 << 32 | 1).unwrap();
-pub const FALLBACK_SKYBOX_INDEX: Index = Index::from_bits(1 << 32 | 0).unwrap();
+pub const FALLBACK_SKYBOX_INDEX: Index = Index::from_bits((1 << 32)).unwrap();
 pub const BASE_MATERIAL_INDEX: Index = Index::from_bits(1 << 32 | 1).unwrap();
 
 unsafe extern "system" fn debug_messager_callback(
@@ -145,7 +144,7 @@ impl RenderFrame {
             allocator,
             descriptor_pool,
             descriptor_layouts.global_2d_layout,
-            &glyph_atlas,
+            glyph_atlas,
         )
         .unwrap();
 
@@ -434,8 +433,8 @@ impl MaterialDescriptor {
     fn new(
         device: &ash::Device,
         allocator: &vk_mem::Allocator,
-        queue: vk::Queue,
-        command_pool: vk::CommandPool,
+        _queue: vk::Queue,
+        _command_pool: vk::CommandPool,
         descriptor_pool: vk::DescriptorPool,
         descriptor_set_layouts: &DescriptorSetLayouts,
         uv_scale: Vec2,
@@ -685,13 +684,11 @@ fn create_submit_semaphores(device: &ash::Device, count: usize) -> Vec<vk::Semap
             let semaphore_create_info =
                 vk::SemaphoreCreateInfo::default().flags(vk::SemaphoreCreateFlags::empty());
 
-            let swapchain_semaphore = unsafe {
+            unsafe {
                 device
                     .create_semaphore(&semaphore_create_info, None)
                     .unwrap()
-            };
-
-            swapchain_semaphore
+            }
         })
         .collect();
 
@@ -1055,7 +1052,7 @@ impl VulkanContext {
             if current_frame.skybox_dirty {
                 scene3d_resources.update_skybox(
                     &self.device,
-                    &self.skybox_textures.get(scene.lighting.skybox_id).unwrap(),
+                    self.skybox_textures.get(scene.lighting.skybox_id).unwrap(),
                 );
                 current_frame.skybox_dirty = false;
             }
@@ -1431,8 +1428,7 @@ impl VulkanContext {
             indices,
         );
 
-        let index = self.mesh_buffers.insert(mesh);
-        index
+        self.mesh_buffers.insert(mesh)
     }
 
     pub fn load_rgba_texture(&mut self, width: u32, height: u32, data: &[u8]) -> u32 {
@@ -1477,8 +1473,7 @@ impl VulkanContext {
         )
         .unwrap();
 
-        let index = self.skybox_textures.insert(skybox_texture);
-        index
+        self.skybox_textures.insert(skybox_texture)
     }
 
     fn create_3d_pipeline_layout(
@@ -1532,13 +1527,11 @@ impl VulkanContext {
             .max_sets(set_count * MAX_FRAMES as u32)
             .pool_sizes(&descriptor_pool_sizes);
 
-        let descriptor_pool = unsafe {
+        unsafe {
             device
                 .create_descriptor_pool(&descriptor_pool_info, None)
                 .unwrap()
-        };
-
-        descriptor_pool
+        }
     }
 
     fn create_descriptor_layouts(device: &ash::Device) -> DescriptorSetLayouts {

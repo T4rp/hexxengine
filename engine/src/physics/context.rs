@@ -14,6 +14,12 @@ pub struct PhysicsContext {
     pub physics_pipeline: PhysicsPipeline,
 }
 
+impl Default for PhysicsContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PhysicsContext {
     pub fn new() -> Self {
         let rigid_body_set = RigidBodySet::new();

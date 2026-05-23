@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use glam::Vec2;
 
-use crate::text::{self, FontHandle, FontManager};
+use crate::text::{FontHandle, FontManager};
 
 pub enum HorizontalJustification {
     Left,

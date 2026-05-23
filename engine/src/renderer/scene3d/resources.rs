@@ -9,7 +9,7 @@ use crate::{
     renderer::{
         renderer::{
             BASE_MATERIAL_INDEX, FALLBACK_TEXTURE_INDEX, MaterialDescriptor, MeshBuffer,
-            MeshHandle, TextureDescriptors, WHITE_TEXTURE_INDEX,
+            TextureDescriptors, WHITE_TEXTURE_INDEX,
         },
         scene3d::{
             CameraUniform3d, InstanceVertex, MAX_INSTANCE_COUNT, SHADOW_MAP_RESOLUTION,
@@ -778,8 +778,8 @@ impl Resources {
         let image_info = vk::ImageCreateInfo::default()
             .image_type(vk::ImageType::TYPE_2D)
             .extent(vk::Extent3D {
-                width: width,
-                height: height,
+                width,
+                height,
                 depth: 1,
             })
             .mip_levels(1)

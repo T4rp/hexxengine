@@ -34,7 +34,7 @@ pub fn render(
 
     let label = ctx.new_elem(
         UiTextBox {
-            font: font,
+            font,
             color: vec3(1.0, 1.0, 1.0),
             position: Vec4::ZERO,
             font_size: 18,
