@@ -22,7 +22,7 @@ use hexxengine::{
     },
     renderer::renderer::{BASE_MATERIAL_INDEX, WHITE_TEXTURE_INDEX},
     scene::UiText,
-    text::{FontHandle, FontManager},
+    text::{FontHandle, FontManager, TextBox},
     thunderdome::{self, Index},
     winit,
 };
@@ -81,6 +81,8 @@ pub struct Game {
     physics_context: PhysicsContext,
     accumulator: f32,
     draw_accumulator: f32,
+
+    speed_textbox: TextBox,
 }
 
 impl Game {
@@ -224,6 +226,9 @@ impl Game {
         let character_handle = world.characters.insert(character);
         world.character_index = Some(character_handle);
 
+        let mut speed_textbox = TextBox::new(font_handle);
+        speed_textbox.font_height = 32;
+
         Self {
             vk_ctx,
             scene,
@@ -237,6 +242,7 @@ impl Game {
             accumulator: 0.0,
             draw_accumulator: 0.0,
             font_manager,
+            speed_textbox,
         }
     }
 
@@ -393,11 +399,17 @@ impl Game {
                 .length()
                 .floor();
 
-            self.scene.push_ui_text(UiText::new(
-                self.resources.font,
+            self.speed_textbox
+                .set_text(format!("speed: {}", horizontal_speed).into());
+
+            {
+                let mut font_manager = self.font_manager.lock().unwrap();
+                self.speed_textbox.calculate_layout(&mut font_manager);
+            }
+
+            self.scene.push_ui_text(UiText::from_text_box(
+                &self.speed_textbox,
                 Vec2::new(0.0, 100.0),
-                32,
-                format!("speed: {}", horizontal_speed),
             ));
         }
 

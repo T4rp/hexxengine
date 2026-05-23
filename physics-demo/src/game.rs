@@ -10,7 +10,7 @@ use hexxengine::{
     rand, rapier3d,
     renderer::renderer::BASE_MATERIAL_INDEX,
     scene::{UiFrame, UiText},
-    text::{FontHandle, FontManager},
+    text::{FontHandle, FontManager, TextBox},
     thunderdome::{self, Index},
     winit,
 };
@@ -215,12 +215,18 @@ impl Game {
 
         // scene.push_ui_frame(UiFrame::new(vec2(0.0, 0.0), vec2(600.0, 300.0), 1));
 
-        scene.push_ui_text(UiText::new(
+        let mut textbox = TextBox::from_text(
             font_handle,
-            vec2(0.0, 16.0),
             16,
-            "the quick brown fox doesnt not concern himself with subpixel rendering",
-        ));
+            "the quick brown fox doesnt not concern himself with subpixel rendering".into(),
+        );
+
+        {
+            let mut font_manager = font_manager.lock().unwrap();
+            textbox.calculate_layout(&mut font_manager);
+        }
+
+        scene.push_ui_text(UiText::from_text_box(&textbox, vec2(0.0, 16.0)));
 
         let mut rng = SmallRng::from_os_rng();
 

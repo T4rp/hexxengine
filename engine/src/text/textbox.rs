@@ -51,6 +51,20 @@ impl TextBox {
         }
     }
 
+    pub fn from_text(font: FontHandle, font_height: u32, text: Cow<'static, str>) -> Self {
+        Self {
+            horizontal_justification: HorizontalJustification::Center,
+            vertical_justification: VerticalJustification::Center,
+            size: Vec2::ZERO,
+            is_dirty: true,
+            glyph_positions: Vec::new(),
+            layout_size: Vec2::ZERO,
+            font_height,
+            text,
+            font,
+        }
+    }
+
     pub fn calculate_layout(&mut self, font_manager: &mut FontManager) {
         if !self.is_dirty {
             return;
