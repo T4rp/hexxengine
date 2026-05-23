@@ -951,6 +951,8 @@ fn subtract_hit(translation: Vector, hit: &ShapeCastHit) -> Vector {
 }
 
 mod test {
+    use crate::physics::character_controller::{CharacterLength, KinematicCharacterController};
+    use rapier3d::prelude::*;
 
     #[test]
     fn character_controller_climb_test() {
