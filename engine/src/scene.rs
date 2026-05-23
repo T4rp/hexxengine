@@ -10,7 +10,7 @@ use thunderdome::{Arena, Index};
 
 use crate::{
     renderer::{renderer::MeshHandle, scene2d::Vertex2d, scene3d::MeshVertex},
-    text::{FontHandle, GlyphAtlas},
+    text::{FontHandle, GlyphAtlas, GlyphPositions, TextBox},
 };
 
 pub struct Camera {
@@ -159,7 +159,7 @@ pub struct UiText {
     pub position: Vec2,
     pub anchor: Vec2,
     pub font_height: u32,
-    pub text: Cow<'static, str>,
+    pub glyph_positions: Vec<GlyphPositions>,
     pub color: Vec3,
 }
 
@@ -168,16 +168,25 @@ impl UiText {
         font: FontHandle,
         position: Vec2,
         height: u32,
-        text: impl Into<Cow<'static, str>>,
+        glyph_positions: Vec<GlyphPositions>,
     ) -> Self {
         Self {
             font,
             position,
             anchor: Vec2::ZERO,
             font_height: height,
-            text: text.into(),
+            glyph_positions,
             color: Vec3::ZERO,
         }
+    }
+
+    pub fn from_text_box(text_box: &TextBox, position: Vec2) -> Self {
+        Self::new(
+            text_box.font,
+            position,
+            text_box.font_height,
+            text_box.glyph_positions.clone(),
+        )
     }
 }
 

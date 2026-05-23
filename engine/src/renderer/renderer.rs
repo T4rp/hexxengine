@@ -997,12 +997,14 @@ impl VulkanContext {
         for ui_draws in scene.ui.iter() {
             if let UiDraw::Text(text_draw) = ui_draws {
                 let mut font_manager = self.font_manager.lock().unwrap();
-                self.glyph_atlas.load_glyphs(
-                    &mut font_manager,
-                    text_draw.font,
-                    text_draw.text.as_ref(),
-                    text_draw.font_height,
-                )
+                for glyph in text_draw.glyph_positions.iter() {
+                    self.glyph_atlas.render_glyph(
+                        &mut font_manager,
+                        text_draw.font,
+                        glyph.glyph,
+                        text_draw.font_height,
+                    );
+                }
             }
         }
 

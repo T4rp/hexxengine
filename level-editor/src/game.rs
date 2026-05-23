@@ -215,7 +215,16 @@ impl Game {
         self.render_scene.ui.clear();
 
         self.ui_context.clear();
-        ui::render(&mut self.render_scene, &mut self.ui_context, self.font);
+
+        {
+            let mut font_manager = self.font_manager.lock().unwrap();
+            ui::render(
+                &mut self.render_scene,
+                &mut font_manager,
+                &mut self.ui_context,
+                self.font,
+            );
+        }
 
         for (_i, part) in self.world.parts.iter() {
             self.render_scene.meshes.push(MeshNode {

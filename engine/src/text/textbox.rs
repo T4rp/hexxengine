@@ -16,8 +16,9 @@ pub enum VerticalJustification {
     Bottom,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct GlyphPositions {
-    pub glyph_index: u32,
+    pub glyph: u64,
     pub offset: Vec2,
 }
 
@@ -66,7 +67,7 @@ impl TextBox {
 
         for character in self.text.chars() {
             let glyph_data = font_manager
-                .get_glyph(self.font, character as u64, self.font_height)
+                .load_glyph(self.font, character as u64, self.font_height)
                 .unwrap();
 
             width += glyph_data.metrics.hori_advance;
@@ -83,7 +84,7 @@ impl TextBox {
             }
 
             self.glyph_positions.push(GlyphPositions {
-                glyph_index: glyph_data.glyph_index,
+                glyph: character as u64,
                 offset: Vec2::new(pen_x as f32, pen_y as f32),
             });
 

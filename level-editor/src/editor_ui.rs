@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use hexxengine::glam::{Vec4, vec2};
 use hexxengine::renderer::renderer::WHITE_TEXTURE_INDEX;
 use hexxengine::scene::{UiDraw, UiFrame, UiText};
-use hexxengine::text::FontHandle;
+use hexxengine::text::{FontHandle, FontManager, TextBox};
 use hexxengine::{
     glam::{Vec2, Vec3},
     thunderdome::{Arena, Index},
@@ -116,7 +116,7 @@ impl UiContext {
         index
     }
 
-    pub fn build_draws(&mut self, ui_draws: &mut Vec<UiDraw>) {
+    pub fn build_draws(&mut self, font_manager: &mut FontManager, ui_draws: &mut Vec<UiDraw>) {
         let mut elements = self.root.clone();
 
         while elements.len() > 0 {
@@ -162,12 +162,17 @@ impl UiContext {
                     }));
                 }
                 UiElement::Text(ui_text) => {
+                    let mut text_box = TextBox::new(ui_text.font);
+                    text_box.set_font_height(ui_text.font_size);
+                    text_box.set_text(ui_text.text.clone());
+                    text_box.calculate_layout(font_manager);
+
                     ui_draws.push(UiDraw::Text(UiText {
                         font: ui_text.font,
                         position: elem.world_position,
                         anchor: Vec2::ZERO,
                         font_height: ui_text.font_size,
-                        text: ui_text.text.clone(),
+                        glyph_positions: text_box.glyph_positions,
                         color: ui_text.color,
                     }));
                 }
@@ -179,13 +184,17 @@ impl UiContext {
 
 #[cfg(test)]
 mod tests {
-    use hexxengine::glam::{vec2, vec3, vec4};
+    use hexxengine::{
+        glam::{vec2, vec3, vec4},
+        text::{FontManager, font_manager},
+    };
 
     use crate::editor_ui::{UiContext, UiRect};
 
     #[test]
     fn build_tree() {
         let mut ctx = UiContext::new();
+        let mut font_manager = FontManager::new();
 
         let pane = ctx.new_elem(
             UiRect {
@@ -208,6 +217,6 @@ mod tests {
         ctx.parent(inner_pane, pane);
 
         let mut ui_draws = Vec::new();
-        ctx.build_draws(&mut ui_draws);
+        ctx.build_draws(&mut font_manager, &mut ui_draws);
     }
 }

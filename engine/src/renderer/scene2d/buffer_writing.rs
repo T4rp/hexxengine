@@ -68,17 +68,19 @@ pub fn push_text_verts(
     let mut pen_x = ui_text.position.x as i32;
     let mut pen_y = ui_text.position.y as i32;
 
-    for character in ui_text.text.chars() {
+    for character in ui_text.glyph_positions.iter() {
         let glyph_atlas_rect = glyph_atlas
-            .get_glyph(ui_text.font, character as u64, ui_text.font_height)
+            .get_glyph(ui_text.font, character.glyph, ui_text.font_height)
             .unwrap();
 
         let glyph_data = font_manager
-            .get_glyph(ui_text.font, character as u64, ui_text.font_height)
+            .get_glyph(ui_text.font, character.glyph, ui_text.font_height)
             .unwrap();
 
-        let pos_x = pen_x as f32 + glyph_data.bitmap_left as f32;
-        let pos_y = pen_y as f32 - glyph_data.bitmap_top as f32;
+        let pos_x =
+            ui_text.position.x as f32 + character.offset.x as f32 + glyph_data.bitmap_left as f32;
+        let pos_y =
+            ui_text.position.y as f32 + character.offset.y as f32 - glyph_data.bitmap_top as f32;
 
         let vert_offset = vertices.len();
 
