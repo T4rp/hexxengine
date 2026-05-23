@@ -117,8 +117,8 @@ impl UiContext {
     pub fn build_draws(&mut self, font_manager: &mut FontManager, ui_draws: &mut Vec<UiDraw>) {
         let mut elements = self.root.clone();
 
-        while !elements.is_empty() {
-            let elem_i = elements.pop().unwrap();
+        while let Some(elem_i) = elements.pop() {
+            
             let elem = self.elements.get(elem_i).unwrap();
 
             let elem_position = elem.element.position();
