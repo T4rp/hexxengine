@@ -1,7 +1,6 @@
 use hexxengine::{
-    components::{MeshComponent, RigidBodyComponent, TransformComponent},
+    components::{MeshComponent, TransformComponent},
     entities::Part,
-    physics::context::PhysicsContext,
     thunderdome::{Arena, Index},
 };
 

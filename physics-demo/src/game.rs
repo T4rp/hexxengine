@@ -6,10 +6,10 @@ use std::{
 
 use hexxengine::{
     assets::ASSET_PATH,
-    glam::{self, Vec2, ivec2, vec2},
+    glam::{self, vec2},
     rand, rapier3d,
     renderer::renderer::BASE_MATERIAL_INDEX,
-    scene::{UiFrame, UiText},
+    scene::UiText,
     text::{FontHandle, FontManager, TextBox},
     thunderdome::{self, Index},
     winit,
@@ -34,7 +34,7 @@ use hexxengine::{
     color::hsv_to_rgb,
     input::InputState,
     physics::context::PhysicsContext,
-    renderer::renderer::{MeshHandle, VulkanContext},
+    renderer::renderer::VulkanContext,
     scene::{Camera, Lighting, MeshNode, RenderScene},
 };
 

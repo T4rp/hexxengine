@@ -1,26 +1,20 @@
 use std::{
     fs,
-    rc::Rc,
     sync::{Arc, Mutex},
     time::Instant,
 };
 
 use hexxengine::{
-    ash::khr::workgroup_memory_explicit_layout,
     assets::ASSET_PATH,
     components::{MeshComponent, RigidBodyComponent, TransformComponent},
     entities::Part,
-    glam::{self, IVec2, Vec2},
-    gltf::json::extensions::scene,
-    physics::character_controller::{
-        self, CharacterCollision, CharacterLength, KinematicCharacterController,
-    },
+    glam::{self, Vec2},
     rand,
     rapier3d::{
         self,
-        prelude::{MassProperties, QueryFilter, QueryPipeline, Shape, ShapeType, SharedShape},
+        prelude::ShapeType,
     },
-    renderer::renderer::{BASE_MATERIAL_INDEX, WHITE_TEXTURE_INDEX},
+    renderer::renderer::BASE_MATERIAL_INDEX,
     scene::UiText,
     text::{FontHandle, FontManager, TextBox},
     thunderdome::{self, Index},
@@ -31,7 +25,6 @@ use glam::{EulerRot, Quat, Vec3, vec3};
 use rapier3d::prelude::RigidBodyType;
 
 use rand::{Rng, SeedableRng, rngs::SmallRng};
-use thunderdome::Arena;
 use winit::{
     event::{DeviceEvent, WindowEvent},
     keyboard::KeyCode,
@@ -43,7 +36,7 @@ use hexxengine::{
     color::hsv_to_rgb,
     input::InputState,
     physics::context::PhysicsContext,
-    renderer::renderer::{MeshHandle, VulkanContext},
+    renderer::renderer::VulkanContext,
     scene::{Camera, Lighting, MeshNode, RenderScene},
 };
 
@@ -279,7 +272,7 @@ impl Game {
             move_dir += Vec3::new(0.0, 0.0, 1.0)
         }
 
-        let mut character = self
+        let character = self
             .world
             .characters
             .get_mut(self.world.character_index.unwrap())
@@ -372,7 +365,7 @@ impl Game {
     pub fn update(&mut self, window: &Window) {
         let now = Instant::now();
         let dt = (now - self.last_frame).as_secs_f32();
-        let elapsed = (now - self.start_time).as_secs_f32();
+        let _elapsed = (now - self.start_time).as_secs_f32();
 
         self.last_frame = now;
         self.accumulator += dt;
@@ -465,7 +458,7 @@ impl Game {
         match event {
             WindowEvent::KeyboardInput {
                 device_id: _,
-                event,
+                event: _,
                 is_synthetic: _,
             } => {
                 // self.input_state.key_input(event);

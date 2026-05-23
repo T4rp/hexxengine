@@ -127,7 +127,7 @@ impl Game {
 
         world.parts.insert(baseplate);
 
-        let mut ui_context = UiContext::new();
+        let ui_context = UiContext::new();
 
         Game {
             vk_ctx,
@@ -193,7 +193,7 @@ impl Game {
     fn update(&mut self, window: &Window) {
         let now = Instant::now();
         let dt = (now - self.last_frame).as_secs_f32();
-        let elapsed = (now - self.start_time).as_secs_f32();
+        let _elapsed = (now - self.start_time).as_secs_f32();
         self.last_frame = now;
 
         let inner_size = window.inner_size();

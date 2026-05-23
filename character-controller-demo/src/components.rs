@@ -8,11 +8,10 @@ use hexxengine::{
     rapier3d::{
         math::Pose3,
         prelude::{
-            ColliderBuilder, ColliderHandle, MassProperties, QueryFilter, RigidBodyBuilder,
-            RigidBodyHandle, RigidBodyType, ShapeType, SharedShape,
+            ColliderBuilder, ColliderHandle, MassProperties, QueryFilter, SharedShape,
         },
     },
-    thunderdome::{self, Index},
+    thunderdome::Index,
 };
 
 const JUMP_POWER: f32 = 70.0;

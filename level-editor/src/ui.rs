@@ -1,5 +1,5 @@
 use hexxengine::{
-    glam::{Vec2, Vec4, vec2, vec3, vec4},
+    glam::{Vec4, vec3, vec4},
     scene::RenderScene,
     text::{FontHandle, FontManager},
 };
