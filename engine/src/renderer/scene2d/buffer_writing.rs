@@ -64,9 +64,6 @@ pub fn push_text_verts(
     let mut vertex_count = 0;
     let mut index_count = 0;
 
-    let mut pen_x = ui_text.position.x as i32;
-    let mut pen_y = ui_text.position.y as i32;
-
     for character in ui_text.glyph_positions.iter() {
         let glyph_atlas_rect = glyph_atlas
             .get_glyph(ui_text.font, character.glyph, ui_text.font_height)
@@ -118,9 +115,6 @@ pub fn push_text_verts(
         indices.push(vert_offset as u16);
         indices.push(vert_offset as u16 + 2);
         indices.push(vert_offset as u16 + 3);
-
-        pen_x += glyph_data.advance.0;
-        pen_y += glyph_data.advance.1;
 
         vertex_count += 4;
         index_count += 6;
