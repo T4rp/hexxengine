@@ -111,6 +111,12 @@ impl TextBox {
             (max_ascent + max_descent) as f32 / 64.0,
         );
 
+        for glyph in self.glyph_positions.iter_mut() {
+            let width_offset = -self.layout_size.x / 2.0 + self.size.x / 2.0;
+            let height_offset = self.layout_size.y / 2.0 + self.size.y / 2.0;
+            glyph.offset += Vec2::new(width_offset, height_offset);
+        }
+
         self.is_dirty = false
     }
 

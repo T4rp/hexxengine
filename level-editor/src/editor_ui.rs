@@ -118,7 +118,6 @@ impl UiContext {
         let mut elements = self.root.clone();
 
         while let Some(elem_i) = elements.pop() {
-            
             let elem = self.elements.get(elem_i).unwrap();
 
             let elem_position = elem.element.position();
@@ -161,6 +160,7 @@ impl UiContext {
                 }
                 UiElement::Text(ui_text) => {
                     let mut text_box = TextBox::new(ui_text.font);
+                    text_box.set_size(elem.world_size);
                     text_box.set_font_height(ui_text.font_size);
                     text_box.set_text(ui_text.text.clone());
                     text_box.calculate_layout(font_manager);

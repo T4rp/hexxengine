@@ -14,8 +14,8 @@ pub fn render(
 ) {
     let pane = ctx.new_elem(
         UiRect {
-            position: vec4(0.0, 100.0, 0.0, 100.0),
-            size: vec4(0.0, 100.0, 0.5, 50.0),
+            position: vec4(0.0, 10.0, 0.0, 10.0),
+            size: vec4(0.0, 100.0, 0.5, 0.0),
             color: vec3(1.0, 1.0, 1.0),
             ..Default::default()
         }
@@ -35,15 +35,15 @@ pub fn render(
     let label = ctx.new_elem(
         UiTextBox {
             font,
-            color: vec3(1.0, 1.0, 1.0),
+            color: vec3(0.0, 0.0, 0.0),
             position: Vec4::ZERO,
             font_size: 18,
             text: "label".into(),
-            size: vec4(0.0, 1.0, 0.0, 1.0),
+            size: vec4(1.0, 0.0, 1.0, 0.0),
         }
         .to_elem(),
     );
-    ctx.parent(label, inner_pane);
+    ctx.parent(label, pane);
 
     ctx.build_draws(font_manager, &mut scene.ui);
 }
