@@ -8,6 +8,7 @@ pub mod renderer;
 pub mod scene;
 pub mod shapes;
 pub mod text;
+pub mod ui;
 
 pub use ash;
 pub use glam;
