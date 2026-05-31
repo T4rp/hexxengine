@@ -32,9 +32,9 @@ const DESCRIPTOR_RATIOS: &[(vk::DescriptorType, u32)] = &[
     (vk::DescriptorType::UNIFORM_BUFFER, 2),
 ];
 
-pub const FALLBACK_TEXTURE_INDEX: Index = Index::from_bits(1 << 32 ).unwrap();
+pub const FALLBACK_TEXTURE_INDEX: Index = Index::from_bits(1 << 32).unwrap();
 pub const WHITE_TEXTURE_INDEX: Index = Index::from_bits(1 << 32 | 1).unwrap();
-pub const FALLBACK_SKYBOX_INDEX: Index = Index::from_bits(1 << 32 ).unwrap();
+pub const FALLBACK_SKYBOX_INDEX: Index = Index::from_bits(1 << 32).unwrap();
 pub const BASE_MATERIAL_INDEX: Index = Index::from_bits(1 << 32 | 1).unwrap();
 
 unsafe extern "system" fn debug_messager_callback(
@@ -995,12 +995,14 @@ impl VulkanContext {
             if let UiDraw::Text(text_draw) = ui_draws {
                 let mut font_manager = self.font_manager.lock().unwrap();
                 for glyph in text_draw.glyph_positions.iter() {
-                    self.glyph_atlas.render_glyph(
-                        &mut font_manager,
-                        text_draw.font,
-                        glyph.glyph,
-                        text_draw.font_height,
-                    );
+                    self.glyph_atlas
+                        .render_glyph(
+                            &mut font_manager,
+                            text_draw.font,
+                            glyph.glyph,
+                            text_draw.font_height,
+                        )
+                        .unwrap();
                 }
             }
         }
