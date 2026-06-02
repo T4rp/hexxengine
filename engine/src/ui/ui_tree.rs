@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use glam::{Vec2, Vec4, Vec4Swizzles};
+use glam::{Vec2, Vec3, Vec4, Vec4Swizzles};
 use thunderdome::{Arena, Index};
 
 use crate::{
@@ -49,7 +49,19 @@ pub struct TextLabel {
 }
 
 impl TextLabel {
-    fn to_elem(self) -> UiElement {
+    pub fn new(font: FontHandle) -> Self {
+        Self {
+            text_box: TextBox::new(font),
+            text: "".into(),
+            font: Some(font),
+            color: Vec4::ZERO,
+            position: UiDim::default(),
+            size: UiDim::default(),
+            font_height: 14,
+        }
+    }
+
+    pub fn to_elem(self) -> UiElement {
         UiElement::TextLabel(self)
     }
 }
@@ -264,10 +276,20 @@ impl UiTree {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
+    use glam::Vec3;
+
     use crate::{
-        text::FontManager,
-        ui::{UiTree, ui_tree::Frame},
+        assets::ASSET_PATH,
+        text::{FontManager, TextBox},
+        ui::{
+            UiTree,
+            ui_tree::{Frame, TextLabel},
+        },
     };
+
+    use super::UiDim;
 
     #[test]
     fn add_element() {
@@ -315,6 +337,24 @@ mod tests {
         ui_tree.root(frame_idx);
         ui_tree.parent(frame_idx, child1_idx);
         ui_tree.parent(frame_idx, child2_idx);
+
+        let mut draws = Vec::new();
+
+        ui_tree.draw(&mut font_manager, &mut draws);
+    }
+
+    #[test]
+    fn draw_tree_text() {
+        let mut font_manager = FontManager::new();
+        let font_data = fs::read(format!("{}/unifont-17.0.03.otf", ASSET_PATH)).unwrap();
+        let font_handle = font_manager.load_font(&font_data).unwrap();
+
+        let mut ui_tree = UiTree::new();
+        let frame_idx = ui_tree.add_element(Frame::default().to_elem());
+        let label_idx = ui_tree.add_element(TextLabel::new(font_handle).to_elem());
+
+        ui_tree.root(frame_idx);
+        ui_tree.parent(frame_idx, label_idx);
 
         let mut draws = Vec::new();
 
