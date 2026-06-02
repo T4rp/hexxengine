@@ -264,7 +264,10 @@ impl UiTree {
 
 #[cfg(test)]
 mod tests {
-    use crate::ui::{UiTree, ui_tree::Frame};
+    use crate::{
+        text::FontManager,
+        ui::{UiTree, ui_tree::Frame},
+    };
 
     #[test]
     fn add_element() {
@@ -298,5 +301,23 @@ mod tests {
 
         assert!(frame.last_child.is_some());
         assert_eq!(frame.last_child.unwrap(), child2_idx);
+    }
+
+    #[test]
+    fn draw_tree_frames() {
+        let mut font_manager = FontManager::new();
+
+        let mut ui_tree = UiTree::new();
+        let frame_idx = ui_tree.add_element(Frame::default().to_elem());
+        let child1_idx = ui_tree.add_element(Frame::default().to_elem());
+        let child2_idx = ui_tree.add_element(Frame::default().to_elem());
+
+        ui_tree.root(frame_idx);
+        ui_tree.parent(frame_idx, child1_idx);
+        ui_tree.parent(frame_idx, child2_idx);
+
+        let mut draws = Vec::new();
+
+        ui_tree.draw(&mut font_manager, &mut draws);
     }
 }
