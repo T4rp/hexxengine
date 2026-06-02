@@ -1,9 +1,13 @@
 use std::borrow::Cow;
 
-use glam::{Vec2, Vec4};
+use glam::{Vec2, Vec4, Vec4Swizzles};
 use thunderdome::{Arena, Index};
 
-use crate::text::{FontHandle, TextBox};
+use crate::{
+    renderer::renderer::WHITE_TEXTURE_INDEX,
+    scene::{UiDraw, UiFrame, UiText},
+    text::{FontHandle, FontManager, TextBox},
+};
 
 #[derive(Clone, Copy, Default, Debug)]
 pub struct UiDim {
@@ -41,6 +45,7 @@ pub struct TextLabel {
     pub color: Vec4,
     pub position: UiDim,
     pub size: UiDim,
+    font_height: u32,
 }
 
 impl TextLabel {
@@ -54,9 +59,27 @@ pub enum UiElement {
     TextLabel(TextLabel),
 }
 
+impl UiElement {
+    fn position(&self) -> UiDim {
+        match self {
+            UiElement::Frame(frame) => frame.position,
+            UiElement::TextLabel(text_label) => text_label.position,
+        }
+    }
+
+    fn size(&self) -> UiDim {
+        match self {
+            UiElement::Frame(frame) => frame.size,
+            UiElement::TextLabel(text_label) => text_label.size,
+        }
+    }
+}
+
 pub struct UiNode {
     pub world_position: Vec2,
-    pub world_scale: Vec2,
+    pub world_size: Vec2,
+    pub dimensions_dirty: bool,
+
     pub parent: Option<Index>,
     pub first_child: Option<Index>,
     pub last_child: Option<Index>,
@@ -69,6 +92,7 @@ pub struct UiTree {
     elements: Arena<UiNode>,
     roots: Vec<Index>,
     root_size: Vec2,
+    is_dirty: bool,
 }
 
 impl UiTree {
@@ -77,7 +101,13 @@ impl UiTree {
             elements: Arena::new(),
             roots: Vec::new(),
             root_size: Vec2::ZERO,
+            is_dirty: true,
         }
+    }
+
+    pub fn root(&mut self, element_index: Index) {
+        self.deparent(element_index);
+        self.roots.push(element_index);
     }
 
     pub fn deparent(&mut self, child_index: Index) {
@@ -147,7 +177,8 @@ impl UiTree {
     pub fn add_element(&mut self, elem: UiElement) -> Index {
         let ui_node = UiNode {
             world_position: Vec2::ZERO,
-            world_scale: Vec2::ZERO,
+            world_size: Vec2::ZERO,
+            dimensions_dirty: true,
             parent: None,
             first_child: None,
             last_child: None,
@@ -157,6 +188,69 @@ impl UiTree {
         };
 
         self.elements.insert(ui_node)
+    }
+
+    pub fn draw(&mut self, font_manager: &mut FontManager, ui_draws: &mut Vec<UiDraw>) {
+        let mut elements = self.roots.clone();
+
+        while let Some(node_index) = elements.pop() {
+            let node = self
+                .elements
+                .get(node_index)
+                .expect("root element not in arena");
+
+            let position = node.element.position();
+            let size = node.element.size();
+
+            let parent_node = node.parent.and_then(|i| self.elements.get(i));
+
+            let (parent_pos, parent_size) = if let Some(parent) = parent_node {
+                (parent.world_position, parent.world_size)
+            } else {
+                (Vec2::ZERO, self.root_size)
+            };
+
+            let world_position = parent_pos + parent_size * position.scale + position.offset;
+            let world_size = parent_size * size.scale + size.offset;
+
+            // TODO: only calc this when dirty
+            let node = self.elements.get_mut(node_index).unwrap();
+            node.world_position = world_position;
+            node.world_size = world_size;
+
+            let mut current_node = node.first_child;
+
+            while let Some(index) = current_node {
+                elements.push(index);
+                current_node = self.elements.get(index).and_then(|node| node.next_sibling)
+            }
+
+            match &mut self.elements.get_mut(node_index).unwrap().element {
+                UiElement::Frame(frame) => {
+                    ui_draws.push(UiDraw::Frame(UiFrame {
+                        position: world_position,
+                        size: world_size,
+                        anchor: Vec2::ZERO,
+                        color: frame.color,
+                        texture_id: WHITE_TEXTURE_INDEX,
+                        uvs: Default::default(),
+                    }));
+                }
+                UiElement::TextLabel(text_label) => {
+                    text_label.text_box.calculate_layout(font_manager);
+
+                    ui_draws.push(UiDraw::Text(UiText {
+                        // TODO: have some way to do default font
+                        font: text_label.font.unwrap(),
+                        position: world_position,
+                        anchor: Vec2::ZERO,
+                        font_height: text_label.font_height,
+                        glyph_positions: text_label.text_box.glyph_positions.clone(),
+                        color: text_label.color.xyz(),
+                    }));
+                }
+            }
+        }
     }
 
     pub fn get_element(&self, index: Index) -> Option<&UiNode> {
