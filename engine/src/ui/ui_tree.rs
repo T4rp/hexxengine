@@ -7,7 +7,7 @@ use crate::{
     renderer::renderer::WHITE_TEXTURE_INDEX,
     scene::{UiDraw, UiFrame, UiText},
     text::{FontHandle, FontManager, TextBox},
-    ui::{Element, UiDim},
+    ui::{Element, UiDim, UiElement},
 };
 
 pub struct UiNode {
@@ -109,7 +109,7 @@ impl UiTree {
         self.elements.get_mut(child_index).unwrap().parent = Some(parent_index);
     }
 
-    pub fn add_element(&mut self, elem: Element) -> Index {
+    pub fn add_element<T: UiElement>(&mut self, elem: T) -> Index {
         let ui_node = UiNode {
             world_position: Vec2::ZERO,
             world_size: Vec2::ZERO,
@@ -119,7 +119,7 @@ impl UiTree {
             last_child: None,
             next_sibling: None,
             prev_sibling: None,
-            element: elem,
+            element: elem.to_enum(),
         };
 
         self.elements.insert(ui_node)
@@ -233,16 +233,16 @@ mod tests {
     #[test]
     fn add_element() {
         let mut ui_tree = UiTree::new();
-        let frame = ui_tree.add_element(Frame::default().to_enum());
+        let frame = ui_tree.add_element(Frame::default());
         assert_eq!(ui_tree.get_element(frame).is_some(), true)
     }
 
     #[test]
     fn parenting() {
         let mut ui_tree = UiTree::new();
-        let frame_idx = ui_tree.add_element(Frame::default().to_enum());
-        let child1_idx = ui_tree.add_element(Frame::default().to_enum());
-        let child2_idx = ui_tree.add_element(Frame::default().to_enum());
+        let frame_idx = ui_tree.add_element(Frame::default());
+        let child1_idx = ui_tree.add_element(Frame::default());
+        let child2_idx = ui_tree.add_element(Frame::default());
 
         ui_tree.parent(frame_idx, child1_idx);
         ui_tree.parent(frame_idx, child2_idx);
@@ -267,10 +267,10 @@ mod tests {
     #[test]
     fn deparenting() {
         let mut ui_tree = UiTree::new();
-        let frame_idx = ui_tree.add_element(Frame::default().to_enum());
-        let child1_idx = ui_tree.add_element(Frame::default().to_enum());
-        let child2_idx = ui_tree.add_element(Frame::default().to_enum());
-        let child3_idx = ui_tree.add_element(Frame::default().to_enum());
+        let frame_idx = ui_tree.add_element(Frame::default());
+        let child1_idx = ui_tree.add_element(Frame::default());
+        let child2_idx = ui_tree.add_element(Frame::default());
+        let child3_idx = ui_tree.add_element(Frame::default());
 
         ui_tree.parent(frame_idx, child1_idx);
         ui_tree.parent(frame_idx, child2_idx);
@@ -284,8 +284,8 @@ mod tests {
     #[test]
     fn removing() {
         let mut ui_tree = UiTree::new();
-        let frame_idx = ui_tree.add_element(Frame::default().to_enum());
-        let child1_idx = ui_tree.add_element(Frame::default().to_enum());
+        let frame_idx = ui_tree.add_element(Frame::default());
+        let child1_idx = ui_tree.add_element(Frame::default());
 
         ui_tree.parent(frame_idx, child1_idx);
         ui_tree.remove(frame_idx);
@@ -299,9 +299,9 @@ mod tests {
         let mut font_manager = FontManager::new();
 
         let mut ui_tree = UiTree::new();
-        let frame_idx = ui_tree.add_element(Frame::default().to_enum());
-        let child1_idx = ui_tree.add_element(Frame::default().to_enum());
-        let child2_idx = ui_tree.add_element(Frame::default().to_enum());
+        let frame_idx = ui_tree.add_element(Frame::default());
+        let child1_idx = ui_tree.add_element(Frame::default());
+        let child2_idx = ui_tree.add_element(Frame::default());
 
         ui_tree.root(frame_idx);
         ui_tree.parent(frame_idx, child1_idx);
@@ -319,8 +319,8 @@ mod tests {
         let font_handle = font_manager.load_font(&font_data).unwrap();
 
         let mut ui_tree = UiTree::new();
-        let frame_idx = ui_tree.add_element(Frame::default().to_enum());
-        let label_idx = ui_tree.add_element(TextLabel::new(font_handle).to_enum());
+        let frame_idx = ui_tree.add_element(Frame::default());
+        let label_idx = ui_tree.add_element(TextLabel::new(font_handle));
 
         ui_tree.root(frame_idx);
         ui_tree.parent(frame_idx, label_idx);
