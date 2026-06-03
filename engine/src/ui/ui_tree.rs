@@ -155,6 +155,7 @@ impl UiTree {
 
             let position = node.element.position();
             let size = node.element.size();
+            let anchor = node.element.anchor();
 
             let parent_node = node.parent.and_then(|i| self.elements.get(i));
 
@@ -164,8 +165,9 @@ impl UiTree {
                 (Vec2::ZERO, self.root_size)
             };
 
-            let world_position = parent_pos + parent_size * position.scale + position.offset;
             let world_size = parent_size * size.scale + size.offset;
+            let world_position =
+                parent_pos + parent_size * position.scale + position.offset + world_size * anchor;
 
             // TODO: only calc this when dirty
             let node = self.elements.get_mut(node_index).unwrap();

@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use glam::Vec4;
+use glam::{Vec2, Vec4};
 
 use crate::{
     text::{FontHandle, TextBox},
@@ -16,6 +16,7 @@ pub struct TextLabel {
     pub color: Vec4,
     pub position: UiDim,
     pub size: UiDim,
+    pub anchor: Vec2,
 }
 
 impl TextLabel {
@@ -27,6 +28,7 @@ impl TextLabel {
             color: Vec4::ZERO,
             position: UiDim::default(),
             size: UiDim::default(),
+            anchor: Vec2::ZERO,
             font_height: 14,
         }
     }
@@ -43,5 +45,9 @@ impl UiElement for TextLabel {
 
     fn to_enum(self) -> Element {
         Element::TextLabel(self)
+    }
+
+    fn anchor(&self) -> Vec2 {
+        self.anchor
     }
 }

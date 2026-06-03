@@ -1,10 +1,11 @@
-use glam::Vec4;
+use glam::{Vec2, Vec4};
 
 use crate::ui::{Element, UiDim, UiElement};
 
 #[derive(Default)]
 pub struct Frame {
     pub color: Vec4,
+    pub anchor: Vec2,
     pub position: UiDim,
     pub size: UiDim,
 }
@@ -20,5 +21,9 @@ impl UiElement for Frame {
 
     fn to_enum(self) -> Element {
         Element::Frame(self)
+    }
+
+    fn anchor(&self) -> Vec2 {
+        self.anchor
     }
 }

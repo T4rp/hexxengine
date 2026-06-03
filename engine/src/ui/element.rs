@@ -20,6 +20,7 @@ impl UiDim {
 pub trait UiElement {
     fn position(&self) -> UiDim;
     fn size(&self) -> UiDim;
+    fn anchor(&self) -> Vec2;
     fn to_enum(self) -> Element;
 }
 
@@ -31,15 +32,22 @@ pub enum Element {
 impl Element {
     pub fn position(&self) -> UiDim {
         match self {
-            Element::Frame(frame) => frame.position,
-            Element::TextLabel(text_label) => text_label.position,
+            Element::Frame(frame) => frame.position(),
+            Element::TextLabel(text_label) => text_label.position(),
         }
     }
 
     pub fn size(&self) -> UiDim {
         match self {
-            Element::Frame(frame) => frame.size,
-            Element::TextLabel(text_label) => text_label.size,
+            Element::Frame(frame) => frame.size(),
+            Element::TextLabel(text_label) => text_label.size(),
+        }
+    }
+
+    pub fn anchor(&self) -> Vec2 {
+        match self {
+            Element::Frame(frame) => frame.anchor(),
+            Element::TextLabel(text_label) => text_label.anchor(),
         }
     }
 }
