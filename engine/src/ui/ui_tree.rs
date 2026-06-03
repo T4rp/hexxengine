@@ -7,85 +7,8 @@ use crate::{
     renderer::renderer::WHITE_TEXTURE_INDEX,
     scene::{UiDraw, UiFrame, UiText},
     text::{FontHandle, FontManager, TextBox},
+    ui::{Element, UiDim},
 };
-
-#[derive(Clone, Copy, Default, Debug)]
-pub struct UiDim {
-    pub scale: Vec2,
-    pub offset: Vec2,
-}
-
-impl UiDim {
-    pub fn new(scale_x: f32, scale_y: f32, offset_x: f32, offset_y: f32) -> Self {
-        Self {
-            scale: Vec2::new(scale_x, scale_y),
-            offset: Vec2::new(offset_x, offset_y),
-        }
-    }
-}
-
-#[derive(Default)]
-pub struct Frame {
-    pub color: Vec4,
-    pub position: UiDim,
-    pub size: UiDim,
-}
-
-impl Frame {
-    fn to_elem(self) -> UiElement {
-        UiElement::Frame(self)
-    }
-}
-
-pub struct TextLabel {
-    text_box: TextBox,
-    text: Cow<'static, str>,
-    font: Option<FontHandle>,
-
-    pub color: Vec4,
-    pub position: UiDim,
-    pub size: UiDim,
-    font_height: u32,
-}
-
-impl TextLabel {
-    pub fn new(font: FontHandle) -> Self {
-        Self {
-            text_box: TextBox::new(font),
-            text: "".into(),
-            font: Some(font),
-            color: Vec4::ZERO,
-            position: UiDim::default(),
-            size: UiDim::default(),
-            font_height: 14,
-        }
-    }
-
-    pub fn to_elem(self) -> UiElement {
-        UiElement::TextLabel(self)
-    }
-}
-
-pub enum UiElement {
-    Frame(Frame),
-    TextLabel(TextLabel),
-}
-
-impl UiElement {
-    fn position(&self) -> UiDim {
-        match self {
-            UiElement::Frame(frame) => frame.position,
-            UiElement::TextLabel(text_label) => text_label.position,
-        }
-    }
-
-    fn size(&self) -> UiDim {
-        match self {
-            UiElement::Frame(frame) => frame.size,
-            UiElement::TextLabel(text_label) => text_label.size,
-        }
-    }
-}
 
 pub struct UiNode {
     pub world_position: Vec2,
@@ -97,7 +20,7 @@ pub struct UiNode {
     pub last_child: Option<Index>,
     pub next_sibling: Option<Index>,
     pub prev_sibling: Option<Index>,
-    pub element: UiElement,
+    pub element: Element,
 }
 
 pub struct UiTree {
@@ -186,7 +109,7 @@ impl UiTree {
         self.elements.get_mut(child_index).unwrap().parent = Some(parent_index);
     }
 
-    pub fn add_element(&mut self, elem: UiElement) -> Index {
+    pub fn add_element(&mut self, elem: Element) -> Index {
         let ui_node = UiNode {
             world_position: Vec2::ZERO,
             world_size: Vec2::ZERO,
@@ -238,7 +161,7 @@ impl UiTree {
             }
 
             match &mut self.elements.get_mut(node_index).unwrap().element {
-                UiElement::Frame(frame) => {
+                Element::Frame(frame) => {
                     ui_draws.push(UiDraw::Frame(UiFrame {
                         position: world_position,
                         size: world_size,
@@ -248,7 +171,7 @@ impl UiTree {
                         uvs: Default::default(),
                     }));
                 }
-                UiElement::TextLabel(text_label) => {
+                Element::TextLabel(text_label) => {
                     text_label.text_box.calculate_layout(font_manager);
 
                     ui_draws.push(UiDraw::Text(UiText {
@@ -283,10 +206,7 @@ mod tests {
     use crate::{
         assets::ASSET_PATH,
         text::{FontManager, TextBox},
-        ui::{
-            UiTree,
-            ui_tree::{Frame, TextLabel},
-        },
+        ui::{Frame, TextLabel, UiElement, UiTree},
     };
 
     use super::UiDim;
@@ -294,16 +214,16 @@ mod tests {
     #[test]
     fn add_element() {
         let mut ui_tree = UiTree::new();
-        let frame = ui_tree.add_element(Frame::default().to_elem());
+        let frame = ui_tree.add_element(Frame::default().to_enum());
         assert_eq!(ui_tree.get_element(frame).is_some(), true)
     }
 
     #[test]
     fn parenting() {
         let mut ui_tree = UiTree::new();
-        let frame_idx = ui_tree.add_element(Frame::default().to_elem());
-        let child1_idx = ui_tree.add_element(Frame::default().to_elem());
-        let child2_idx = ui_tree.add_element(Frame::default().to_elem());
+        let frame_idx = ui_tree.add_element(Frame::default().to_enum());
+        let child1_idx = ui_tree.add_element(Frame::default().to_enum());
+        let child2_idx = ui_tree.add_element(Frame::default().to_enum());
 
         ui_tree.parent(frame_idx, child1_idx);
         ui_tree.parent(frame_idx, child2_idx);
@@ -330,9 +250,9 @@ mod tests {
         let mut font_manager = FontManager::new();
 
         let mut ui_tree = UiTree::new();
-        let frame_idx = ui_tree.add_element(Frame::default().to_elem());
-        let child1_idx = ui_tree.add_element(Frame::default().to_elem());
-        let child2_idx = ui_tree.add_element(Frame::default().to_elem());
+        let frame_idx = ui_tree.add_element(Frame::default().to_enum());
+        let child1_idx = ui_tree.add_element(Frame::default().to_enum());
+        let child2_idx = ui_tree.add_element(Frame::default().to_enum());
 
         ui_tree.root(frame_idx);
         ui_tree.parent(frame_idx, child1_idx);
@@ -350,8 +270,8 @@ mod tests {
         let font_handle = font_manager.load_font(&font_data).unwrap();
 
         let mut ui_tree = UiTree::new();
-        let frame_idx = ui_tree.add_element(Frame::default().to_elem());
-        let label_idx = ui_tree.add_element(TextLabel::new(font_handle).to_elem());
+        let frame_idx = ui_tree.add_element(Frame::default().to_enum());
+        let label_idx = ui_tree.add_element(TextLabel::new(font_handle).to_enum());
 
         ui_tree.root(frame_idx);
         ui_tree.parent(frame_idx, label_idx);
