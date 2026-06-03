@@ -125,6 +125,25 @@ impl UiTree {
         self.elements.insert(ui_node)
     }
 
+    pub fn remove(&mut self, elem_index: Index) {
+        self.deparent(elem_index);
+
+        // PERF: maybe find a better way
+        if let Some(index) = self.roots.iter().position(|i| *i == elem_index) {
+            self.roots.swap_remove(index);
+        }
+
+        let element = self.elements.get(elem_index).unwrap();
+        let mut current_child = element.first_child;
+
+        while let Some(child) = current_child {
+            current_child = self.elements.get(child).and_then(|e| e.next_sibling);
+            self.remove(child);
+        }
+
+        self.elements.remove(elem_index);
+    }
+
     pub fn draw(&mut self, font_manager: &mut FontManager, ui_draws: &mut Vec<UiDraw>) {
         let mut elements = self.roots.clone();
 
@@ -206,7 +225,7 @@ mod tests {
     use crate::{
         assets::ASSET_PATH,
         text::{FontManager, TextBox},
-        ui::{Frame, TextLabel, UiElement, UiTree},
+        ui::{self, Frame, TextLabel, UiElement, UiTree},
     };
 
     use super::UiDim;
@@ -243,6 +262,36 @@ mod tests {
 
         assert!(frame.last_child.is_some());
         assert_eq!(frame.last_child.unwrap(), child2_idx);
+    }
+
+    #[test]
+    fn deparenting() {
+        let mut ui_tree = UiTree::new();
+        let frame_idx = ui_tree.add_element(Frame::default().to_enum());
+        let child1_idx = ui_tree.add_element(Frame::default().to_enum());
+        let child2_idx = ui_tree.add_element(Frame::default().to_enum());
+        let child3_idx = ui_tree.add_element(Frame::default().to_enum());
+
+        ui_tree.parent(frame_idx, child1_idx);
+        ui_tree.parent(frame_idx, child2_idx);
+        ui_tree.parent(frame_idx, child3_idx);
+
+        ui_tree.deparent(child2_idx);
+        ui_tree.deparent(child1_idx);
+        ui_tree.deparent(child3_idx);
+    }
+
+    #[test]
+    fn removing() {
+        let mut ui_tree = UiTree::new();
+        let frame_idx = ui_tree.add_element(Frame::default().to_enum());
+        let child1_idx = ui_tree.add_element(Frame::default().to_enum());
+
+        ui_tree.parent(frame_idx, child1_idx);
+        ui_tree.remove(frame_idx);
+
+        assert!(ui_tree.get_element(frame_idx).is_none());
+        assert!(ui_tree.get_element(child1_idx).is_none());
     }
 
     #[test]
