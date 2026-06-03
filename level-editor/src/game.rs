@@ -16,6 +16,7 @@ use hexxengine::{
     scene::{Camera, Lighting, MeshNode, RenderScene},
     text::{FontHandle, FontManager},
     thunderdome::Arena,
+    ui::UiTree,
     winit::{
         self,
         event::{DeviceEvent, WindowEvent},
@@ -24,7 +25,7 @@ use hexxengine::{
     },
 };
 
-use crate::{editor_ui::UiContext, ui};
+use crate::ui;
 
 const CAMERA_SPEED: f32 = 100.0;
 const CAMERA_SENSITIVITY: f32 = 0.38;
@@ -52,7 +53,7 @@ pub struct Game {
     render_scene: RenderScene,
     world: World,
 
-    ui_context: UiContext,
+    ui_tree: UiTree,
 
     start_time: Instant,
     last_frame: Instant,
@@ -127,7 +128,8 @@ impl Game {
 
         world.parts.insert(baseplate);
 
-        let ui_context = UiContext::new();
+        let mut ui_tree = UiTree::new();
+        ui::init(&mut ui_tree, font_handle);
 
         Game {
             vk_ctx,
@@ -138,9 +140,9 @@ impl Game {
             last_frame: start_time,
             world,
             accumulator: 0.0,
-            ui_context,
             font_manager,
             font: font_handle,
+            ui_tree,
         }
     }
 
@@ -197,7 +199,7 @@ impl Game {
         self.last_frame = now;
 
         let inner_size = window.inner_size();
-        self.ui_context
+        self.ui_tree
             .set_root_size(Vec2::new(inner_size.width as f32, inner_size.height as f32));
 
         self.update_camera(dt, window);
@@ -214,16 +216,10 @@ impl Game {
         self.render_scene.meshes.clear();
         self.render_scene.ui.clear();
 
-        self.ui_context.clear();
-
         {
             let mut font_manager = self.font_manager.lock().unwrap();
-            ui::render(
-                &mut self.render_scene,
-                &mut font_manager,
-                &mut self.ui_context,
-                self.font,
-            );
+            self.ui_tree
+                .draw(&mut font_manager, &mut self.render_scene.ui);
         }
 
         for (_i, part) in self.world.parts.iter() {

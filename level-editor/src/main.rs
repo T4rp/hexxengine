@@ -1,5 +1,4 @@
 mod components;
-mod editor_ui;
 mod entities;
 mod game;
 mod ui;
