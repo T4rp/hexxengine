@@ -40,6 +40,10 @@ impl UiTree {
         }
     }
 
+    pub fn set_root_size(&mut self, root_size: Vec2) {
+        self.root_size = root_size;
+    }
+
     pub fn root(&mut self, element_index: Index) {
         self.deparent(element_index);
         self.roots.push(element_index);
@@ -167,7 +171,7 @@ impl UiTree {
 
             let world_size = parent_size * size.scale + size.offset;
             let world_position =
-                parent_pos + parent_size * position.scale + position.offset + world_size * anchor;
+                parent_pos + parent_size * position.scale + position.offset - world_size * anchor;
 
             // TODO: only calc this when dirty
             let node = self.elements.get_mut(node_index).unwrap();
@@ -193,6 +197,9 @@ impl UiTree {
                     }));
                 }
                 Element::TextLabel(text_label) => {
+                    if text_label.text_box.size != world_size {
+                        text_label.text_box.set_size(world_size);
+                    }
                     text_label.text_box.calculate_layout(font_manager);
 
                     ui_draws.push(UiDraw::Text(UiText {

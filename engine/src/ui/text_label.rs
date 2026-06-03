@@ -32,6 +32,21 @@ impl TextLabel {
             font_height: 14,
         }
     }
+
+    pub fn set_font_height(&mut self, font_height: u32) {
+        self.font_height = font_height;
+        self.text_box.set_font_height(font_height);
+    }
+
+    pub fn set_text(&mut self, text: Cow<'static, str>) {
+        self.text = text.clone();
+        self.text_box.set_text(text.clone());
+    }
+
+    pub fn set_font(&mut self, font: FontHandle) {
+        self.font = Some(font);
+        self.text_box.set_font(font);
+    }
 }
 
 impl UiElement for TextLabel {

@@ -9,6 +9,7 @@ use crate::{
 };
 
 const MIN_BIN_LENGTH: u32 = 8;
+const PADDING: u32 = 1;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct GlyphAtlasRect {
@@ -144,17 +145,17 @@ impl GlyphAtlas {
         let bin = &self.bins[bin_index];
 
         let bin_right = Rect {
-            x: rect.x + rect.width,
+            x: rect.x + rect.width + PADDING,
             y: bin.y,
-            width: (bin.x + bin.width).saturating_sub(rect.x + rect.width),
+            width: (bin.x + bin.width).saturating_sub(rect.x + rect.width + PADDING),
             height: bin.height,
         };
 
         let bin_down = Rect {
             x: bin.x,
-            y: rect.y + rect.height,
+            y: rect.y + rect.height + PADDING,
             width: bin.width,
-            height: (bin.y + bin.height).saturating_sub(rect.y + rect.height),
+            height: (bin.y + bin.height).saturating_sub(rect.y + rect.height + PADDING),
         };
 
         self.bins.swap_remove(bin_index);
@@ -179,7 +180,7 @@ impl GlyphAtlas {
             let left = Rect {
                 x: bin.x,
                 y: bin.y,
-                width: rect.x.saturating_sub(bin.x),
+                width: rect.x.saturating_sub(bin.x + PADDING),
                 height: bin.height,
             };
 
@@ -187,21 +188,21 @@ impl GlyphAtlas {
                 x: bin.x,
                 y: bin.y,
                 width: bin.width,
-                height: rect.y.saturating_sub(bin.y),
+                height: rect.y.saturating_sub(bin.y + PADDING),
             };
 
             let right = Rect {
-                x: rect.x + rect.width,
+                x: rect.x + rect.width + PADDING,
                 y: bin.y,
-                width: (bin.x + bin.width).saturating_sub(rect.x + rect.width),
+                width: (bin.x + bin.width).saturating_sub(rect.x + rect.width + PADDING),
                 height: bin.height,
             };
 
             let down = Rect {
                 x: bin.x,
-                y: rect.y + rect.height,
+                y: rect.y + rect.height + PADDING,
                 width: bin.width,
-                height: (bin.y + bin.height).saturating_sub(rect.y + rect.height),
+                height: (bin.y + bin.height).saturating_sub(rect.y + rect.height + PADDING),
             };
 
             for rect in [right, down, left, up] {
@@ -430,7 +431,7 @@ mod tests {
         let font_data = fs::read(get_unifont_path()).unwrap();
         let font = font_manager.load_font(&font_data).unwrap();
 
-        let mut atlas = GlyphAtlas::new(GlyphRenderMode::Normal, 256, 256);
+        let mut atlas = GlyphAtlas::new(GlyphRenderMode::Normal, 512, 256);
 
         for height in [32, 24, 18, 16, 12] {
             for i in 32..128 {
@@ -467,7 +468,7 @@ mod tests {
         let font_data = fs::read(get_unifont_path()).unwrap();
         let font = font_manager.load_font(&font_data).unwrap();
 
-        let mut atlas = GlyphAtlas::new(GlyphRenderMode::Normal, 128, 128);
+        let mut atlas = GlyphAtlas::new(GlyphRenderMode::Normal, 256, 128);
 
         for height in [18] {
             for i in 32..128 {
