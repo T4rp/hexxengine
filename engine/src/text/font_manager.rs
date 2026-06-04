@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use glam::I64Vec2;
 use paidtype::freetype::{
     FT_LOAD_DEFAULT, FT_Render_Mode__FT_RENDER_MODE_NORMAL, FT_Render_Mode__FT_RENDER_MODE_SDF,
 };
@@ -50,6 +51,19 @@ impl Font {
     pub fn get_glyph(&self, glyph: u64, font_height: u32) -> Option<GlyphData> {
         let glyph_key = GlyphKey::new(glyph, font_height);
         self.glyph_cache.get(&glyph_key).copied()
+    }
+
+    pub fn set_font_height(&mut self, font_height: u32) -> Result<(), FontManagerError> {
+        self.face.set_pixel_sizes(0, font_height)?;
+        Ok(())
+    }
+
+    pub fn get_kerning(
+        &mut self,
+        left_glyph: u32,
+        right_glyph: u32,
+    ) -> Result<I64Vec2, FontManagerError> {
+        Ok(self.face.get_glyph_kerning(left_glyph, right_glyph)?)
     }
 
     pub fn render_glyph(

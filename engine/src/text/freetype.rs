@@ -1,11 +1,13 @@
 use std::{ffi::CStr, fmt::Display, mem::MaybeUninit, sync::Arc};
 
+use glam::I64Vec2;
 use paidtype::freetype::{
     _bindgen_ty_2, FT_BBox, FT_Done_Face, FT_Done_FreeType, FT_Done_Glyph, FT_Err_Ok, FT_Error,
     FT_Error_String, FT_F26Dot6, FT_Face, FT_FaceRec, FT_Get_Char_Index, FT_Get_Glyph,
-    FT_Glyph_BBox_Mode__FT_GLYPH_BBOX_PIXELS, FT_Glyph_Get_CBox, FT_Init_FreeType, FT_Int32,
-    FT_Library, FT_Library_Version, FT_Load_Glyph, FT_Long, FT_New_Memory_Face, FT_Render_Glyph,
-    FT_Render_Mode, FT_Set_Char_Size, FT_Set_Pixel_Sizes, FT_UInt, FT_ULong,
+    FT_Get_Kerning, FT_Glyph_BBox_Mode__FT_GLYPH_BBOX_PIXELS, FT_Glyph_Get_CBox, FT_Init_FreeType,
+    FT_Int32, FT_Kerning_Mode__FT_KERNING_DEFAULT, FT_Library, FT_Library_Version, FT_Load_Glyph,
+    FT_Long, FT_New_Memory_Face, FT_Render_Glyph, FT_Render_Mode, FT_Set_Char_Size,
+    FT_Set_Pixel_Sizes, FT_UInt, FT_ULong, FT_Vector,
 };
 
 use crate::shapes::Boundsi64;
@@ -297,6 +299,27 @@ impl Face {
             vert_advance: glyph_metrics.vertAdvance,
         }
     }
+
+    pub fn get_glyph_kerning(
+        &self,
+        left_glyph: u32,
+        right_glyph: u32,
+    ) -> Result<I64Vec2, FreetypeError> {
+        let mut kerning = FT_Vector { x: 0, y: 0 };
+
+        unsafe {
+            let err = FT_Get_Kerning(
+                self.face,
+                left_glyph,
+                right_glyph,
+                FT_Kerning_Mode__FT_KERNING_DEFAULT,
+                &mut kerning,
+            );
+            ft_check!(err);
+        };
+
+        Ok(I64Vec2::new(kerning.x as i64, kerning.y as i64))
+    }
 }
 
 impl Drop for Face {
@@ -396,5 +419,19 @@ mod tests {
 
         let cbox = face.get_glyph_cbox().unwrap();
         println!("{:?}", cbox)
+    }
+
+    #[test]
+    fn glyph_kerning() {
+        let freetype = FreetypeLibrary::new().unwrap();
+
+        let face = freetype.new_memory_face(FONT_FILE, 0).unwrap();
+        face.set_pixel_sizes(0, 16).unwrap();
+
+        let first_glyph = face.get_char_index('V' as u64).unwrap();
+        let second_glyph = face.get_char_index('A' as u64).unwrap();
+
+        let kerning = face.get_glyph_kerning(first_glyph, second_glyph).unwrap();
+        println!("{:?}", kerning)
     }
 }
