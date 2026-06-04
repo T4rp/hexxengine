@@ -325,9 +325,9 @@ impl Resources {
         let view = Mat4::IDENTITY;
         let proj = Mat4::orthographic_rh(
             0.0,
-            window_extent.width as f32,
+            window_extent.width as f32 - 1.0,
             0.0,
-            window_extent.height as f32,
+            window_extent.height as f32 - 1.0,
             0.0,
             1.0,
         );
