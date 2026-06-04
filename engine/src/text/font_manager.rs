@@ -41,9 +41,78 @@ pub enum GlyphRenderMode {
     Sdf,
 }
 
-pub struct FontData {
+pub struct Font {
     face: Face,
     glyph_cache: HashMap<GlyphKey, GlyphData>,
+}
+
+impl Font {
+    pub fn get_glyph(&self, glyph: u64, font_height: u32) -> Option<GlyphData> {
+        let glyph_key = GlyphKey::new(glyph, font_height);
+        self.glyph_cache.get(&glyph_key).copied()
+    }
+
+    pub fn render_glyph(
+        &mut self,
+        render_mode: GlyphRenderMode,
+        glyph: u64,
+        font_height: u32,
+    ) -> Result<Option<GlyphBitmap<'_>>, FontManagerError> {
+        let glyph_index = self
+            .face
+            .get_char_index(glyph)
+            .ok_or(FontManagerError::NoGlyphIndex(glyph))?;
+
+        self.face.set_pixel_sizes(0, font_height)?;
+        self.face.load_glyph(glyph_index, FT_LOAD_DEFAULT)?;
+
+        match render_mode {
+            GlyphRenderMode::Normal => self
+                .face
+                .render_glyph(FT_Render_Mode__FT_RENDER_MODE_NORMAL),
+            GlyphRenderMode::Sdf => self.face.render_glyph(FT_Render_Mode__FT_RENDER_MODE_SDF),
+        }?;
+
+        Ok(self.face.get_bitmap_data())
+    }
+
+    pub fn load_glyph(
+        &mut self,
+        glyph: u64,
+        font_height: u32,
+    ) -> Result<GlyphData, FontManagerError> {
+        let glyph_key = GlyphKey::new(glyph, font_height);
+
+        if let Some(glyph_data) = self.glyph_cache.get(&glyph_key) {
+            return Ok(*glyph_data);
+        }
+
+        let glyph_index = self
+            .face
+            .get_char_index(glyph)
+            .ok_or(FontManagerError::NoGlyphIndex(glyph))?;
+
+        self.face.set_pixel_sizes(0, font_height)?;
+        self.face.load_glyph(glyph_index, FT_LOAD_DEFAULT)?;
+
+        let cbox = self.face.get_glyph_cbox()?;
+        let (advance_x, advance_y) = self.face.get_glyph_advance();
+        let (bitmap_left, bitmap_top) = self.face.get_glyph_left_top();
+        let metrics = self.face.get_glyph_metrics();
+
+        let glyph_data = GlyphData {
+            advance: (advance_x, advance_y),
+            bitmap_top,
+            bitmap_left,
+            glyph_index,
+            cbox,
+            metrics,
+        };
+
+        self.glyph_cache.insert(glyph_key, glyph_data);
+
+        Ok(glyph_data)
+    }
 }
 
 #[derive(Debug)]
@@ -61,7 +130,7 @@ impl From<FreetypeError> for FontManagerError {
 
 pub struct FontManager {
     freetype: FreetypeLibrary,
-    fonts: Arena<FontData>,
+    fonts: Arena<Font>,
 }
 
 impl Default for FontManager {
@@ -81,7 +150,7 @@ impl FontManager {
     pub fn load_font(&mut self, font_data: &[u8]) -> Result<FontHandle, FreetypeError> {
         let face = self.freetype.new_memory_face(font_data, 0)?;
 
-        let face_data = FontData {
+        let face_data = Font {
             face,
             glyph_cache: HashMap::new(),
         };
@@ -90,83 +159,12 @@ impl FontManager {
         Ok(FontHandle(index))
     }
 
-    pub fn render_glyph(
-        &mut self,
-        render_mode: GlyphRenderMode,
-        font_handle: FontHandle,
-        glyph: u64,
-        font_height: u32,
-    ) -> Result<Option<GlyphBitmap<'_>>, FontManagerError> {
-        let font = self.fonts.get_mut(font_handle.0).unwrap();
-
-        let glyph_index = font
-            .face
-            .get_char_index(glyph)
-            .ok_or(FontManagerError::NoGlyphIndex(glyph))?;
-
-        font.face.set_pixel_sizes(0, font_height)?;
-        font.face.load_glyph(glyph_index, FT_LOAD_DEFAULT)?;
-
-        match render_mode {
-            GlyphRenderMode::Normal => font
-                .face
-                .render_glyph(FT_Render_Mode__FT_RENDER_MODE_NORMAL),
-            GlyphRenderMode::Sdf => font.face.render_glyph(FT_Render_Mode__FT_RENDER_MODE_SDF),
-        }?;
-
-        Ok(font.face.get_bitmap_data())
+    pub fn get_font(&mut self, font_handle: FontHandle) -> &mut Font {
+        self.fonts.get_mut(font_handle.0).unwrap()
     }
 
-    pub fn get_glyph(
-        &self,
-        font_handle: FontHandle,
-        glyph: u64,
-        font_height: u32,
-    ) -> Option<GlyphData> {
-        let glyph_key = GlyphKey::new(glyph, font_height);
-        let font = self.fonts.get(font_handle.0).unwrap();
-        font.glyph_cache.get(&glyph_key).copied()
-    }
-
-    pub fn load_glyph(
-        &mut self,
-        font_handle: FontHandle,
-        glyph: u64,
-        font_height: u32,
-    ) -> Result<GlyphData, FontManagerError> {
-        let glyph_key = GlyphKey::new(glyph, font_height);
-
-        let font = self.fonts.get_mut(font_handle.0).unwrap();
-
-        if let Some(glyph_data) = font.glyph_cache.get(&glyph_key) {
-            return Ok(*glyph_data);
-        }
-
-        let glyph_index = font
-            .face
-            .get_char_index(glyph)
-            .ok_or(FontManagerError::NoGlyphIndex(glyph))?;
-
-        font.face.set_pixel_sizes(0, font_height)?;
-        font.face.load_glyph(glyph_index, FT_LOAD_DEFAULT)?;
-
-        let cbox = font.face.get_glyph_cbox()?;
-        let (advance_x, advance_y) = font.face.get_glyph_advance();
-        let (bitmap_left, bitmap_top) = font.face.get_glyph_left_top();
-        let metrics = font.face.get_glyph_metrics();
-
-        let glyph_data = GlyphData {
-            advance: (advance_x, advance_y),
-            bitmap_top,
-            bitmap_left,
-            glyph_index,
-            cbox,
-            metrics,
-        };
-
-        font.glyph_cache.insert(glyph_key, glyph_data);
-
-        Ok(glyph_data)
+    pub fn get_font_ref(&self, font_handle: FontHandle) -> &Font {
+        self.fonts.get(font_handle.0).unwrap()
     }
 }
 
@@ -191,11 +189,13 @@ mod tests {
     fn load_glyphs() {
         let mut font_manager = FontManager::new();
         let font_data = fs::read(&format!("{}/unifont-17.0.03.otf", ASSET_PATH)).unwrap();
-        let font = font_manager.load_font(&font_data).unwrap();
+        let font_handle = font_manager.load_font(&font_data).unwrap();
+
+        let font = font_manager.get_font(font_handle);
 
         for height in [32, 24, 18, 16, 12] {
             for i in 32..128 {
-                font_manager.load_glyph(font, i as u64, height).unwrap();
+                font.load_glyph(i as u64, height).unwrap();
             }
         }
     }

@@ -79,10 +79,10 @@ impl TextBox {
         let mut max_ascent = 0;
         let mut max_descent = 0;
 
+        let font = font_manager.get_font(self.font);
+
         for character in self.text.chars() {
-            let glyph_data = font_manager
-                .load_glyph(self.font, character as u64, self.font_height)
-                .unwrap();
+            let glyph_data = font.load_glyph(character as u64, self.font_height).unwrap();
 
             width += glyph_data.metrics.hori_advance;
 

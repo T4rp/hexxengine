@@ -64,13 +64,15 @@ pub fn push_text_verts(
     let mut vertex_count = 0;
     let mut index_count = 0;
 
+    let font = font_manager.get_font_ref(ui_text.font);
+
     for character in ui_text.glyph_positions.iter() {
         let glyph_atlas_rect = glyph_atlas
             .get_glyph(ui_text.font, character.glyph, ui_text.font_height)
             .unwrap();
 
-        let glyph_data = font_manager
-            .get_glyph(ui_text.font, character.glyph, ui_text.font_height)
+        let glyph_data = font
+            .get_glyph(character.glyph, ui_text.font_height)
             .unwrap();
 
         let pos_x = ui_text.position.x + character.offset.x + glyph_data.bitmap_left as f32;

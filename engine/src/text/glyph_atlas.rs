@@ -238,12 +238,12 @@ impl GlyphAtlas {
             return Ok(());
         }
 
-        font_manager
-            .load_glyph(font_handle, glyph, font_height)
-            .unwrap();
+        let font = font_manager.get_font(font_handle);
 
-        let bitmap_data = font_manager
-            .render_glyph(self.render_mode, font_handle, glyph, font_height)
+        font.load_glyph(glyph, font_height).unwrap();
+
+        let bitmap_data = font
+            .render_glyph(self.render_mode, glyph, font_height)
             .unwrap();
 
         let Some(bitmap_data) = bitmap_data else {
