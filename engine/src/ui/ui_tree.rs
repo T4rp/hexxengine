@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, collections::VecDeque};
 
 use glam::{Vec2, Vec3, Vec4, Vec4Swizzles};
 use thunderdome::{Arena, Index};
@@ -149,9 +149,9 @@ impl UiTree {
     }
 
     pub fn draw(&mut self, font_manager: &mut FontManager, ui_draws: &mut Vec<UiDraw>) {
-        let mut elements = self.roots.clone();
+        let mut elements: VecDeque<Index> = VecDeque::from(self.roots.clone());
 
-        while let Some(node_index) = elements.pop() {
+        while let Some(node_index) = elements.pop_front() {
             let node = self
                 .elements
                 .get(node_index)
@@ -181,7 +181,7 @@ impl UiTree {
             let mut current_node = node.first_child;
 
             while let Some(index) = current_node {
-                elements.push(index);
+                elements.push_back(index);
                 current_node = self.elements.get(index).and_then(|node| node.next_sibling)
             }
 
