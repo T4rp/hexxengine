@@ -19,6 +19,7 @@ pub fn init(ctx: &mut UiTree, font: FontHandle) {
         anchor: Vec2::new(1.0, 0.0),
         position: UiDim::new(1.0, 0.0, 0.0, 0.0),
         size: UiDim::new(0.0, 1.0, 200.0, 0.0),
+        ..Default::default()
     });
 
     ctx.root(pane);

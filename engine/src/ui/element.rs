@@ -21,6 +21,7 @@ pub trait UiElement {
     fn position(&self) -> UiDim;
     fn size(&self) -> UiDim;
     fn anchor(&self) -> Vec2;
+    fn visible(&self) -> bool;
     fn to_enum(self) -> Element;
 }
 
@@ -48,6 +49,13 @@ impl Element {
         match self {
             Element::Frame(frame) => frame.anchor(),
             Element::TextLabel(text_label) => text_label.anchor(),
+        }
+    }
+
+    pub fn visible(&self) -> bool {
+        match self {
+            Element::Frame(frame) => frame.visible(),
+            Element::TextLabel(text_label) => text_label.visible(),
         }
     }
 }

@@ -22,6 +22,7 @@ pub struct TextLabel {
     pub position: UiDim,
     pub size: UiDim,
     pub anchor: Vec2,
+    pub visible: bool,
 }
 
 impl TextLabel {
@@ -42,6 +43,7 @@ impl TextLabel {
             font_height: 14,
             horizontal_justification: HorizontalJustification::Center,
             vertical_justification: VerticalJustification::Center,
+            visible: true,
         }
     }
 
@@ -91,5 +93,9 @@ impl UiElement for TextLabel {
 
     fn anchor(&self) -> Vec2 {
         self.anchor
+    }
+
+    fn visible(&self) -> bool {
+        self.visible
     }
 }

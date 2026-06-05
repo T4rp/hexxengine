@@ -157,6 +157,12 @@ impl UiTree {
                 .get(node_index)
                 .expect("root element not in arena");
 
+            let visible = node.element.visible();
+
+            if !visible {
+                continue;
+            }
+
             let position = node.element.position();
             let size = node.element.size();
             let anchor = node.element.anchor();
@@ -335,7 +341,32 @@ mod tests {
         ui_tree.parent(frame_idx, label_idx);
 
         let mut draws = Vec::new();
-
         ui_tree.draw(&mut font_manager, &mut draws);
+
+        assert!(draws.len() > 0);
+    }
+
+    #[test]
+    fn draw_tree_not_visible() {
+        let mut font_manager = FontManager::new();
+        let font_data = fs::read(format!("{}/unifont-17.0.03.otf", ASSET_PATH)).unwrap();
+        let font_handle = font_manager.load_font(&font_data).unwrap();
+
+        let mut ui_tree = UiTree::new();
+
+        let frame_idx = ui_tree.add_element(Frame {
+            visible: false,
+            ..Default::default()
+        });
+
+        let child1_idx = ui_tree.add_element(Frame::default());
+
+        ui_tree.root(frame_idx);
+        ui_tree.parent(frame_idx, child1_idx);
+
+        let mut draws = Vec::new();
+        ui_tree.draw(&mut font_manager, &mut draws);
+
+        assert_eq!(draws.len(), 0);
     }
 }
