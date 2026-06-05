@@ -13,7 +13,7 @@ use hexxengine::{
     rapier3d::{self, prelude::ShapeType},
     renderer::renderer::BASE_MATERIAL_INDEX,
     scene::UiText,
-    text::{FontHandle, FontManager, TextBox},
+    text::{FontHandle, FontManager, TextBox, textbox::HorizontalJustification},
     thunderdome::Index,
     winit,
 };
@@ -217,7 +217,9 @@ impl Game {
         world.character_index = Some(character_handle);
 
         let mut speed_textbox = TextBox::new(font_handle);
+        speed_textbox.horizontal_justification = HorizontalJustification::Left;
         speed_textbox.font_height = 32;
+        speed_textbox.size = Vec2::new(50.0, 10.0);
 
         Self {
             vk_ctx,

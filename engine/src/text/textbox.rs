@@ -4,12 +4,14 @@ use glam::Vec2;
 
 use crate::text::{FontHandle, FontManager};
 
+#[derive(Debug, Clone, Copy)]
 pub enum HorizontalJustification {
     Left,
     Center,
     Right,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum VerticalJustification {
     Top,
     Center,
@@ -111,8 +113,17 @@ impl TextBox {
             (max_ascent + max_descent) as f32 / 64.0,
         );
 
-        let width_offset = -self.layout_size.x / 2.0 + self.size.x / 2.0;
-        let height_offset = self.layout_size.y / 2.0 + self.size.y / 2.0;
+        let width_offset = match self.horizontal_justification {
+            HorizontalJustification::Left => 0.0,
+            HorizontalJustification::Center => -self.layout_size.x / 2.0 + self.size.x / 2.0,
+            HorizontalJustification::Right => -self.layout_size.x + self.size.x,
+        };
+
+        let height_offset = match self.vertical_justification {
+            VerticalJustification::Top => self.layout_size.y,
+            VerticalJustification::Center => self.layout_size.y / 2.0 + self.size.y / 2.0,
+            VerticalJustification::Bottom => self.size.y,
+        };
 
         for glyph in self.glyph_positions.iter_mut() {
             glyph.offset += Vec2::new(width_offset, height_offset);
@@ -139,5 +150,18 @@ impl TextBox {
     pub fn set_font_height(&mut self, font_height: u32) {
         self.font_height = font_height;
         self.is_dirty = true;
+    }
+
+    pub fn set_horizontal_justification(
+        &mut self,
+        horizontal_justification: HorizontalJustification,
+    ) {
+        self.horizontal_justification = horizontal_justification;
+        self.is_dirty = true
+    }
+
+    pub fn set_vertical_justification(&mut self, vertical_justification: VerticalJustification) {
+        self.vertical_justification = vertical_justification;
+        self.is_dirty = true
     }
 }

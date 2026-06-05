@@ -3,7 +3,10 @@ use std::borrow::Cow;
 use glam::{Vec2, Vec4};
 
 use crate::{
-    text::{FontHandle, TextBox},
+    text::{
+        FontHandle, TextBox,
+        textbox::{HorizontalJustification, VerticalJustification},
+    },
     ui::{Element, UiDim, UiElement},
 };
 
@@ -11,6 +14,8 @@ pub struct TextLabel {
     pub(super) text_box: TextBox,
     pub(super) font: Option<FontHandle>,
     pub(super) font_height: u32,
+    pub(super) horizontal_justification: HorizontalJustification,
+    pub(super) vertical_justification: VerticalJustification,
 
     pub text: Cow<'static, str>,
     pub color: Vec4,
@@ -21,6 +26,11 @@ pub struct TextLabel {
 
 impl TextLabel {
     pub fn new(font: FontHandle) -> Self {
+        let mut text_box = TextBox::new(font);
+        text_box.set_horizontal_justification(HorizontalJustification::Center);
+        text_box.set_vertical_justification(VerticalJustification::Center);
+        text_box.set_font_height(14);
+
         Self {
             text_box: TextBox::new(font),
             text: "".into(),
@@ -30,6 +40,8 @@ impl TextLabel {
             size: UiDim::default(),
             anchor: Vec2::ZERO,
             font_height: 14,
+            horizontal_justification: HorizontalJustification::Center,
+            vertical_justification: VerticalJustification::Center,
         }
     }
 
@@ -46,6 +58,21 @@ impl TextLabel {
     pub fn set_font(&mut self, font: FontHandle) {
         self.font = Some(font);
         self.text_box.set_font(font);
+    }
+
+    pub fn set_horizontal_justification(
+        &mut self,
+        horizontal_justification: HorizontalJustification,
+    ) {
+        self.horizontal_justification = horizontal_justification;
+        self.text_box
+            .set_horizontal_justification(horizontal_justification);
+    }
+
+    pub fn set_vertical_justification(&mut self, vertical_justification: VerticalJustification) {
+        self.vertical_justification = vertical_justification;
+        self.text_box
+            .set_vertical_justification(vertical_justification);
     }
 }
 

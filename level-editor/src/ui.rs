@@ -1,7 +1,10 @@
 use hexxengine::{
     glam::{Vec2, Vec4, vec3, vec4},
     scene::RenderScene,
-    text::{FontHandle, FontManager},
+    text::{
+        FontHandle, FontManager,
+        textbox::{HorizontalJustification, VerticalJustification},
+    },
     ui::{Frame, TextLabel, UiDim, UiTree},
 };
 
@@ -33,6 +36,8 @@ pub fn init(ctx: &mut UiTree, font: FontHandle) {
         let mut text_label = TextLabel::new(font);
         text_label.color = COLOR_TEXT;
         text_label.size = UiDim::new(1.0, 1.0, 0.0, 0.0);
+        text_label.set_horizontal_justification(HorizontalJustification::Center);
+        text_label.set_vertical_justification(VerticalJustification::Center);
         text_label.set_text(format!("hello world {}", i.to_string()).into());
 
         let text_label = ctx.add_element(text_label);
