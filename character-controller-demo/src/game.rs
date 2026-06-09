@@ -31,7 +31,7 @@ use winit::{
 use hexxengine::{
     assets::{get_first_gltf_mesh, load_skybox},
     color::hsv_to_rgb,
-    input::InputState,
+    input::InputHandler,
     physics::context::PhysicsContext,
     renderer::renderer::VulkanContext,
     scene::{Camera, Lighting, MeshNode, RenderScene},
@@ -61,7 +61,7 @@ struct GameResources {
 pub struct Game {
     font_manager: Arc<Mutex<FontManager>>,
     vk_ctx: VulkanContext,
-    input_state: InputState,
+    input_state: InputHandler,
     scene: RenderScene,
     last_frame: Instant,
     start_time: Instant,
@@ -126,7 +126,7 @@ impl Game {
 
         let mut rng = SmallRng::from_os_rng();
         let mut physics_context = PhysicsContext::new();
-        let input_state = InputState::new();
+        let input_state = InputHandler::new();
 
         let mut world = World::new();
 

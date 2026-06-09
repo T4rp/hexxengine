@@ -9,7 +9,7 @@ use hexxengine::{
     components::{MeshComponent, TransformComponent},
     entities::Part,
     glam::{EulerRot, Quat, Vec2, Vec3, vec3},
-    input::InputState,
+    input::InputHandler,
     physics::context::PhysicsContext,
     rapier3d::prelude::{RigidBodyType, ShapeType},
     renderer::renderer::{BASE_MATERIAL_INDEX, FALLBACK_SKYBOX_INDEX, VulkanContext},
@@ -49,7 +49,7 @@ pub struct Game {
 
     vk_ctx: VulkanContext,
     physics_context: PhysicsContext,
-    input_state: InputState,
+    input_state: InputHandler,
     render_scene: RenderScene,
     world: World,
 
@@ -73,7 +73,7 @@ impl Game {
         let font_manager = Arc::new(Mutex::new(font_manager));
 
         let mut vk_ctx = VulkanContext::new(window, font_manager.clone());
-        let input_state = InputState::new();
+        let input_state = InputHandler::new();
         let start_time = Instant::now();
 
         let cube_mesh = get_first_gltf_mesh(format!("{}/cube.gltf", ASSET_PATH).as_str());

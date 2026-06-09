@@ -32,7 +32,7 @@ use winit::{
 use hexxengine::{
     assets::{get_first_gltf_mesh, load_skybox},
     color::hsv_to_rgb,
-    input::InputState,
+    input::InputHandler,
     physics::context::PhysicsContext,
     renderer::renderer::VulkanContext,
     scene::{Camera, Lighting, MeshNode, RenderScene},
@@ -52,7 +52,7 @@ struct GameResources {
 pub struct Game {
     font_manager: Arc<Mutex<FontManager>>,
     vk_ctx: VulkanContext,
-    input_state: InputState,
+    input_state: InputHandler,
     scene: RenderScene,
     last_frame: Instant,
     start_time: Instant,
@@ -265,7 +265,7 @@ impl Game {
             cubes.insert(cuboid);
         }
 
-        let input_state = InputState::new();
+        let input_state = InputHandler::new();
 
         Self {
             font_manager,
