@@ -7,12 +7,14 @@ use winit::{
     keyboard::{KeyCode, PhysicalKey},
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputState {
     Pressed,
     Released,
     Changed,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum InputEvent {
     MouseButtonEvent {
         button: MouseButton,

@@ -2,13 +2,24 @@ use std::{borrow::Cow, collections::VecDeque};
 
 use glam::{Vec2, Vec3, Vec4, Vec4Swizzles};
 use thunderdome::{Arena, Index};
+use winit::event::MouseButton;
 
 use crate::{
+    input::{InputEvent, InputHandler, InputState},
     renderer::renderer::WHITE_TEXTURE_INDEX,
     scene::{UiDraw, UiFrame, UiText},
     text::{FontHandle, FontManager, TextBox},
     ui::{Element, UiDim, UiElement},
 };
+
+pub enum UiEventType {
+    Pressed,
+}
+
+pub struct UiEvent {
+    input_event: Option<InputEvent>,
+    event_type: UiEventType,
+}
 
 pub struct UiNode {
     pub world_position: Vec2,
@@ -21,6 +32,7 @@ pub struct UiNode {
     pub next_sibling: Option<Index>,
     pub prev_sibling: Option<Index>,
     pub element: Element,
+    pub events: Option<VecDeque<UiEvent>>,
 }
 
 pub struct UiTree {
@@ -113,6 +125,22 @@ impl UiTree {
         self.elements.get_mut(child_index).unwrap().parent = Some(parent_index);
     }
 
+    pub fn enable_events(&mut self, elem_index: Index) {
+        let elem = self.elements.get_mut(elem_index).unwrap();
+
+        if elem.events.is_none() {
+            elem.events = Some(VecDeque::new())
+        }
+    }
+
+    pub fn disable_events(&mut self, elem_index: Index) {
+        let elem = self.elements.get_mut(elem_index).unwrap();
+
+        if elem.events.is_some() {
+            elem.events = None
+        }
+    }
+
     pub fn add_element<T: UiElement>(&mut self, elem: T) -> Index {
         let ui_node = UiNode {
             world_position: Vec2::ZERO,
@@ -124,6 +152,7 @@ impl UiTree {
             next_sibling: None,
             prev_sibling: None,
             element: elem.to_enum(),
+            events: None,
         };
 
         self.elements.insert(ui_node)
@@ -228,6 +257,11 @@ impl UiTree {
 
     pub fn get_element_mut(&mut self, index: Index) -> Option<&mut UiNode> {
         self.elements.get_mut(index)
+    }
+
+    pub fn handle_input(&mut self, input_handler: &InputHandler) {
+        let events = input_handler.get_input_events();
+        todo!()
     }
 }
 
