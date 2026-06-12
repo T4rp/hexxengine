@@ -38,15 +38,6 @@ pub struct InputHandler {
     pub mouse_position: Vec2,
     pub mouse_delta: Vec3,
     input_events: Vec<InputEvent>,
-
-    #[deprecated = "Use input events instead"]
-    pub right_clicked_on: Vec3,
-
-    #[deprecated = "Use mouse_position instead"]
-    pub last_mouse_position: Vec3,
-
-    #[deprecated = "Use input events instead"]
-    keys_pressed: HashSet<KeyCode>,
 }
 
 impl Default for InputHandler {
@@ -64,15 +55,12 @@ impl InputHandler {
             mouse_position: Vec2::ZERO,
             mouse_delta: Vec3::ZERO,
             input_events: Vec::new(),
-            last_mouse_position: Vec3::Z,
-            right_clicked_on: Vec3::ZERO,
-            keys_pressed: HashSet::new(),
         }
     }
 
     pub fn clear(&mut self) {
         self.mouse_delta = Vec3::ZERO;
-        self.keys_pressed.clear();
+        self.clear_events();
     }
 
     pub fn raw_key_input(&mut self, event: &RawKeyEvent) {
@@ -82,9 +70,6 @@ impl InputHandler {
 
         match event.state {
             ElementState::Pressed => {
-                if !self.keys_down.contains(&key) {
-                    self.keys_pressed.insert(key);
-                }
                 self.keys_down.insert(key);
             }
             ElementState::Released => {
@@ -100,9 +85,6 @@ impl InputHandler {
 
         match event.state {
             ElementState::Pressed => {
-                if !self.keys_down.contains(&key) {
-                    self.keys_pressed.insert(key);
-                }
                 self.keys_down.insert(key);
             }
             ElementState::Released => {
@@ -133,7 +115,6 @@ impl InputHandler {
             MouseButton::Left => self.left_mouse_down = down_state,
             MouseButton::Right => {
                 self.right_mouse_down = down_state;
-                self.right_clicked_on = self.last_mouse_position;
             }
             _ => {}
         };
@@ -146,7 +127,7 @@ impl InputHandler {
         let moues_button_event = InputEvent::MouseButtonEvent {
             button: mouse_button.to_owned(),
             state: input_state,
-            position: self.last_mouse_position.xy(),
+            position: self.mouse_position,
         };
 
         self.input_events.push(moues_button_event);
@@ -157,17 +138,11 @@ impl InputHandler {
     }
 
     pub fn mouse_moved(&mut self, mouse_position: &PhysicalPosition<f64>) {
-        self.last_mouse_position = Vec3::new(mouse_position.x as f32, mouse_position.y as f32, 0.0);
         self.mouse_position = Vec2::new(mouse_position.x as f32, mouse_position.y as f32)
     }
 
     pub fn is_key_down(&self, code: KeyCode) -> bool {
         self.keys_down.contains(&code)
-    }
-
-    #[deprecated = "Use input events instead"]
-    pub fn is_key_pressed(&self, code: KeyCode) -> bool {
-        self.keys_pressed.contains(&code)
     }
 
     pub fn clear_events(&mut self) {
