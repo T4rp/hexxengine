@@ -25,7 +25,7 @@ use hexxengine::{
     },
 };
 
-use crate::ui;
+use crate::ui::{self, CookieClicker};
 
 const CAMERA_SPEED: f32 = 100.0;
 const CAMERA_SENSITIVITY: f32 = 0.38;
@@ -54,6 +54,7 @@ pub struct Game {
     world: World,
 
     ui_tree: UiTree,
+    cookie_clicker: CookieClicker,
 
     start_time: Instant,
     last_frame: Instant,
@@ -131,6 +132,8 @@ impl Game {
         let mut ui_tree = UiTree::new();
         ui::init(&mut ui_tree, font_handle);
 
+        let cookie_clicker = CookieClicker::new(&mut ui_tree, font_handle);
+
         Game {
             vk_ctx,
             input_state,
@@ -143,6 +146,7 @@ impl Game {
             font_manager,
             font: font_handle,
             ui_tree,
+            cookie_clicker,
         }
     }
 
@@ -208,6 +212,9 @@ impl Game {
             self.fixed_update();
             self.accumulator -= STEP_HZ;
         }
+
+        self.ui_tree.handle_input(&self.input_state);
+        self.cookie_clicker.update(&mut self.ui_tree);
 
         self.input_state.clear();
     }

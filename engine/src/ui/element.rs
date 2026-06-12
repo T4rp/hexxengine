@@ -58,4 +58,18 @@ impl Element {
             Element::TextLabel(text_label) => text_label.visible(),
         }
     }
+
+    pub fn frame_mut(&mut self) -> Option<&mut Frame> {
+        match self {
+            Element::Frame(frame) => Some(frame),
+            _ => None,
+        }
+    }
+
+    pub fn text_label_mut(&mut self) -> Option<&mut TextLabel> {
+        match self {
+            Element::TextLabel(text_label) => Some(text_label),
+            _ => None,
+        }
+    }
 }

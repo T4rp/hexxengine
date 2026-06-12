@@ -12,13 +12,14 @@ use crate::{
     ui::{Element, UiDim, UiElement},
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UiEventType {
     Pressed,
 }
 
 pub struct UiEvent {
-    input_event: Option<InputEvent>,
-    event_type: UiEventType,
+    pub input_event: Option<InputEvent>,
+    pub event_type: UiEventType,
 }
 
 pub struct UiNode {
@@ -257,6 +258,14 @@ impl UiTree {
 
     pub fn get_element_mut(&mut self, index: Index) -> Option<&mut UiNode> {
         self.elements.get_mut(index)
+    }
+
+    pub fn clear_events(&mut self, elem_index: Index) {
+        let node = self.elements.get_mut(elem_index).unwrap();
+
+        if let Some(events) = node.events.as_mut() {
+            events.clear();
+        }
     }
 
     pub fn handle_input(&mut self, input_handler: &InputHandler) {
