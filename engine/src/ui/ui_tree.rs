@@ -32,7 +32,7 @@ pub struct UiNode {
     pub next_sibling: Option<Index>,
     pub prev_sibling: Option<Index>,
     pub element: Element,
-    pub events: Option<VecDeque<UiEvent>>,
+    pub events: Option<Vec<UiEvent>>,
 }
 
 pub struct UiTree {
@@ -129,7 +129,7 @@ impl UiTree {
         let elem = self.elements.get_mut(elem_index).unwrap();
 
         if elem.events.is_none() {
-            elem.events = Some(VecDeque::new())
+            elem.events = Some(Vec::new())
         }
     }
 
@@ -260,8 +260,58 @@ impl UiTree {
     }
 
     pub fn handle_input(&mut self, input_handler: &InputHandler) {
-        let events = input_handler.get_input_events();
-        todo!()
+        let Some((button, state, position)) =
+            input_handler
+                .get_input_events()
+                .iter()
+                .find_map(|event| match event {
+                    InputEvent::MouseButtonEvent {
+                        button,
+                        state,
+                        position,
+                    } => Some((button, state, position)),
+                    _ => None,
+                })
+        else {
+            return;
+        };
+
+        if *button != MouseButton::Left || *state != InputState::Pressed {
+            return;
+        }
+
+        let mut elements = self.roots.clone();
+
+        while let Some(elem_index) = elements.pop() {
+            let node = self.elements.get(elem_index).unwrap();
+
+            if !node.element.visible() {
+                continue;
+            }
+
+            let mut current_node = node.first_child;
+
+            while let Some(index) = current_node {
+                elements.push(index);
+                current_node = self.elements.get(index).and_then(|node| node.next_sibling)
+            }
+
+            let node = self.elements.get_mut(elem_index).unwrap();
+
+            let Some(events) = node.events.as_mut() else {
+                continue;
+            };
+
+            let top_left = node.world_position;
+            let bottom_right = node.world_position + node.world_size;
+
+            if position.cmpge(top_left).all() && position.cmple(bottom_right).all() {
+                events.push(UiEvent {
+                    input_event: None,
+                    event_type: UiEventType::Pressed,
+                })
+            }
+        }
     }
 }
 
@@ -269,10 +319,11 @@ impl UiTree {
 mod tests {
     use std::fs;
 
-    use glam::Vec3;
+    use glam::{Vec2, Vec3};
 
     use crate::{
         assets::ASSET_PATH,
+        input::{InputEvent::MouseButtonEvent, InputHandler},
         text::{FontManager, TextBox},
         ui::{self, Frame, TextLabel, UiElement, UiTree},
     };
@@ -402,5 +453,43 @@ mod tests {
         ui_tree.draw(&mut font_manager, &mut draws);
 
         assert_eq!(draws.len(), 0);
+    }
+
+    #[test]
+    fn click_events() {
+        let mut font_manager = FontManager::new();
+        let font_data = fs::read(format!("{}/unifont-17.0.03.otf", ASSET_PATH)).unwrap();
+        let _font_handle = font_manager.load_font(&font_data).unwrap();
+
+        let mut input_handler = InputHandler::new();
+        let mut ui_tree = UiTree::new();
+
+        ui_tree.set_root_size(Vec2::new(100.0, 100.0));
+
+        let frame_idx = ui_tree.add_element(Frame {
+            position: UiDim::new(0.5, 0.5, 0.0, 0.0),
+            anchor: Vec2::new(0.5, 0.5),
+            size: UiDim::new(0.0, 0.0, 20.0, 20.0),
+            ..Default::default()
+        });
+
+        ui_tree.root(frame_idx);
+        ui_tree.enable_events(frame_idx);
+
+        let mut draws = Vec::new();
+        ui_tree.draw(&mut font_manager, &mut draws);
+
+        input_handler.simulate_event(MouseButtonEvent {
+            button: winit::event::MouseButton::Left,
+            state: crate::input::InputState::Pressed,
+            position: Vec2::new(50.0, 50.0),
+        });
+
+        ui_tree.handle_input(&input_handler);
+
+        let node = ui_tree.get_element(frame_idx).unwrap();
+
+        assert_eq!(node.events.is_some(), true);
+        assert!(node.events.as_ref().unwrap().len() >= 1);
     }
 }

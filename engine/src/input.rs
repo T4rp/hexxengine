@@ -152,4 +152,8 @@ impl InputHandler {
     pub fn get_input_events(&self) -> &[InputEvent] {
         &self.input_events
     }
+
+    pub fn simulate_event(&mut self, event: InputEvent) {
+        self.input_events.push(event);
+    }
 }
