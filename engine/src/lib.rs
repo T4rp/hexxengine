@@ -2,6 +2,7 @@ pub mod assets;
 pub mod color;
 pub mod components;
 pub mod entities;
+pub mod game;
 pub mod input;
 pub mod physics;
 pub mod renderer;
