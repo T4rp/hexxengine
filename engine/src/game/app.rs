@@ -1,25 +1,15 @@
-use std::{
-    sync::{Arc, Mutex},
-    time::Instant,
-};
+use std::time::Instant;
 
+use glam::Vec2;
 use winit::{
     application::ApplicationHandler,
     event::{DeviceEvent, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
-    window::{Window, WindowAttributes},
+    window::WindowAttributes,
 };
 
-use crate::{
-    game::GameContext,
-    input::{InputEvent, InputHandler},
-    physics::context::PhysicsContext,
-    renderer::renderer::VulkanContext,
-    scene::RenderScene,
-    text::FontManager,
-    ui::UiTree,
-};
+use crate::{game::GameContext, input::InputEvent};
 
 const STEP_HZ: f32 = 1.0 / 60.0;
 
@@ -42,6 +32,7 @@ impl<T: GameHandler> InitializedGameApp<T> {
     fn update(&mut self) {
         let now = Instant::now();
         let dt = (now - self.game_ctx.last_frame).as_secs_f32();
+        self.game_ctx.accumulator += dt;
 
         self.game_ctx.last_frame = now;
         self.game_handler.update(&mut self.game_ctx, dt);
@@ -50,6 +41,12 @@ impl<T: GameHandler> InitializedGameApp<T> {
             self.game_handler.fixed_update(&mut self.game_ctx, STEP_HZ);
             self.game_ctx.accumulator -= STEP_HZ;
         }
+
+        let inner_size = self.game_ctx.window.inner_size();
+
+        self.game_ctx
+            .ui_tree
+            .set_root_size(Vec2::new(inner_size.width as f32, inner_size.height as f32));
 
         self.game_ctx
             .ui_tree
