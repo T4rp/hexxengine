@@ -8,13 +8,15 @@ use hexxengine::{
     assets::ASSET_PATH,
     components::{MeshComponent, RigidBodyComponent, TransformComponent},
     entities::Part,
-    glam::{self, Vec2},
+    game::{GameContext, GameHandler},
+    glam::{self, Vec2, Vec4},
     rand,
     rapier3d::{self, prelude::ShapeType},
     renderer::renderer::BASE_MATERIAL_INDEX,
     scene::UiText,
     text::{FontHandle, FontManager, TextBox, textbox::HorizontalJustification},
     thunderdome::Index,
+    ui::{TextLabel, UiDim},
     winit,
 };
 
@@ -59,39 +61,153 @@ struct GameResources {
 }
 
 pub struct Game {
-    font_manager: Arc<Mutex<FontManager>>,
-    vk_ctx: VulkanContext,
-    input_state: InputHandler,
-    scene: RenderScene,
-    last_frame: Instant,
-    start_time: Instant,
     rng: SmallRng,
     resources: GameResources,
     world: World,
-    physics_context: PhysicsContext,
-    accumulator: f32,
-    draw_accumulator: f32,
-
-    speed_textbox: TextBox,
+    speed_text: Index,
 }
 
 impl Game {
-    pub fn new(window: &Window) -> Self {
-        let mut font_manager = FontManager::new();
-        let font_data = fs::read(format!("{}/unifont-17.0.03.otf", ASSET_PATH)).unwrap();
-        let font_handle = font_manager.load_font(&font_data).unwrap();
+    fn update_camera(&mut self, game_ctx: &mut GameContext, dt: f32) {
+        let camera = &mut game_ctx.render_scene.camera;
 
-        let font_manager = Arc::new(Mutex::new(font_manager));
-        let mut vk_ctx = VulkanContext::new(window, font_manager.clone());
+        if game_ctx.input_state.right_mouse_down {
+            let _ = game_ctx
+                .window
+                .set_cursor_grab(winit::window::CursorGrabMode::Confined)
+                .or_else(|_| {
+                    game_ctx
+                        .window
+                        .set_cursor_grab(winit::window::CursorGrabMode::Locked)
+                });
+            game_ctx.window.set_cursor_visible(false);
+        } else {
+            let _ = game_ctx
+                .window
+                .set_cursor_grab(winit::window::CursorGrabMode::None);
+            game_ctx.window.set_cursor_visible(true);
+        }
+
+        let mouse_delta = game_ctx.input_state.mouse_delta;
+
+        if mouse_delta.z == 0.0 && game_ctx.input_state.right_mouse_down {
+            let sensitivity = 0.002 * CAMERA_SENSITIVITY;
+
+            let yaw = Quat::from_rotation_y(-mouse_delta.x * sensitivity);
+            let pitch = Quat::from_rotation_x(-mouse_delta.y * sensitivity);
+
+            camera.orientation = yaw * camera.orientation * pitch;
+        }
+
+        let character = match self.world.character_index {
+            Some(index) => self.world.characters.get(index),
+            None => todo!(),
+        };
+
+        let position = character.map_or(camera.position, |character| {
+            character.transform.position + Vec3::new(0.0, CHARACTER_HEIGHT / 2.0, 0.0)
+        });
+
+        camera.position = position
+    }
+
+    fn update_parts(&mut self, game_ctx: &mut GameContext, dt: f32) {
+        let mut to_remove = Vec::new();
+
+        for (index, part) in self.world.parts.iter_mut() {
+            let rigid_body = game_ctx
+                .physics_context
+                .rigid_body_set
+                .get(part.rigid_body.rigid_body_handle)
+                .unwrap();
+
+            let pose = rigid_body.position();
+
+            if pose.translation.y < -500.0 {
+                to_remove.push(index);
+                continue;
+            }
+
+            let pos_interpolated = rigid_body.predict_position_using_velocity(dt);
+
+            part.transform.position = pos_interpolated.translation;
+            part.transform.orientation = pos_interpolated.rotation;
+        }
+
+        for index in to_remove {
+            let Some(part) = self.world.parts.remove(index) else {
+                continue;
+            };
+
+            part.destroy(&mut game_ctx.physics_context);
+        }
+    }
+
+    fn update_character_movement(&mut self, game_ctx: &mut GameContext, dt: f32) {
+        let mut move_dir = Vec3::ZERO;
+
+        if game_ctx.input_state.is_key_down(KeyCode::KeyA) {
+            move_dir += Vec3::new(-1.0, 0.0, 0.0)
+        }
+
+        if game_ctx.input_state.is_key_down(KeyCode::KeyD) {
+            move_dir += Vec3::new(1.0, 0.0, 0.0)
+        }
+
+        if game_ctx.input_state.is_key_down(KeyCode::KeyW) {
+            move_dir += Vec3::new(0.0, 0.0, -1.0)
+        }
+
+        if game_ctx.input_state.is_key_down(KeyCode::KeyS) {
+            move_dir += Vec3::new(0.0, 0.0, 1.0)
+        }
+
+        let character = self
+            .world
+            .characters
+            .get_mut(self.world.character_index.unwrap())
+            .unwrap();
+
+        if game_ctx.input_state.is_key_down(KeyCode::Space) {
+            character.controller.jump = true;
+        }
+
+        character
+            .controller
+            .update_position(dt, &mut character.transform);
+
+        let mut world_move = game_ctx.render_scene.camera.orientation * move_dir;
+        world_move.y = 0.0;
+
+        world_move = world_move.normalize_or_zero();
+
+        character.controller.move_dir = world_move;
+    }
+}
+
+impl GameHandler for Game {
+    fn new(game_ctx: &mut GameContext) -> Self {
+        let font_data = fs::read(format!("{}/unifont-17.0.03.otf", ASSET_PATH)).unwrap();
+        let font_handle = game_ctx
+            .font_manager
+            .lock()
+            .unwrap()
+            .load_font(&font_data)
+            .unwrap();
 
         let cube_mesh = get_first_gltf_mesh(format!("{}/cube.gltf", ASSET_PATH).as_str());
         let sphere_mesh = get_first_gltf_mesh(format!("{}/sphere.gltf", ASSET_PATH).as_str());
 
-        let cube_mesh = vk_ctx.load_mesh(&cube_mesh.vertices, &cube_mesh.indices);
-        let sphere_mesh = vk_ctx.load_mesh(&sphere_mesh.vertices, &sphere_mesh.indices);
+        let cube_mesh = game_ctx
+            .vk_ctx
+            .load_mesh(&cube_mesh.vertices, &cube_mesh.indices);
+
+        let sphere_mesh = game_ctx
+            .vk_ctx
+            .load_mesh(&sphere_mesh.vertices, &sphere_mesh.indices);
 
         let skybox1_id = load_skybox(
-            &mut vk_ctx,
+            &mut game_ctx.vk_ctx,
             format!(
                 "{}/cloudy-skyboxes/Cubemap/Cubemap_Sky_04-512x512.png",
                 ASSET_PATH
@@ -106,27 +222,21 @@ impl Game {
             skybox1: skybox1_id,
         };
 
-        let start_time = Instant::now();
-        let last_frame = start_time;
-
-        let scene = RenderScene::new(
-            Camera::new(
-                vec3(0.0, 100.0, 100.0),
-                Quat::from_euler(EulerRot::ZXY, 0.0, f32::to_radians(-45.0), 0.0),
-                120.0,
-            ),
-            Lighting {
-                sun_direction: vec3(0.0, -1.0, -1.0).normalize(),
-                sun_color: vec3(1.0, 0.95, 0.85),
-                sun_power: 0.5,
-                ambient_color: vec3(0.9, 0.95, 1.0) * 0.2,
-                skybox_id: skybox1_id,
-            },
+        game_ctx.render_scene.camera = Camera::new(
+            vec3(0.0, 100.0, 100.0),
+            Quat::from_euler(EulerRot::ZXY, 0.0, f32::to_radians(-45.0), 0.0),
+            120.0,
         );
 
+        game_ctx.render_scene.lighting = Lighting {
+            sun_direction: vec3(0.0, -1.0, -1.0).normalize(),
+            sun_color: vec3(1.0, 0.95, 0.85),
+            sun_power: 0.5,
+            ambient_color: vec3(0.9, 0.95, 1.0) * 0.2,
+            skybox_id: skybox1_id,
+        };
+
         let mut rng = SmallRng::from_os_rng();
-        let mut physics_context = PhysicsContext::new();
-        let input_state = InputHandler::new();
 
         let mut world = World::new();
 
@@ -145,7 +255,7 @@ impl Game {
                 opacity: 1.0,
             },
             rigid_body: RigidBodyComponent::new(
-                &mut physics_context,
+                &mut game_ctx.physics_context,
                 &baseplate_transform,
                 RigidBodyType::Fixed,
                 ShapeType::Cuboid,
@@ -179,7 +289,7 @@ impl Game {
                     opacity: 1.0,
                 },
                 rigid_body: RigidBodyComponent::new(
-                    &mut physics_context,
+                    &mut game_ctx.physics_context,
                     &transform,
                     RigidBodyType::Dynamic,
                     ShapeType::Cuboid,
@@ -208,7 +318,7 @@ impl Game {
                 opacity: 1.0,
             },
             controller: CharacterControllerComponent::new(
-                &mut physics_context,
+                &mut game_ctx.physics_context,
                 &character_transform,
             ),
         };
@@ -221,24 +331,25 @@ impl Game {
         speed_textbox.font_height = 32;
         speed_textbox.size = Vec2::new(50.0, 10.0);
 
+        let mut text_label = TextLabel::new(font_handle);
+        text_label.position = UiDim::new(0.0, 0.0, 0.0, 20.0);
+        text_label.size = UiDim::new(0.0, 0.0, 100.0, 18.0);
+        text_label.color = Vec4::new(0.0, 0.0, 0.0, 1.0);
+        text_label.set_font_height(30);
+        text_label.set_horizontal_justification(HorizontalJustification::Left);
+
+        let speed_text = game_ctx.ui_tree.add_element(text_label);
+        game_ctx.ui_tree.root(speed_text);
+
         Self {
-            vk_ctx,
-            scene,
-            last_frame,
-            start_time,
-            input_state,
             rng,
             resources,
             world,
-            physics_context,
-            accumulator: 0.0,
-            draw_accumulator: 0.0,
-            font_manager,
-            speed_textbox,
+            speed_text,
         }
     }
 
-    fn update_fixed(&mut self) {
+    fn fixed_update(&mut self, game_ctx: &mut GameContext, dt: f32) {
         let character = self
             .world
             .characters
@@ -247,139 +358,17 @@ impl Game {
 
         character
             .controller
-            .move_dir(&mut self.physics_context, STEP_HZ);
+            .move_dir(&mut game_ctx.physics_context, dt);
 
-        self.physics_context.step();
+        game_ctx.physics_context.step();
     }
 
-    fn update_character_movement(&mut self, dt: f32) {
-        let mut move_dir = Vec3::ZERO;
+    fn update(&mut self, game_ctx: &mut GameContext, dt: f32) {
+        self.update_character_movement(game_ctx, dt);
+        self.update_parts(game_ctx, dt);
+        self.update_camera(game_ctx, dt);
 
-        if self.input_state.is_key_down(KeyCode::KeyA) {
-            move_dir += Vec3::new(-1.0, 0.0, 0.0)
-        }
-
-        if self.input_state.is_key_down(KeyCode::KeyD) {
-            move_dir += Vec3::new(1.0, 0.0, 0.0)
-        }
-
-        if self.input_state.is_key_down(KeyCode::KeyW) {
-            move_dir += Vec3::new(0.0, 0.0, -1.0)
-        }
-
-        if self.input_state.is_key_down(KeyCode::KeyS) {
-            move_dir += Vec3::new(0.0, 0.0, 1.0)
-        }
-
-        let character = self
-            .world
-            .characters
-            .get_mut(self.world.character_index.unwrap())
-            .unwrap();
-
-        if self.input_state.is_key_down(KeyCode::Space) {
-            character.controller.jump = true;
-        }
-
-        character
-            .controller
-            .update_position(dt, &mut character.transform);
-
-        let mut world_move = self.scene.camera.orientation * move_dir;
-        world_move.y = 0.0;
-
-        world_move = world_move.normalize_or_zero();
-
-        character.controller.move_dir = world_move;
-    }
-
-    fn update_camera(&mut self, _dt: f32, window: &Window) {
-        let camera = &mut self.scene.camera;
-
-        if self.input_state.right_mouse_down {
-            let _ = window
-                .set_cursor_grab(winit::window::CursorGrabMode::Confined)
-                .or_else(|_| window.set_cursor_grab(winit::window::CursorGrabMode::Locked));
-            window.set_cursor_visible(false);
-        } else {
-            let _ = window.set_cursor_grab(winit::window::CursorGrabMode::None);
-            window.set_cursor_visible(true);
-        }
-
-        let mouse_delta = self.input_state.mouse_delta;
-
-        if mouse_delta.z == 0.0 && self.input_state.right_mouse_down {
-            let sensitivity = 0.002 * CAMERA_SENSITIVITY;
-
-            let yaw = Quat::from_rotation_y(-mouse_delta.x * sensitivity);
-            let pitch = Quat::from_rotation_x(-mouse_delta.y * sensitivity);
-
-            camera.orientation = yaw * camera.orientation * pitch;
-        }
-
-        let character = match self.world.character_index {
-            Some(index) => self.world.characters.get(index),
-            None => todo!(),
-        };
-
-        let position = character.map_or(camera.position, |character| {
-            character.transform.position + Vec3::new(0.0, CHARACTER_HEIGHT / 2.0, 0.0)
-        });
-
-        camera.position = position
-    }
-
-    fn update_parts(&mut self, dt: f32) {
-        let mut to_remove = Vec::new();
-
-        for (index, part) in self.world.parts.iter_mut() {
-            let rigid_body = self
-                .physics_context
-                .rigid_body_set
-                .get(part.rigid_body.rigid_body_handle)
-                .unwrap();
-
-            let pose = rigid_body.position();
-
-            if pose.translation.y < -500.0 {
-                to_remove.push(index);
-                continue;
-            }
-
-            let pos_interpolated = rigid_body.predict_position_using_velocity(dt);
-
-            part.transform.position = pos_interpolated.translation;
-            part.transform.orientation = pos_interpolated.rotation;
-        }
-
-        for index in to_remove {
-            let Some(part) = self.world.parts.remove(index) else {
-                continue;
-            };
-
-            part.destroy(&mut self.physics_context);
-        }
-    }
-
-    pub fn update(&mut self, window: &Window) {
-        let now = Instant::now();
-        let dt = (now - self.last_frame).as_secs_f32();
-        let _elapsed = (now - self.start_time).as_secs_f32();
-
-        self.last_frame = now;
-        self.accumulator += dt;
-        self.draw_accumulator += dt;
-
-        while self.accumulator > STEP_HZ {
-            self.update_fixed();
-            self.accumulator -= STEP_HZ;
-        }
-
-        self.update_character_movement(self.accumulator);
-        self.update_parts(self.accumulator);
-        self.update_camera(dt, window);
-
-        self.scene.ui.clear();
+        game_ctx.render_scene.ui.clear();
 
         let character = match self.world.character_index {
             Some(index) => self.world.characters.get(index),
@@ -391,28 +380,22 @@ impl Game {
                 .length()
                 .floor();
 
-            self.speed_textbox
+            let elem = game_ctx.ui_tree.get_element_mut(self.speed_text).unwrap();
+
+            elem.element
+                .text_label_mut()
+                .unwrap()
                 .set_text(format!("speed: {}", horizontal_speed).into());
-
-            {
-                let mut font_manager = self.font_manager.lock().unwrap();
-                self.speed_textbox.calculate_layout(&mut font_manager);
-            }
-
-            self.scene.push_ui_text(UiText::from_text_box(
-                &self.speed_textbox,
-                Vec2::new(0.0, 100.0),
-            ));
         }
 
-        self.input_state.clear();
+        game_ctx.input_state.clear();
     }
 
-    fn draw(&mut self) {
-        self.scene.meshes.clear();
+    fn draw(&mut self, game_ctx: &mut GameContext) {
+        game_ctx.render_scene.meshes.clear();
 
         for (_i, part) in self.world.parts.iter() {
-            self.scene.meshes.push(MeshNode {
+            game_ctx.render_scene.meshes.push(MeshNode {
                 position: part.transform.position,
                 orientation: part.transform.orientation,
                 size: part.transform.size,
@@ -424,7 +407,7 @@ impl Game {
         }
 
         for (_i, character) in self.world.characters.iter() {
-            self.scene.meshes.push(MeshNode {
+            game_ctx.render_scene.meshes.push(MeshNode {
                 position: character.transform.position,
                 orientation: character.transform.orientation,
                 size: character.transform.size,
@@ -433,65 +416,6 @@ impl Game {
                 mesh_id: character.mesh.mesh_id,
                 material_id: character.mesh.material,
             });
-        }
-
-        self.vk_ctx.draw(&self.scene);
-    }
-
-    pub fn handle_device_event(&mut self, event: &DeviceEvent) {
-        match event {
-            DeviceEvent::MouseMotion { delta } => {
-                self.input_state
-                    .mouse_motion((delta.0 as f32, delta.1 as f32));
-            }
-            DeviceEvent::Key(key_event) => {
-                self.input_state.raw_key_input(key_event);
-            }
-            _ => {}
-        }
-    }
-
-    pub fn handle_window_event(&mut self, window: &Window, event: &WindowEvent) {
-        let mut should_draw = false;
-
-        match event {
-            WindowEvent::KeyboardInput {
-                device_id: _,
-                event: _,
-                is_synthetic: _,
-            } => {
-                // self.input_state.key_input(event);
-            }
-            WindowEvent::MouseInput {
-                device_id: _,
-                state,
-                button,
-            } => {
-                self.input_state.mouse_input(button, state);
-            }
-            WindowEvent::CursorMoved {
-                device_id: _,
-                position,
-            } => {
-                self.input_state.mouse_moved(position);
-            }
-            WindowEvent::Resized(size) => {
-                self.vk_ctx.handle_resize((size.width, size.height));
-            }
-            WindowEvent::RedrawRequested => {
-                should_draw = true;
-                window.request_redraw();
-            }
-            _ => {}
-        }
-
-        self.update(window);
-
-        if should_draw {
-            // if self.draw_accumulator >= FRAMERATE_LIMIT_HZ {
-            self.draw();
-            // self.draw_accumulator = 0.0;
-            // }
         }
     }
 }
