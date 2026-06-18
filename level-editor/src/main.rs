@@ -3,101 +3,10 @@ mod entities;
 mod game;
 mod ui;
 
-use hexxengine::winit::{self, event::ElementState, window::Fullscreen};
-use winit::{
-    application::ApplicationHandler,
-    event::{DeviceEvent, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
-    keyboard::{KeyCode, PhysicalKey},
-    window::{Window, WindowAttributes},
-};
+use hexxengine::game::start_game_app;
 
 use crate::game::Game;
 
-struct App {
-    window: Option<Window>,
-    game: Option<Game>,
-}
-
-impl App {
-    fn new() -> Self {
-        Self {
-            window: None,
-            game: None,
-        }
-    }
-}
-
-impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        let window = event_loop
-            .create_window(WindowAttributes::default())
-            .unwrap();
-
-        let game = Game::new(&window);
-
-        self.window = Some(window);
-        self.game = Some(game);
-    }
-
-    fn device_event(
-        &mut self,
-        _event_loop: &winit::event_loop::ActiveEventLoop,
-        _device_id: winit::event::DeviceId,
-        event: DeviceEvent,
-    ) {
-        self.game.as_mut().unwrap().handle_device_event(&event);
-    }
-
-    fn window_event(
-        &mut self,
-        event_loop: &winit::event_loop::ActiveEventLoop,
-        _window_id: winit::window::WindowId,
-        event: winit::event::WindowEvent,
-    ) {
-        let game = self.game.as_mut().unwrap();
-        let window = self.window.as_ref().unwrap();
-
-        match event {
-            WindowEvent::CloseRequested => {
-                event_loop.exit();
-            }
-
-            WindowEvent::KeyboardInput {
-                device_id: _,
-                ref event,
-                is_synthetic: _,
-            } => {
-                if PhysicalKey::Code(KeyCode::Escape) == event.physical_key {
-                    event_loop.exit();
-                    return;
-                }
-
-                if PhysicalKey::Code(KeyCode::KeyF) == event.physical_key
-                    && event.state == ElementState::Pressed
-                {
-                    let is_fullscreen = window.fullscreen().is_some();
-
-                    if !is_fullscreen {
-                        window.set_fullscreen(Some(Fullscreen::Borderless(None)));
-                    } else {
-                        window.set_fullscreen(None);
-                    }
-
-                    return;
-                }
-            }
-            WindowEvent::RedrawRequested => {}
-            _ => {}
-        }
-
-        game.handle_window_event(window, &event);
-    }
-}
-
 fn main() {
-    let event_loop = EventLoop::new().unwrap();
-    event_loop.set_control_flow(ControlFlow::Poll);
-    let mut app = App::new();
-    event_loop.run_app(&mut app).unwrap();
+    start_game_app::<Game>();
 }

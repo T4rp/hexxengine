@@ -8,21 +8,14 @@ use hexxengine::{
     assets::{ASSET_PATH, get_first_gltf_mesh, load_skybox},
     components::{MeshComponent, TransformComponent},
     entities::Part,
-    glam::{EulerRot, Quat, Vec2, Vec3, vec3},
-    input::InputHandler,
-    physics::context::PhysicsContext,
+    game::{GameContext, GameHandler},
+    glam::{Quat, Vec3, vec3},
     rapier3d::prelude::{RigidBodyType, ShapeType},
-    renderer::renderer::{BASE_MATERIAL_INDEX, FALLBACK_SKYBOX_INDEX, VulkanContext},
-    scene::{Camera, Lighting, MeshNode, RenderScene},
-    text::{FontHandle, FontManager},
+    renderer::renderer::BASE_MATERIAL_INDEX,
+    scene::MeshNode,
+    text::FontHandle,
     thunderdome::Arena,
-    ui::UiTree,
-    winit::{
-        self,
-        event::{DeviceEvent, WindowEvent},
-        keyboard::KeyCode,
-        window::Window,
-    },
+    winit::{self, keyboard::KeyCode},
 };
 
 use crate::ui::{self, CookieClicker};
@@ -44,44 +37,84 @@ impl World {
 }
 
 pub struct Game {
-    font_manager: Arc<Mutex<FontManager>>,
     font: FontHandle,
-
-    vk_ctx: VulkanContext,
-    physics_context: PhysicsContext,
-    input_state: InputHandler,
-    render_scene: RenderScene,
     world: World,
-
-    ui_tree: UiTree,
     cookie_clicker: CookieClicker,
-
-    start_time: Instant,
-    last_frame: Instant,
-    accumulator: f32,
 }
 
 impl Game {
-    pub fn new(window: &Window) -> Self {
-        let mut font_manager = FontManager::new();
+    fn update_camera(&mut self, game_ctx: &mut GameContext, dt: f32) {
+        let camera = &mut game_ctx.render_scene.camera;
+
+        let camera_forward = camera.orientation * Vec3::NEG_Z;
+        let camera_right = camera.orientation * Vec3::X;
+
+        if game_ctx.input_state.right_mouse_down {
+            let _ = game_ctx
+                .window
+                .set_cursor_grab(winit::window::CursorGrabMode::Confined)
+                .or_else(|_| {
+                    game_ctx
+                        .window
+                        .set_cursor_grab(winit::window::CursorGrabMode::Locked)
+                });
+            game_ctx.window.set_cursor_visible(false);
+        } else {
+            let _ = game_ctx
+                .window
+                .set_cursor_grab(winit::window::CursorGrabMode::None);
+            game_ctx.window.set_cursor_visible(true);
+        }
+
+        let mouse_delta = game_ctx.input_state.mouse_delta;
+
+        if mouse_delta.z == 0.0 && game_ctx.input_state.right_mouse_down {
+            let sensitivity = 0.002 * CAMERA_SENSITIVITY;
+
+            let yaw = Quat::from_rotation_y(-mouse_delta.x * sensitivity);
+            let pitch = Quat::from_rotation_x(-mouse_delta.y * sensitivity);
+
+            camera.orientation = yaw * camera.orientation * pitch;
+        }
+
+        if game_ctx.input_state.is_key_down(KeyCode::KeyA) {
+            camera.position -= camera_right * dt * CAMERA_SPEED;
+        }
+
+        if game_ctx.input_state.is_key_down(KeyCode::KeyD) {
+            camera.position += camera_right * dt * CAMERA_SPEED;
+        }
+
+        if game_ctx.input_state.is_key_down(KeyCode::KeyW) {
+            camera.position += camera_forward * dt * CAMERA_SPEED;
+        }
+
+        if game_ctx.input_state.is_key_down(KeyCode::KeyS) {
+            camera.position -= camera_forward * dt * CAMERA_SPEED;
+        }
+    }
+}
+
+impl GameHandler for Game {
+    fn new(game_ctx: &mut GameContext) -> Self {
         let font_data = fs::read(format!(
             "{}/Noto_Sans/NotoSans-VariableFont_wdth,wght.ttf",
             ASSET_PATH
         ))
         .unwrap();
-        let font_handle = font_manager.load_font(&font_data).unwrap();
-
-        let font_manager = Arc::new(Mutex::new(font_manager));
-
-        let mut vk_ctx = VulkanContext::new(window, font_manager.clone());
-        let input_state = InputHandler::new();
-        let start_time = Instant::now();
-
         let cube_mesh = get_first_gltf_mesh(format!("{}/cube.gltf", ASSET_PATH).as_str());
-        let cube_mesh_id = vk_ctx.load_mesh(&cube_mesh.vertices, &cube_mesh.indices);
+
+        let font_handle = {
+            let mut font_manager = game_ctx.font_manager.lock().unwrap();
+            font_manager.load_font(&font_data).unwrap()
+        };
+
+        let cube_mesh_id = game_ctx
+            .vk_ctx
+            .load_mesh(&cube_mesh.vertices, &cube_mesh.indices);
 
         let skybox = load_skybox(
-            &mut vk_ctx,
+            &mut game_ctx.vk_ctx,
             format!(
                 "{}/cloudy-skyboxes/Cubemap/Cubemap_Sky_04-512x512.png",
                 ASSET_PATH
@@ -89,29 +122,12 @@ impl Game {
             .as_str(),
         );
 
-        let mut render_scene = RenderScene::new(
-            Camera::new(
-                vec3(0.0, 100.0, 100.0),
-                Quat::from_euler(EulerRot::ZXY, 0.0, f32::to_radians(-45.0), 0.0),
-                120.0,
-            ),
-            Lighting {
-                sun_direction: vec3(0.0, -1.0, -1.0).normalize(),
-                sun_color: vec3(1.0, 0.95, 0.85),
-                sun_power: 0.5,
-                ambient_color: vec3(0.9, 0.95, 1.0) * 0.2,
-                skybox_id: FALLBACK_SKYBOX_INDEX,
-            },
-        );
-
-        render_scene.lighting.skybox_id = skybox;
-
-        let mut physics_context = PhysicsContext::new();
+        game_ctx.render_scene.lighting.skybox_id = skybox;
 
         let mut world = World::new();
 
         let baseplate = Part::new(
-            &mut physics_context,
+            &mut game_ctx.physics_context,
             TransformComponent {
                 position: vec3(0.0, -25.0, 0.0),
                 orientation: Quat::IDENTITY,
@@ -129,108 +145,26 @@ impl Game {
 
         world.parts.insert(baseplate);
 
-        let mut ui_tree = UiTree::new();
-        ui::init(&mut ui_tree, font_handle);
-
-        let cookie_clicker = CookieClicker::new(&mut ui_tree, font_handle);
+        ui::init(&mut game_ctx.ui_tree, font_handle);
+        let cookie_clicker = CookieClicker::new(&mut game_ctx.ui_tree, font_handle);
 
         Game {
-            vk_ctx,
-            input_state,
-            render_scene,
-            start_time,
-            physics_context,
-            last_frame: start_time,
-            world,
-            accumulator: 0.0,
-            font_manager,
             font: font_handle,
-            ui_tree,
+            world,
             cookie_clicker,
         }
     }
 
-    fn update_camera(&mut self, dt: f32, window: &Window) {
-        let camera = &mut self.render_scene.camera;
-
-        let camera_forward = camera.orientation * Vec3::NEG_Z;
-        let camera_right = camera.orientation * Vec3::X;
-
-        if self.input_state.right_mouse_down {
-            let _ = window
-                .set_cursor_grab(winit::window::CursorGrabMode::Confined)
-                .or_else(|_| window.set_cursor_grab(winit::window::CursorGrabMode::Locked));
-            window.set_cursor_visible(false);
-        } else {
-            let _ = window.set_cursor_grab(winit::window::CursorGrabMode::None);
-            window.set_cursor_visible(true);
-        }
-
-        let mouse_delta = self.input_state.mouse_delta;
-
-        if mouse_delta.z == 0.0 && self.input_state.right_mouse_down {
-            let sensitivity = 0.002 * CAMERA_SENSITIVITY;
-
-            let yaw = Quat::from_rotation_y(-mouse_delta.x * sensitivity);
-            let pitch = Quat::from_rotation_x(-mouse_delta.y * sensitivity);
-
-            camera.orientation = yaw * camera.orientation * pitch;
-        }
-
-        if self.input_state.is_key_down(KeyCode::KeyA) {
-            camera.position -= camera_right * dt * CAMERA_SPEED;
-        }
-
-        if self.input_state.is_key_down(KeyCode::KeyD) {
-            camera.position += camera_right * dt * CAMERA_SPEED;
-        }
-
-        if self.input_state.is_key_down(KeyCode::KeyW) {
-            camera.position += camera_forward * dt * CAMERA_SPEED;
-        }
-
-        if self.input_state.is_key_down(KeyCode::KeyS) {
-            camera.position -= camera_forward * dt * CAMERA_SPEED;
-        }
+    fn update(&mut self, game_ctx: &mut GameContext, dt: f32) {
+        self.update_camera(game_ctx, dt);
+        self.cookie_clicker.update(&mut game_ctx.ui_tree);
     }
 
-    fn fixed_update(&mut self) {}
-
-    fn update(&mut self, window: &Window) {
-        let now = Instant::now();
-        let dt = (now - self.last_frame).as_secs_f32();
-        let _elapsed = (now - self.start_time).as_secs_f32();
-        self.last_frame = now;
-
-        let inner_size = window.inner_size();
-        self.ui_tree
-            .set_root_size(Vec2::new(inner_size.width as f32, inner_size.height as f32));
-
-        self.update_camera(dt, window);
-
-        while self.accumulator > STEP_HZ {
-            self.fixed_update();
-            self.accumulator -= STEP_HZ;
-        }
-
-        self.ui_tree.handle_input(&self.input_state);
-        self.cookie_clicker.update(&mut self.ui_tree);
-
-        self.input_state.clear();
-    }
-
-    fn draw(&mut self) {
-        self.render_scene.meshes.clear();
-        self.render_scene.ui.clear();
-
-        {
-            let mut font_manager = self.font_manager.lock().unwrap();
-            self.ui_tree
-                .draw(&mut font_manager, &mut self.render_scene.ui);
-        }
+    fn draw(&mut self, game_ctx: &mut GameContext) {
+        game_ctx.render_scene.meshes.clear();
 
         for (_i, part) in self.world.parts.iter() {
-            self.render_scene.meshes.push(MeshNode {
+            game_ctx.render_scene.meshes.push(MeshNode {
                 position: part.transform.position,
                 orientation: part.transform.orientation,
                 size: part.transform.size,
@@ -239,55 +173,6 @@ impl Game {
                 mesh_id: part.mesh.mesh_id,
                 material_id: part.mesh.material,
             });
-        }
-
-        self.vk_ctx.draw(&self.render_scene);
-    }
-
-    pub fn handle_device_event(&mut self, event: &DeviceEvent) {
-        match event {
-            DeviceEvent::MouseMotion { delta } => {
-                self.input_state
-                    .mouse_motion((delta.0 as f32, delta.1 as f32));
-            }
-            DeviceEvent::Key(key_event) => {
-                self.input_state.raw_key_input(key_event);
-            }
-            _ => {}
-        }
-    }
-
-    pub fn handle_window_event(&mut self, window: &Window, window_event: &WindowEvent) {
-        let mut should_draw = false;
-
-        match window_event {
-            WindowEvent::MouseInput {
-                device_id: _,
-                state,
-                button,
-            } => {
-                self.input_state.mouse_input(button, state);
-            }
-            WindowEvent::CursorMoved {
-                device_id: _,
-                position,
-            } => {
-                self.input_state.mouse_moved(position);
-            }
-            WindowEvent::Resized(size) => {
-                self.vk_ctx.handle_resize((size.width, size.height));
-            }
-            WindowEvent::RedrawRequested => {
-                should_draw = true;
-                window.request_redraw();
-            }
-            _ => {}
-        }
-
-        self.update(window);
-
-        if should_draw {
-            self.draw();
         }
     }
 }
