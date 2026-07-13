@@ -1,14 +1,8 @@
-use std::{
-    fs,
-    sync::{Arc, Mutex},
-    time::Instant,
-};
-
 use hexxengine::{
-    assets::{ASSET_PATH, get_first_gltf_mesh, load_skybox},
+    assets::{ASSET_PATH, load_skybox},
     components::{MeshComponent, TransformComponent},
     entities::Part,
-    game::{GameContext, GameHandler},
+    game::{CUBE_MESH_ID, GameContext, GameHandler, NOTOSANS_FONT_HANDLE},
     glam::{Quat, Vec3, vec3},
     rapier3d::prelude::{RigidBodyType, ShapeType},
     renderer::renderer::BASE_MATERIAL_INDEX,
@@ -97,22 +91,6 @@ impl Game {
 
 impl GameHandler for Game {
     fn new(game_ctx: &mut GameContext) -> Self {
-        let font_data = fs::read(format!(
-            "{}/Noto_Sans/NotoSans-VariableFont_wdth,wght.ttf",
-            ASSET_PATH
-        ))
-        .unwrap();
-        let cube_mesh = get_first_gltf_mesh(format!("{}/cube.gltf", ASSET_PATH).as_str());
-
-        let font_handle = {
-            let mut font_manager = game_ctx.font_manager.lock().unwrap();
-            font_manager.load_font(&font_data).unwrap()
-        };
-
-        let cube_mesh_id = game_ctx
-            .vk_ctx
-            .load_mesh(&cube_mesh.vertices, &cube_mesh.indices);
-
         let skybox = load_skybox(
             &mut game_ctx.vk_ctx,
             format!(
@@ -135,7 +113,7 @@ impl GameHandler for Game {
             },
             MeshComponent {
                 color: vec3(0.2, 0.2, 0.2),
-                mesh_id: cube_mesh_id,
+                mesh_id: CUBE_MESH_ID,
                 material: BASE_MATERIAL_INDEX,
                 opacity: 1.0,
             },
@@ -145,11 +123,11 @@ impl GameHandler for Game {
 
         world.parts.insert(baseplate);
 
-        ui::init(&mut game_ctx.ui_tree, font_handle);
-        let cookie_clicker = CookieClicker::new(&mut game_ctx.ui_tree, font_handle);
+        ui::init(&mut game_ctx.ui_tree, NOTOSANS_FONT_HANDLE);
+        let cookie_clicker = CookieClicker::new(&mut game_ctx.ui_tree, NOTOSANS_FONT_HANDLE);
 
         Game {
-            font: font_handle,
+            font: NOTOSANS_FONT_HANDLE,
             world,
             cookie_clicker,
         }

@@ -12,7 +12,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy, Hash, PartialEq, PartialOrd, Eq, Debug, Ord)]
-pub struct FontHandle(Index);
+pub struct FontHandle(pub(crate) Index);
 
 #[derive(Debug, Clone, Copy)]
 pub struct GlyphData {
@@ -159,6 +159,22 @@ impl FontManager {
         let fonts = Arena::new();
 
         Self { freetype, fonts }
+    }
+
+    pub fn load_font_with_index(
+        &mut self,
+        index: Index,
+        font_data: &[u8],
+    ) -> Result<FontHandle, FreetypeError> {
+        let face = self.freetype.new_memory_face(font_data, 0)?;
+
+        let face_data = Font {
+            face,
+            glyph_cache: HashMap::new(),
+        };
+
+        self.fonts.insert_at(index, face_data);
+        Ok(FontHandle(index))
     }
 
     pub fn load_font(&mut self, font_data: &[u8]) -> Result<FontHandle, FreetypeError> {

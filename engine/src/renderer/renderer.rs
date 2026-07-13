@@ -1433,6 +1433,26 @@ impl VulkanContext {
         self.mesh_buffers.insert(mesh)
     }
 
+    pub fn load_mesh_with_index(
+        &mut self,
+        index: Index,
+        vertices: &[MeshVertex],
+        indices: &[u16],
+    ) -> Index {
+        let mesh = MeshBuffer::allocate_mesh(
+            &self.device,
+            &self.allocator,
+            self.graphics_queue,
+            self.command_pool,
+            vertices,
+            indices,
+        );
+
+        self.mesh_buffers.insert_at(index, mesh);
+
+        index
+    }
+
     pub fn load_rgba_texture(&mut self, width: u32, height: u32, data: &[u8]) -> u32 {
         let mut texture = Texture::from_rgba_data(
             &self.device,
