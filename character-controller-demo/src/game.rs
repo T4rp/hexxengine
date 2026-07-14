@@ -8,7 +8,7 @@ use hexxengine::{
     assets::ASSET_PATH,
     components::{MeshComponent, RigidBodyComponent, TransformComponent},
     entities::Part,
-    game::{GameContext, GameHandler},
+    game::{CUBE_MESH_ID, GameContext, GameHandler, UNIFONT_FONT_HANDLE},
     glam::{self, Vec2, Vec4},
     rand,
     rapier3d::{self, prelude::ShapeType},
@@ -54,9 +54,6 @@ const CHARACTER_HEIGHT: f32 = 10.0;
 const CHARACTER_RADIUS: f32 = 2.0;
 
 struct GameResources {
-    font: FontHandle,
-    cube_mesh: Index,
-    sphere_mesh: Index,
     skybox1: Index,
 }
 
@@ -187,25 +184,6 @@ impl Game {
 
 impl GameHandler for Game {
     fn new(game_ctx: &mut GameContext) -> Self {
-        let font_data = fs::read(format!("{}/unifont-17.0.03.otf", ASSET_PATH)).unwrap();
-        let font_handle = game_ctx
-            .font_manager
-            .lock()
-            .unwrap()
-            .load_font(&font_data)
-            .unwrap();
-
-        let cube_mesh = get_first_gltf_mesh(format!("{}/cube.gltf", ASSET_PATH).as_str());
-        let sphere_mesh = get_first_gltf_mesh(format!("{}/sphere.gltf", ASSET_PATH).as_str());
-
-        let cube_mesh = game_ctx
-            .vk_ctx
-            .load_mesh(&cube_mesh.vertices, &cube_mesh.indices);
-
-        let sphere_mesh = game_ctx
-            .vk_ctx
-            .load_mesh(&sphere_mesh.vertices, &sphere_mesh.indices);
-
         let skybox1_id = load_skybox(
             &mut game_ctx.vk_ctx,
             format!(
@@ -216,9 +194,6 @@ impl GameHandler for Game {
         );
 
         let resources = GameResources {
-            font: font_handle,
-            cube_mesh,
-            sphere_mesh,
             skybox1: skybox1_id,
         };
 
@@ -250,7 +225,7 @@ impl GameHandler for Game {
             transform: baseplate_transform,
             mesh: MeshComponent {
                 color: vec3(0.2, 0.2, 0.2),
-                mesh_id: resources.cube_mesh,
+                mesh_id: CUBE_MESH_ID,
                 material: BASE_MATERIAL_INDEX,
                 opacity: 1.0,
             },
@@ -284,7 +259,7 @@ impl GameHandler for Game {
                 transform,
                 mesh: MeshComponent {
                     color: hsv_to_rgb(rng.random::<f32>() * 360.0, 0.8, 1.0),
-                    mesh_id: resources.cube_mesh,
+                    mesh_id: CUBE_MESH_ID,
                     material: BASE_MATERIAL_INDEX,
                     opacity: 1.0,
                 },
@@ -313,7 +288,7 @@ impl GameHandler for Game {
             transform: character_transform,
             mesh: MeshComponent {
                 color: Vec3::ZERO,
-                mesh_id: resources.cube_mesh,
+                mesh_id: CUBE_MESH_ID,
                 material: BASE_MATERIAL_INDEX,
                 opacity: 1.0,
             },
@@ -326,12 +301,12 @@ impl GameHandler for Game {
         let character_handle = world.characters.insert(character);
         world.character_index = Some(character_handle);
 
-        let mut speed_textbox = TextBox::new(font_handle);
+        let mut speed_textbox = TextBox::new(UNIFONT_FONT_HANDLE);
         speed_textbox.horizontal_justification = HorizontalJustification::Left;
         speed_textbox.font_height = 32;
         speed_textbox.size = Vec2::new(50.0, 10.0);
 
-        let mut text_label = TextLabel::new(font_handle);
+        let mut text_label = TextLabel::new(UNIFONT_FONT_HANDLE);
         text_label.position = UiDim::new(0.0, 0.0, 0.0, 20.0);
         text_label.size = UiDim::new(0.0, 0.0, 100.0, 18.0);
         text_label.color = Vec4::new(0.0, 0.0, 0.0, 1.0);
