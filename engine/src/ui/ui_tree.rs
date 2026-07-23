@@ -226,7 +226,6 @@ impl UiTree {
                     ui_draws.push(UiDraw::Frame(UiFrame {
                         position: world_position,
                         size: world_size,
-                        anchor: Vec2::ZERO,
                         color: frame.color,
                         texture_id: WHITE_TEXTURE_INDEX,
                         uvs: Default::default(),
@@ -243,7 +242,6 @@ impl UiTree {
                         ui_draws.push(UiDraw::Frame(UiFrame {
                             position: world_position,
                             size: world_size,
-                            anchor: Vec2::ZERO,
                             color: text_label.background_color,
                             texture_id: WHITE_TEXTURE_INDEX,
                             uvs: Default::default(),
@@ -254,7 +252,6 @@ impl UiTree {
                         // TODO: have some way to do default font
                         font: text_label.font.unwrap(),
                         position: world_position,
-                        anchor: Vec2::ZERO,
                         font_height: text_label.font_height,
                         glyph_positions: text_label.text_box.glyph_positions.clone(),
                         color: text_label.color.xyz(),

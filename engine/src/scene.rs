@@ -84,7 +84,6 @@ pub struct MeshNode {
 
 pub struct UiFrame {
     pub position: Vec2,
-    pub anchor: Vec2,
     pub size: Vec2,
     pub color: Vec4,
     pub texture_id: Index,
@@ -104,7 +103,6 @@ impl UiFrame {
                 vec2(1.0, 1.0),
                 vec2(1.0, 0.0),
             ],
-            anchor: Vec2::ZERO,
         }
     }
 
@@ -150,7 +148,6 @@ impl UiFrame {
 pub struct UiText {
     pub font: FontHandle,
     pub position: Vec2,
-    pub anchor: Vec2,
     pub font_height: u32,
     pub glyph_positions: Vec<GlyphPositions>,
     pub color: Vec3,
@@ -166,7 +163,6 @@ impl UiText {
         Self {
             font,
             position,
-            anchor: Vec2::ZERO,
             font_height: height,
             glyph_positions,
             color: Vec3::ZERO,
