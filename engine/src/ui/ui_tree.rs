@@ -238,6 +238,18 @@ impl UiTree {
                     }
                     text_label.text_box.calculate_layout(font_manager);
 
+                    if text_label.background_color.w != 0.0 {
+                        // PERF: This does not benefit from batching by breadth.
+                        ui_draws.push(UiDraw::Frame(UiFrame {
+                            position: world_position,
+                            size: world_size,
+                            anchor: Vec2::ZERO,
+                            color: text_label.background_color,
+                            texture_id: WHITE_TEXTURE_INDEX,
+                            uvs: Default::default(),
+                        }));
+                    }
+
                     ui_draws.push(UiDraw::Text(UiText {
                         // TODO: have some way to do default font
                         font: text_label.font.unwrap(),

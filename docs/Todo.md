@@ -22,11 +22,11 @@
 ## Doing
 - [ ] declarative ui
     - [x] quads
-        - [ ] relative sizing
+        - [x] relative sizing
     - [ ] inputs
     - [ ] text
         - [ ] relative sizing
-        - [ ] text bounds calculation
+        - [x] text bounds calculation
         - [x] text drawing
 - [ ] level editor
     - [ ] game-agnostic library

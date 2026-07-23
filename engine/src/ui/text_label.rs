@@ -19,6 +19,7 @@ pub struct TextLabel {
 
     pub text: Cow<'static, str>,
     pub color: Vec4,
+    pub background_color: Vec4,
     pub position: UiDim,
     pub size: UiDim,
     pub anchor: Vec2,
@@ -44,6 +45,7 @@ impl TextLabel {
             horizontal_justification: HorizontalJustification::Center,
             vertical_justification: VerticalJustification::Center,
             visible: true,
+            background_color: Vec4::ZERO,
         }
     }
 
