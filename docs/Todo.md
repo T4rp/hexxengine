@@ -3,7 +3,6 @@
     - [ ] multiple lights
     - [x] sunlight
 - [ ] materials
-    - [ ] generational handles api
     - [x] textures
     - [ ] material properties
         - [ ] shininess
@@ -18,16 +17,16 @@
 - [ ] window controls
     - [ ] mouse capture api
 - [x] transparent rendering
+- [ ] text improvements
+    - [ ] kerning
+    - [ ] layouting
 
 ## Doing
 - [ ] declarative ui
     - [x] quads
         - [x] relative sizing
     - [ ] inputs
-    - [ ] text
-        - [ ] relative sizing
-        - [x] text bounds calculation
-        - [x] text drawing
+        - [x] event queue
 - [ ] level editor
     - [ ] game-agnostic library
 
@@ -43,6 +42,15 @@
 - [x] 2d rendering
     - [x] text drawing
     - [x] quad drawing
+- [x] generational handles api for resources
+    - [x] skybox handles
+    - [x] font handles
+    - [x] mesh handles
+    - [x] texture handles
+- [x] text
+    - [x] relative sizing
+    - [x] text bounds calculation
+    - [x] text drawing
 
 ## Wants
 - [ ] optimization
