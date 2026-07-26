@@ -34,7 +34,7 @@ impl TextLabel {
         text_box.set_font_height(14);
 
         Self {
-            text_box: TextBox::new(font),
+            text_box: text_box,
             text: "".into(),
             font: Some(font),
             color: Vec4::ZERO,
