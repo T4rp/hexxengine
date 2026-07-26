@@ -153,6 +153,10 @@ impl InputHandler {
         &self.input_events
     }
 
+    pub fn take_input_events(&mut self) -> Vec<InputEvent> {
+        std::mem::take(&mut self.input_events)
+    }
+
     pub fn simulate_event(&mut self, event: InputEvent) {
         self.input_events.push(event);
     }

@@ -52,18 +52,11 @@ impl<T: GameHandler> InitializedGameApp<T> {
             .ui_tree
             .handle_input(&self.game_ctx.input_state);
 
-        // PERF: find a way to avoid cloning
-        for input in self
-            .game_ctx
-            .input_state
-            .get_input_events()
-            .to_owned()
-            .into_iter()
-        {
+        // PERF: consider returning the vector to preserve allocation
+        let input_events = self.game_ctx.input_state.take_input_events();
+        for input in input_events {
             self.game_handler.on_input(&mut self.game_ctx, input);
         }
-
-        self.game_ctx.input_state.clear();
     }
 
     fn draw(&mut self) {
