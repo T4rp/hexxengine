@@ -603,11 +603,11 @@ impl Resources {
         allocator: &vk_mem::Allocator,
     ) -> VkResult<(vkutils::AllocatedBuffer, vkutils::AllocatedBuffer)> {
         let vertex_buffer_info = vk::BufferCreateInfo::default()
-            .size((mem::size_of::<u16>() * MAX_VERTICES_2D) as u64)
+            .size((mem::size_of::<Vertex2d>() * MAX_VERTICES_2D) as u64)
             .usage(vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
 
         let index_buffer_info = vk::BufferCreateInfo::default()
-            .size((mem::size_of::<Vertex2d>() * MAX_VERTICES_2D) as u64)
+            .size((mem::size_of::<u16>() * MAX_VERTICES_2D) as u64)
             .usage(vk::BufferUsageFlags::INDEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST);
 
         let alloc_info = vk_mem::AllocationCreateInfo {
