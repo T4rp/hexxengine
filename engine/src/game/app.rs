@@ -53,10 +53,12 @@ impl<T: GameHandler> InitializedGameApp<T> {
             .handle_input(&self.game_ctx.input_state);
 
         // PERF: consider returning the vector to preserve allocation
-        let input_events = self.game_ctx.input_state.take_input_events();
+        let mut input_events = self.game_ctx.input_state.take_input_events();
         for input in input_events {
             self.game_handler.on_input(&mut self.game_ctx, input);
         }
+
+        self.game_ctx.input_state.clear();
     }
 
     fn draw(&mut self) {
