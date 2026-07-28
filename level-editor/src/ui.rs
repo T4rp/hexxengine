@@ -40,6 +40,28 @@ pub fn init(ctx: &mut UiTree, font: FontHandle) {
     }
 }
 
+pub struct LevelEditorUi {
+    elements: Vec<Index>,
+}
+
+impl LevelEditorUi {
+    pub fn new(ctx: &mut UiTree) -> Self {
+        let dock = ctx.add_element(Frame {
+            color: COLOR_BG,
+            anchor: Vec2::ZERO,
+            position: UiDim::new(0.0, 0.0, 0.0, 0.0),
+            visible: true,
+            size: UiDim::new(1.0, 0.0, 0.0, 100.0),
+        });
+
+        ctx.root(dock);
+
+        Self { elements: vec![] }
+    }
+
+    pub fn update(&mut self) {}
+}
+
 pub struct CookieClicker {
     elements: Vec<Index>,
     cookie_count_label: Index,

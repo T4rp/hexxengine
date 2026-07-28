@@ -12,7 +12,7 @@ use hexxengine::{
     winit::{self, keyboard::KeyCode},
 };
 
-use crate::ui::{self, CookieClicker};
+use crate::ui::{self, CookieClicker, LevelEditorUi};
 
 const CAMERA_SPEED: f32 = 100.0;
 const CAMERA_SENSITIVITY: f32 = 0.38;
@@ -33,7 +33,7 @@ impl World {
 pub struct Game {
     font: FontHandle,
     world: World,
-    cookie_clicker: CookieClicker,
+    level_editor: LevelEditorUi,
 }
 
 impl Game {
@@ -123,19 +123,19 @@ impl GameHandler for Game {
 
         world.parts.insert(baseplate);
 
-        ui::init(&mut game_ctx.ui_tree, NOTOSANS_FONT_HANDLE);
-        let cookie_clicker = CookieClicker::new(&mut game_ctx.ui_tree, NOTOSANS_FONT_HANDLE);
+        // ui::init(&mut game_ctx.ui_tree, NOTOSANS_FONT_HANDLE);
+        let level_editor = LevelEditorUi::new(&mut game_ctx.ui_tree);
 
         Game {
             font: NOTOSANS_FONT_HANDLE,
             world,
-            cookie_clicker,
+            level_editor,
         }
     }
 
     fn update(&mut self, game_ctx: &mut GameContext, dt: f32) {
         self.update_camera(game_ctx, dt);
-        self.cookie_clicker.update(&mut game_ctx.ui_tree);
+        self.level_editor.update();
     }
 
     fn draw(&mut self, game_ctx: &mut GameContext) {
