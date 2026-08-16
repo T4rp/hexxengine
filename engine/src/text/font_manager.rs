@@ -58,6 +58,10 @@ impl Font {
         Ok(())
     }
 
+    pub fn get_char_index(&self, character: u64) -> Option<u32> {
+        self.face.get_char_index(character)
+    }
+
     pub fn get_kerning(
         &mut self,
         left_glyph: u32,
