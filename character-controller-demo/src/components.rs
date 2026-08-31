@@ -1,11 +1,9 @@
 use hexxengine::{
     components::TransformComponent,
     glam::{Quat, Vec3},
-    physics::{
-        character_controller::{CharacterCollision, CharacterLength, KinematicCharacterController},
-        context::PhysicsContext,
-    },
+    physics::context::PhysicsContext,
     rapier3d::{
+        control::{CharacterCollision, CharacterLength, KinematicCharacterController},
         math::Pose3,
         prelude::{ColliderBuilder, ColliderHandle, MassProperties, QueryFilter, SharedShape},
     },
@@ -178,10 +176,7 @@ impl CharacterControllerComponent {
             dt,
             &query_pipeline,
             self.shape.clone_dyn().as_ref(),
-            &Pose3 {
-                rotation: Quat::IDENTITY,
-                translation: self.position,
-            },
+            &Pose3::from_translation(self.position),
             self.velocity * dt,
             |collision| self.collisions.push(collision),
         );
