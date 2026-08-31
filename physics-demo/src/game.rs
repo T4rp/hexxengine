@@ -1,6 +1,8 @@
 use hexxengine::{
     assets::ASSET_PATH,
-    game::{CUBE_MESH_ID, GameContext, GameHandler, NOTOSANS_FONT_HANDLE, SPHERE_MESH_ID},
+    game::{
+        CONE_MESH_ID, CUBE_MESH_ID, GameContext, GameHandler, NOTOSANS_FONT_HANDLE, SPHERE_MESH_ID,
+    },
     glam::{self, vec2},
     rand, rapier3d,
     renderer::renderer::BASE_MATERIAL_INDEX,
@@ -181,6 +183,17 @@ impl GameHandler for Game {
                         material_id: BASE_MATERIAL_INDEX,
                     });
                 }
+                PartShape::Cone { radius, height } => {
+                    game_ctx.render_scene.meshes.push(MeshNode {
+                        position: part.position,
+                        orientation: part.orientation,
+                        size: Vec3::new(radius * 2.0, height, radius * 2.0),
+                        color: part.color,
+                        opacity: 1.0,
+                        mesh_id: CONE_MESH_ID,
+                        material_id: BASE_MATERIAL_INDEX,
+                    });
+                }
             }
         }
     }
@@ -245,8 +258,8 @@ impl Game {
         if game_ctx.input_state.is_key_down(KeyCode::Space) {
             let rng = &mut self.rng;
 
-            let part = if rng.random_bool(0.5) {
-                Part::new_cube(
+            let part = match rng.random_range(0..3) {
+                0 => Part::new_cube(
                     &mut game_ctx.physics_context,
                     RigidBodyType::Dynamic,
                     camera_position + camera_forward * 30.0,
@@ -258,9 +271,8 @@ impl Game {
                     ),
                     vec3(4.0, 4.0, 4.0) * rng.random_range(1.0..5.0),
                     hsv_to_rgb(rng.random::<f32>() * 360.0, 0.8, 1.0),
-                )
-            } else {
-                Part::new_sphere(
+                ),
+                1 => Part::new_sphere(
                     &mut game_ctx.physics_context,
                     RigidBodyType::Dynamic,
                     camera_position + camera_forward * 30.0,
@@ -272,7 +284,25 @@ impl Game {
                     ),
                     rng.random_range(5.0..10.0),
                     hsv_to_rgb(rng.random::<f32>() * 360.0, 0.8, 1.0),
-                )
+                ),
+                2 => Part::new_cone(
+                    &mut game_ctx.physics_context,
+                    RigidBodyType::Dynamic,
+                    camera_position + camera_forward * 30.0,
+                    Quat::from_euler(
+                        EulerRot::XYZ,
+                        rng.random::<f32>() * std::f32::consts::PI * 2.0,
+                        rng.random::<f32>() * std::f32::consts::PI * 2.0,
+                        rng.random::<f32>() * std::f32::consts::PI * 2.0,
+                    ),
+                    rng.random_range(5.0..10.0),
+                    rng.random_range(10.0..20.0),
+                    hsv_to_rgb(rng.random::<f32>() * 360.0, 0.8, 1.0),
+                ),
+
+                _ => {
+                    panic!()
+                }
             };
 
             let rigid_body = game_ctx

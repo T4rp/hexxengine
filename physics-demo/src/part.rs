@@ -11,6 +11,7 @@ use hexxengine::{
 pub enum PartShape {
     Cube(Vec3),
     Sphere(f32),
+    Cone { radius: f32, height: f32 },
 }
 
 pub struct Part {
@@ -81,6 +82,39 @@ impl Part {
             position,
             orientation,
             shape: PartShape::Sphere(radius),
+            color,
+            collider: collider_handle,
+            rigid_body_handle,
+        }
+    }
+
+    pub fn new_cone(
+        phys_ctx: &mut PhysicsContext,
+        body_type: RigidBodyType,
+        position: Vec3,
+        orientation: Quat,
+        radius: f32,
+        height: f32,
+        color: Vec3,
+    ) -> Self {
+        let collider = ColliderBuilder::cone(height / 2.0, radius).build();
+
+        let rigid_body = RigidBodyBuilder::new(body_type)
+            .pose(Pose3::from_parts(position, orientation))
+            .build();
+
+        let rigid_body_handle = phys_ctx.rigid_body_set.insert(rigid_body);
+
+        let collider_handle = phys_ctx.collider_set.insert_with_parent(
+            collider,
+            rigid_body_handle,
+            &mut phys_ctx.rigid_body_set,
+        );
+
+        Self {
+            position,
+            orientation,
+            shape: PartShape::Cone { radius, height },
             color,
             collider: collider_handle,
             rigid_body_handle,

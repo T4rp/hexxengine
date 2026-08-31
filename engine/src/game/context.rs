@@ -9,7 +9,7 @@ use winit::window::Window;
 
 use crate::{
     assets::{ASSET_PATH, get_first_gltf_mesh},
-    game::{CUBE_MESH_ID, NOTOSANS_FONT_ID, SPHERE_MESH_ID, UNIFONT_FONT_ID},
+    game::{CONE_MESH_ID, CUBE_MESH_ID, NOTOSANS_FONT_ID, SPHERE_MESH_ID, UNIFONT_FONT_ID},
     input::InputHandler,
     physics::context::PhysicsContext,
     renderer::renderer::{FALLBACK_SKYBOX_INDEX, VulkanContext},
@@ -61,9 +61,11 @@ impl GameContext {
 
         let cube_mesh = get_first_gltf_mesh(format!("{}/cube.gltf", ASSET_PATH).as_str());
         let sphere_mesh = get_first_gltf_mesh(format!("{}/sphere.gltf", ASSET_PATH).as_str());
+        let cone_mesh = get_first_gltf_mesh(format!("{}/cone.gltf", ASSET_PATH).as_str());
 
         vk_ctx.load_mesh_with_index(CUBE_MESH_ID, &cube_mesh.vertices, &cube_mesh.indices);
         vk_ctx.load_mesh_with_index(SPHERE_MESH_ID, &sphere_mesh.vertices, &sphere_mesh.indices);
+        vk_ctx.load_mesh_with_index(CONE_MESH_ID, &cone_mesh.vertices, &cone_mesh.indices);
 
         let mut render_scene = RenderScene::new(
             Camera::new(
