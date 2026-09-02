@@ -1,6 +1,4 @@
-use hexxengine::thunderdome::Index;
-
-type EntityIndex<T> = (T, Index);
+use crate::entities::EntityIndex;
 
 pub struct HierarchyComponent<T> {
     pub parent: Option<EntityIndex<T>>,

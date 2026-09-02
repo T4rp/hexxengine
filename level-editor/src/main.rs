@@ -1,5 +1,3 @@
-mod components;
-mod entities;
 mod game;
 mod ui;
 

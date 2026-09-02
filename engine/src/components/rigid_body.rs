@@ -1,28 +1,10 @@
-use glam::{Quat, Vec3};
 use rapier3d::{
+    dynamics::{RigidBodyBuilder, RigidBodyHandle, RigidBodyType},
+    geometry::{ColliderBuilder, ColliderHandle, ShapeType, SharedShape},
     math::Pose3,
-    prelude::{
-        ColliderBuilder, ColliderHandle, RigidBodyBuilder, RigidBodyHandle, RigidBodyType,
-        ShapeType, SharedShape,
-    },
 };
-use thunderdome::Index;
 
-use crate::physics::context::PhysicsContext;
-
-#[derive(Clone, Copy)]
-pub struct TransformComponent {
-    pub position: Vec3,
-    pub orientation: Quat,
-    pub size: Vec3,
-}
-
-pub struct MeshComponent {
-    pub color: Vec3,
-    pub mesh_id: Index,
-    pub material: Index,
-    pub opacity: f32,
-}
+use crate::{components::TransformComponent, physics::context::PhysicsContext};
 
 pub struct RigidBodyComponent {
     pub collider_handle: ColliderHandle,
