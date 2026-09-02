@@ -2,8 +2,8 @@ use ash::vk::{self};
 use glam::{Vec2, Vec4, vec2};
 
 use crate::{
+    renderer::render_scene::{UiFrame, UiText},
     renderer::scene2d::Vertex2d,
-    scene::{UiFrame, UiText},
     text::{FontManager, GlyphAtlas},
 };
 

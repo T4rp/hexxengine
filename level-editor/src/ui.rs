@@ -1,6 +1,6 @@
 use hexxengine::{
     glam::{Vec2, Vec4, vec3, vec4},
-    scene::RenderScene,
+    renderer::render_scene::RenderScene,
     text::{
         FontHandle, FontManager,
         textbox::{HorizontalJustification, VerticalJustification},

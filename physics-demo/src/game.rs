@@ -1,12 +1,16 @@
 use hexxengine::{
     assets,
+    assets::load_skybox,
+    camera::Camera,
+    color::hsv_to_rgb,
     game::{
         CONE_MESH_ID, CUBE_MESH_ID, GameContext, GameHandler, NOTOSANS_FONT_HANDLE, SPHERE_MESH_ID,
     },
     glam::{self, vec2},
     rand, rapier3d,
+    renderer::render_scene::UiText,
+    renderer::render_scene::{Lighting, MeshNode},
     renderer::renderer::BASE_MATERIAL_INDEX,
-    scene::UiText,
     text::TextBox,
     thunderdome::{self, Index},
     winit,
@@ -18,12 +22,6 @@ use rapier3d::prelude::RigidBodyType;
 use rand::{Rng, SeedableRng, rngs::SmallRng};
 use thunderdome::Arena;
 use winit::keyboard::KeyCode;
-
-use hexxengine::{
-    assets::load_skybox,
-    color::hsv_to_rgb,
-    scene::{Camera, Lighting, MeshNode},
-};
 
 use crate::part::{Part, PartShape};
 

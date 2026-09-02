@@ -12,6 +12,7 @@ use winit::window::Window;
 
 use crate::renderer::images::{ImageTransition, transition_images};
 use crate::renderer::pipelines::RendererPipelines;
+use crate::renderer::render_scene::{RenderScene, UiDraw};
 use crate::renderer::scene2d;
 use crate::renderer::scene3d::{
     self, MaterialFlags, MaterialUniform, MeshVertex, SHADOW_MAP_RESOLUTION,
@@ -19,7 +20,6 @@ use crate::renderer::scene3d::{
 use crate::renderer::textures::{SkyboxImageData, Texture};
 use crate::renderer::vk_deletion_queue::VulkanDeletionQueue;
 use crate::renderer::vkutils::create_command_pool;
-use crate::scene::{RenderScene, UiDraw};
 use crate::text::{FontManager, GlyphAtlas, GlyphRenderMode};
 
 use super::vk_deletion_queue;

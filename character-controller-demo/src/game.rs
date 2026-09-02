@@ -6,14 +6,20 @@ use std::{
 
 use hexxengine::{
     assets,
+    assets::{get_first_gltf_mesh, load_skybox},
+    camera::Camera,
+    color::hsv_to_rgb,
     components::{MeshComponent, RigidBodyComponent, TransformComponent},
     entities::Part,
     game::{CUBE_MESH_ID, GameContext, GameHandler, UNIFONT_FONT_HANDLE},
     glam::{self, Vec2, Vec4},
+    input::InputHandler,
+    physics::context::PhysicsContext,
     rand,
     rapier3d::{self, prelude::ShapeType},
+    renderer::render_scene::{Lighting, MeshNode, RenderScene, UiText},
     renderer::renderer::BASE_MATERIAL_INDEX,
-    scene::UiText,
+    renderer::renderer::VulkanContext,
     text::{FontHandle, FontManager, TextBox, textbox::HorizontalJustification},
     thunderdome::Index,
     ui::{TextLabel, UiDim},
@@ -28,15 +34,6 @@ use winit::{
     event::{DeviceEvent, WindowEvent},
     keyboard::KeyCode,
     window::Window,
-};
-
-use hexxengine::{
-    assets::{get_first_gltf_mesh, load_skybox},
-    color::hsv_to_rgb,
-    input::InputHandler,
-    physics::context::PhysicsContext,
-    renderer::renderer::VulkanContext,
-    scene::{Camera, Lighting, MeshNode, RenderScene},
 };
 
 use crate::{

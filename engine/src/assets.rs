@@ -9,8 +9,8 @@ use image::{EncodableLayout, GenericImage};
 use thunderdome::Index;
 
 use crate::{
+    mesh::MeshData,
     renderer::{renderer::VulkanContext, scene3d::MeshVertex, textures::SkyboxImageData},
-    scene::MeshData,
 };
 
 pub const ASSET_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../assets");
@@ -54,6 +54,7 @@ pub fn process_gltf_mesh(mesh: &gltf::Mesh, buffers: &[gltf::buffer::Data]) -> M
     MeshData {
         vertices: mesh_vertices,
         indices: mesh_indices,
+        uvs: vec![],
     }
 }
 

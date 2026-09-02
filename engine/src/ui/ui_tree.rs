@@ -6,8 +6,8 @@ use winit::event::MouseButton;
 
 use crate::{
     input::{InputEvent, InputHandler, InputState},
+    renderer::render_scene::{UiDraw, UiFrame, UiText},
     renderer::renderer::WHITE_TEXTURE_INDEX,
-    scene::{UiDraw, UiFrame, UiText},
     text::{FontHandle, FontManager, TextBox},
     ui::{Element, UiDim, UiElement},
 };

@@ -9,12 +9,12 @@ use thunderdome::Arena;
 use vk_mem::Alloc;
 
 use crate::{
+    renderer::render_scene::{RenderScene, UiDraw},
     renderer::{
         renderer::{TextureDescriptors, WHITE_TEXTURE_INDEX},
         scene2d::{CameraUniform2d, MAX_VERTICES_2D, Vertex2d, buffer_writing},
         vkutils::{self, AllocatedBuffer},
     },
-    scene::{RenderScene, UiDraw},
     shapes::Region2d,
     text::{FontManager, GlyphAtlas},
 };

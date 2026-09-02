@@ -6,6 +6,7 @@ use thunderdome::{Arena, Index};
 use vk_mem::Alloc;
 
 use crate::{
+    renderer::render_scene::RenderScene,
     renderer::{
         renderer::{
             BASE_MATERIAL_INDEX, FALLBACK_TEXTURE_INDEX, MaterialDescriptor, MeshBuffer,
@@ -19,7 +20,6 @@ use crate::{
         vk_deletion_queue::{self, VulkanDeletionQueue},
         vkutils,
     },
-    scene::RenderScene,
 };
 
 #[derive(Debug)]

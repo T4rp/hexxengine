@@ -1,12 +1,13 @@
 pub mod assets;
+pub mod camera;
 pub mod color;
 pub mod components;
 pub mod entities;
 pub mod game;
 pub mod input;
+pub mod mesh;
 pub mod physics;
 pub mod renderer;
-pub mod scene;
 pub mod shapes;
 pub mod text;
 pub mod ui;
