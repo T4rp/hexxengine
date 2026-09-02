@@ -3,7 +3,7 @@ use std::fs;
 use ash::{prelude::VkResult, vk};
 
 use crate::{
-    assets::ASSET_PATH,
+    assets,
     renderer::{
         pipelines::VulkanPipelineBuilder,
         scene3d::{InstanceVertex, MeshVertex},
@@ -56,8 +56,8 @@ impl Pipelines {
                     .rasterization_samples(vk::SampleCountFlags::TYPE_1),
             );
 
-        let scene_vert_shader_code = fs::read(format!("{}/main.vert.spv", ASSET_PATH)).unwrap();
-        let scene_frag_shader_code = fs::read(format!("{}/main.frag.spv", ASSET_PATH)).unwrap();
+        let scene_vert_shader_code = fs::read(assets::get_asset_path("main.vert.spv")).unwrap();
+        let scene_frag_shader_code = fs::read(assets::get_asset_path("main.frag.spv")).unwrap();
         let scene_vert_shader = vkutils::create_shader_module(device, &scene_vert_shader_code)?;
         let scene_frag_shader = vkutils::create_shader_module(device, &scene_frag_shader_code)?;
 
@@ -108,8 +108,8 @@ impl Pipelines {
                 .depth_compare_op(vk::CompareOp::GREATER),
         );
 
-        let shadow_vert_shader_code = fs::read(format!("{}/shadow.vert.spv", ASSET_PATH)).unwrap();
-        let shadow_frag_shader_code = fs::read(format!("{}/shadow.frag.spv", ASSET_PATH)).unwrap();
+        let shadow_vert_shader_code = fs::read(assets::get_asset_path("shadow.vert.spv")).unwrap();
+        let shadow_frag_shader_code = fs::read(assets::get_asset_path("shadow.frag.spv")).unwrap();
 
         let shadow_vert_shader =
             vkutils::create_shader_module(device, &shadow_vert_shader_code).unwrap();
@@ -133,35 +133,36 @@ impl Pipelines {
             .shader_stages(&shadow_shader_stages)
             .no_color_attachments();
 
-        let shadow_vert_shader_code = fs::read(format!("{}/skybox.vert.spv", ASSET_PATH)).unwrap();
-        let shadow_frag_shader_code = fs::read(format!("{}/skybox.frag.spv", ASSET_PATH)).unwrap();
-        let shadow_vert_shader =
-            vkutils::create_shader_module(device, &shadow_vert_shader_code).unwrap();
-        let shadow_frag_shader =
-            vkutils::create_shader_module(device, &shadow_frag_shader_code).unwrap();
+        let skybox_vert_shader_code = fs::read(assets::get_asset_path("skybox.vert.spv")).unwrap();
+        let skybox_frag_shader_code = fs::read(assets::get_asset_path("skybox.frag.spv")).unwrap();
 
-        let shadow_shader_stages = [
+        let skybox_vert_shader =
+            vkutils::create_shader_module(device, &skybox_vert_shader_code).unwrap();
+        let skybox_frag_shader =
+            vkutils::create_shader_module(device, &skybox_frag_shader_code).unwrap();
+
+        let skybox_shader_stages = [
             vk::PipelineShaderStageCreateInfo::default()
                 .stage(vk::ShaderStageFlags::VERTEX)
-                .module(shadow_vert_shader)
+                .module(skybox_vert_shader)
                 .name(c"main"),
             vk::PipelineShaderStageCreateInfo::default()
                 .stage(vk::ShaderStageFlags::FRAGMENT)
-                .module(shadow_frag_shader)
+                .module(skybox_frag_shader)
                 .name(c"main"),
         ];
 
-        let shadow_vertex_attributes = MeshVertex::get_attribute_descriptions();
-        let shadow_vertex_bindings = [MeshVertex::get_binding_description()];
+        let skybox_vertex_attributes = MeshVertex::get_attribute_descriptions();
+        let skybox_vertex_bindings = [MeshVertex::get_binding_description()];
 
         let skybox_pipeline_builder = opaque_pipeline_builder
             .clone()
             .pipeline_layout(scene3d_pipeline_layout)
-            .shader_stages(&shadow_shader_stages)
+            .shader_stages(&skybox_shader_stages)
             .vertex_input_state(
                 vk::PipelineVertexInputStateCreateInfo::default()
-                    .vertex_attribute_descriptions(&shadow_vertex_attributes)
-                    .vertex_binding_descriptions(&shadow_vertex_bindings),
+                    .vertex_attribute_descriptions(&skybox_vertex_attributes)
+                    .vertex_binding_descriptions(&skybox_vertex_bindings),
             )
             .rasterizer(
                 vk::PipelineRasterizationStateCreateInfo::default()

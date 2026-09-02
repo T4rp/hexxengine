@@ -11,9 +11,10 @@
 - Better entities
 - LoD for primitive shapes
 - Rigid skeletal animations
+- Frustum culling
 
 # Todo
-- [ ] Frustum culling
+- [ ] asset manager
 - [ ] better smooth shading on the cone
 
 # Done

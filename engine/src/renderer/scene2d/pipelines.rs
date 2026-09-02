@@ -6,7 +6,7 @@ use ash::{
 };
 
 use crate::{
-    assets::ASSET_PATH,
+    assets,
     renderer::{
         pipelines::VulkanPipelineBuilder,
         scene2d::Vertex2d,
@@ -74,8 +74,9 @@ impl Pipelines {
             .color_attachment_format(surface_format)
             .depth_attachment_format(vk::Format::D32_SFLOAT);
 
-        let main_vert_shader_code = fs::read(format!("{}/main2d.vert.spv", ASSET_PATH)).unwrap();
-        let main_frag_shader_code = fs::read(format!("{}/main2d.frag.spv", ASSET_PATH)).unwrap();
+        let main_vert_shader_code = fs::read(assets::get_asset_path("main2d.vert.spv")).unwrap();
+        let main_frag_shader_code = fs::read(assets::get_asset_path("main2d.frag.spv")).unwrap();
+
         let main_vert_shader =
             vkutils::create_shader_module(device, &main_vert_shader_code).unwrap();
         let main_frag_shader =
@@ -96,8 +97,9 @@ impl Pipelines {
             .clone()
             .shader_stages(&main_shader_stages);
 
-        let text_vert_shader_code = fs::read(format!("{}/text.vert.spv", ASSET_PATH)).unwrap();
-        let text_frag_shader_code = fs::read(format!("{}/text.frag.spv", ASSET_PATH)).unwrap();
+        let text_vert_shader_code = fs::read(assets::get_asset_path("text.vert.spv")).unwrap();
+        let text_frag_shader_code = fs::read(assets::get_asset_path("text.frag.spv")).unwrap();
+
         let text_vert_shader =
             vkutils::create_shader_module(device, &text_vert_shader_code).unwrap();
         let text_frag_shader =

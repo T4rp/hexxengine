@@ -1,3 +1,8 @@
+use std::{
+    path::{Path, PathBuf},
+    str::FromStr,
+};
+
 use ash::vk;
 use glam::{Vec2, Vec3};
 use image::{EncodableLayout, GenericImage};
@@ -9,6 +14,12 @@ use crate::{
 };
 
 pub const ASSET_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../assets");
+
+pub fn get_asset_path(asset_path: impl AsRef<Path>) -> PathBuf {
+    let mut path = PathBuf::from_str(ASSET_PATH).unwrap();
+    path.push(asset_path);
+    path
+}
 
 pub fn process_gltf_mesh(mesh: &gltf::Mesh, buffers: &[gltf::buffer::Data]) -> MeshData {
     let mut mesh_vertices = Vec::new();
@@ -46,14 +57,14 @@ pub fn process_gltf_mesh(mesh: &gltf::Mesh, buffers: &[gltf::buffer::Data]) -> M
     }
 }
 
-pub fn get_first_gltf_mesh(filename: &str) -> MeshData {
-    let (gltf, buffers, _images) = gltf::import(filename).unwrap();
+pub fn get_first_gltf_mesh(file_path: impl AsRef<Path>) -> MeshData {
+    let (gltf, buffers, _images) = gltf::import(file_path).unwrap();
 
     let mesh = gltf.meshes().next().unwrap();
     process_gltf_mesh(&mesh, &buffers)
 }
 
-pub fn load_skybox<'a>(render: &mut VulkanContext, file_path: &str) -> Index {
+pub fn load_skybox<'a>(render: &mut VulkanContext, file_path: impl AsRef<Path>) -> Index {
     let mut skybox_image = image::open(file_path).unwrap().into_rgba8();
 
     let top_image = skybox_image.sub_image(512, 0, 512, 512).to_image();

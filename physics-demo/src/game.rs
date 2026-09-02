@@ -1,5 +1,5 @@
 use hexxengine::{
-    assets::ASSET_PATH,
+    assets,
     game::{
         CONE_MESH_ID, CUBE_MESH_ID, GameContext, GameHandler, NOTOSANS_FONT_HANDLE, SPHERE_MESH_ID,
     },
@@ -44,20 +44,12 @@ impl GameHandler for Game {
     fn new(game_ctx: &mut hexxengine::game::GameContext) -> Self {
         let skybox1_id = load_skybox(
             &mut game_ctx.vk_ctx,
-            format!(
-                "{}/cloudy-skyboxes/Cubemap/Cubemap_Sky_04-512x512.png",
-                ASSET_PATH
-            )
-            .as_str(),
+            assets::get_asset_path("cloudy-skyboxes/Cubemap/Cubemap_Sky_04-512x512.png"),
         );
 
         let skybox2_id = load_skybox(
             &mut game_ctx.vk_ctx,
-            format!(
-                "{}/cloudy-skyboxes/Cubemap/Cubemap_Sky_02-512x512.png",
-                ASSET_PATH
-            )
-            .as_str(),
+            assets::get_asset_path("cloudy-skyboxes/Cubemap/Cubemap_Sky_02-512x512.png"),
         );
 
         let resources = GameResources {

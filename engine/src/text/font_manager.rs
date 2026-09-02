@@ -206,7 +206,7 @@ impl FontManager {
 mod tests {
     use std::fs;
 
-    use crate::{assets::ASSET_PATH, text::FontManager};
+    use crate::{assets, text::FontManager};
 
     #[test]
     fn init() {
@@ -216,13 +216,14 @@ mod tests {
     #[test]
     fn load_font() {
         let mut font_manager = FontManager::new();
-        let font_data = fs::read(&format!("{}/unifont-17.0.03.otf", ASSET_PATH)).unwrap();
+        let font_data = fs::read(assets::get_asset_path("unifont-17.0.03.otf")).unwrap();
         font_manager.load_font(&font_data).unwrap();
     }
 
+    #[test]
     fn load_glyphs() {
         let mut font_manager = FontManager::new();
-        let font_data = fs::read(&format!("{}/unifont-17.0.03.otf", ASSET_PATH)).unwrap();
+        let font_data = fs::read(assets::get_asset_path("unifont-17.0.03.otf")).unwrap();
         let font_handle = font_manager.load_font(&font_data).unwrap();
 
         let font = font_manager.get_font(font_handle);

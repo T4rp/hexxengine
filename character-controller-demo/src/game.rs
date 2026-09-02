@@ -5,7 +5,7 @@ use std::{
 };
 
 use hexxengine::{
-    assets::ASSET_PATH,
+    assets,
     components::{MeshComponent, RigidBodyComponent, TransformComponent},
     entities::Part,
     game::{CUBE_MESH_ID, GameContext, GameHandler, UNIFONT_FONT_HANDLE},
@@ -186,11 +186,9 @@ impl GameHandler for Game {
     fn new(game_ctx: &mut GameContext) -> Self {
         let skybox1_id = load_skybox(
             &mut game_ctx.vk_ctx,
-            format!(
-                "{}/cloudy-skyboxes/Cubemap/Cubemap_Sky_04-512x512.png",
-                ASSET_PATH
-            )
-            .as_str(),
+            assets::get_asset_path("cloudy-skyboxes/Cubemap/Cubemap_Sky_04-512x512.png")
+                .to_str()
+                .unwrap(),
         );
 
         let resources = GameResources {

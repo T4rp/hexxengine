@@ -409,15 +409,15 @@ impl GlyphAtlas {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{fs, path::PathBuf};
 
     use crate::{
-        assets::ASSET_PATH,
+        assets,
         text::{self, FontManager, FontManagerError, GlyphAtlas, GlyphRenderMode},
     };
 
-    fn get_unifont_path() -> String {
-        format!("{}/unifont-17.0.03.otf", ASSET_PATH)
+    fn get_unifont_path() -> PathBuf {
+        assets::get_asset_path("unifont-17.0.03.otf")
     }
 
     #[test]

@@ -8,7 +8,7 @@ use glam::{EulerRot, Quat, vec3};
 use winit::window::Window;
 
 use crate::{
-    assets::{ASSET_PATH, get_first_gltf_mesh},
+    assets::{self, get_first_gltf_mesh},
     game::{CONE_MESH_ID, CUBE_MESH_ID, NOTOSANS_FONT_ID, SPHERE_MESH_ID, UNIFONT_FONT_ID},
     input::InputHandler,
     physics::context::PhysicsContext,
@@ -34,34 +34,30 @@ pub struct GameContext {
 impl GameContext {
     pub(crate) fn new(window: Window) -> Self {
         let mut font_manager = FontManager::new();
-        let font_manager = Arc::new(Mutex::new(font_manager));
 
-        let unifont_font_data = fs::read(format!("{}/unifont-17.0.03.otf", ASSET_PATH)).unwrap();
+        let unifont_font_data = fs::read(assets::get_asset_path("unifont-17.0.03.otf")).unwrap();
 
-        let notosans_font_data = fs::read(format!(
-            "{}//Noto_Sans/NotoSans-VariableFont_wdth,wght.ttf",
-            ASSET_PATH
+        let notosans_font_data = fs::read(assets::get_asset_path(
+            "Noto_Sans/NotoSans-VariableFont_wdth,wght.ttf",
         ))
         .unwrap();
 
-        {
-            let mut font_manager = font_manager.lock().unwrap();
+        font_manager
+            .load_font_with_index(UNIFONT_FONT_ID, &unifont_font_data)
+            .unwrap();
 
-            font_manager
-                .load_font_with_index(UNIFONT_FONT_ID, &unifont_font_data)
-                .unwrap();
+        font_manager
+            .load_font_with_index(NOTOSANS_FONT_ID, &notosans_font_data)
+            .unwrap();
 
-            font_manager
-                .load_font_with_index(NOTOSANS_FONT_ID, &notosans_font_data)
-                .unwrap();
-        }
+        let font_manager = Arc::new(Mutex::new(font_manager));
 
         let mut vk_ctx = VulkanContext::new(&window, font_manager.clone());
         let input_state = InputHandler::new();
 
-        let cube_mesh = get_first_gltf_mesh(format!("{}/cube.gltf", ASSET_PATH).as_str());
-        let sphere_mesh = get_first_gltf_mesh(format!("{}/sphere.gltf", ASSET_PATH).as_str());
-        let cone_mesh = get_first_gltf_mesh(format!("{}/cone.gltf", ASSET_PATH).as_str());
+        let cube_mesh = get_first_gltf_mesh(assets::get_asset_path("cube.gltf"));
+        let sphere_mesh = get_first_gltf_mesh(assets::get_asset_path("sphere.gltf"));
+        let cone_mesh = get_first_gltf_mesh(assets::get_asset_path("cone.gltf"));
 
         vk_ctx.load_mesh_with_index(CUBE_MESH_ID, &cube_mesh.vertices, &cube_mesh.indices);
         vk_ctx.load_mesh_with_index(SPHERE_MESH_ID, &sphere_mesh.vertices, &sphere_mesh.indices);
