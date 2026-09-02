@@ -2,7 +2,7 @@ use glam::{Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles, vec2, vec4};
 use thunderdome::Index;
 
 use crate::{
-    camera::Camera,
+    entities::Camera,
     renderer::{scene2d::Vertex2d, scene3d::MeshVertex},
     text::{FontHandle, GlyphPositions, TextBox},
 };

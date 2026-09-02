@@ -1,5 +1,4 @@
 pub mod assets;
-pub mod camera;
 pub mod color;
 pub mod components;
 pub mod entities;

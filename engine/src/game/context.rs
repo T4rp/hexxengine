@@ -9,12 +9,14 @@ use winit::window::Window;
 
 use crate::{
     assets::{self, get_first_gltf_mesh},
-    camera::Camera,
+    entities::Camera,
     game::{CONE_MESH_ID, CUBE_MESH_ID, NOTOSANS_FONT_ID, SPHERE_MESH_ID, UNIFONT_FONT_ID},
     input::InputHandler,
     physics::context::PhysicsContext,
-    renderer::render_scene::{Lighting, RenderScene},
-    renderer::renderer::{FALLBACK_SKYBOX_INDEX, VulkanContext},
+    renderer::{
+        render_scene::{Lighting, RenderScene},
+        renderer::{FALLBACK_SKYBOX_INDEX, VulkanContext},
+    },
     text::FontManager,
     ui::UiTree,
 };
