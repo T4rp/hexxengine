@@ -10,6 +10,7 @@ use crate::{
     ui::{Element, UiDim, UiElement},
 };
 
+#[derive(Debug)]
 pub struct TextLabel {
     pub(super) text_box: TextBox,
     pub(super) font: Option<FontHandle>,

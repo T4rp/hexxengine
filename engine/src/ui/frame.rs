@@ -2,6 +2,7 @@ use glam::{Vec2, Vec4};
 
 use crate::ui::{Element, UiDim, UiElement};
 
+#[derive(Debug)]
 pub struct Frame {
     pub color: Vec4,
     pub anchor: Vec2,

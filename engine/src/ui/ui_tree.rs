@@ -6,10 +6,15 @@ use winit::event::MouseButton;
 
 use crate::{
     input::{InputEvent, InputHandler, InputState},
-    renderer::render_scene::{UiDraw, UiFrame, UiText},
-    renderer::renderer::WHITE_TEXTURE_INDEX,
+    renderer::{
+        render_scene::{UiDraw, UiFrame, UiText},
+        renderer::WHITE_TEXTURE_INDEX,
+    },
     text::{FontHandle, FontManager, TextBox},
-    ui::{Element, UiDim, UiElement},
+    ui::{
+        Element::{self, Root},
+        UiDim, UiElement,
+    },
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,28 +43,45 @@ pub struct UiNode {
 
 pub struct UiTree {
     elements: Arena<UiNode>,
-    roots: Vec<Index>,
-    root_size: Vec2,
+    root: Index,
     is_dirty: bool,
 }
 
 impl UiTree {
     pub fn new() -> Self {
+        let mut elements = Arena::new();
+
+        let root = elements.insert(UiNode {
+            world_position: Vec2::ZERO,
+            world_size: Vec2::ZERO,
+            dimensions_dirty: true,
+            parent: None,
+            first_child: None,
+            last_child: None,
+            next_sibling: None,
+            prev_sibling: None,
+            element: Element::Root,
+            events: None,
+        });
+
         Self {
-            elements: Arena::new(),
-            roots: Vec::new(),
-            root_size: Vec2::ZERO,
+            elements,
+            root,
             is_dirty: true,
         }
     }
 
     pub fn set_root_size(&mut self, root_size: Vec2) {
-        self.root_size = root_size;
+        let root_element = self.elements.get_mut(self.root).unwrap();
+
+        root_element.world_size = root_size;
+        root_element.world_size = root_size;
+        root_element.dimensions_dirty = true;
     }
 
+    #[deprecated = "use UiTree::parent with root element index"]
     pub fn root(&mut self, element_index: Index) {
-        self.deparent(element_index);
-        self.roots.push(element_index);
+        self.parent(self.root, element_index);
     }
 
     pub fn deparent(&mut self, child_index: Index) {
@@ -162,11 +184,6 @@ impl UiTree {
     pub fn remove(&mut self, elem_index: Index) {
         self.deparent(elem_index);
 
-        // PERF: maybe find a better way
-        if let Some(index) = self.roots.iter().position(|i| *i == elem_index) {
-            self.roots.swap_remove(index);
-        }
-
         let element = self.elements.get(elem_index).unwrap();
         let mut current_child = element.first_child;
 
@@ -179,7 +196,7 @@ impl UiTree {
     }
 
     pub fn draw(&mut self, font_manager: &mut FontManager, ui_draws: &mut Vec<UiDraw>) {
-        let mut elements: VecDeque<Index> = VecDeque::from(self.roots.clone());
+        let mut elements: VecDeque<Index> = VecDeque::from([self.root]);
 
         while let Some(node_index) = elements.pop_front() {
             let node = self
@@ -202,7 +219,7 @@ impl UiTree {
             let (parent_pos, parent_size) = if let Some(parent) = parent_node {
                 (parent.world_position, parent.world_size)
             } else {
-                (Vec2::ZERO, self.root_size)
+                (node.world_position, node.world_size) // we are a root element
             };
 
             let world_size = parent_size * size.scale + size.offset;
@@ -257,6 +274,10 @@ impl UiTree {
                         color: text_label.color.xyz(),
                     }));
                 }
+                Root => {}
+                e => {
+                    panic!("unhandled element: {:?}", e)
+                }
             }
         }
     }
@@ -298,7 +319,7 @@ impl UiTree {
             return;
         }
 
-        let mut elements = self.roots.clone();
+        let mut elements = vec![self.root];
 
         while let Some(elem_index) = elements.pop() {
             let node = self.elements.get(elem_index).unwrap();

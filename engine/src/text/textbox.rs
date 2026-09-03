@@ -24,6 +24,7 @@ pub struct GlyphPositions {
     pub offset: Vec2,
 }
 
+#[derive(Debug)]
 pub struct TextBox {
     pub horizontal_justification: HorizontalJustification,
     pub vertical_justification: VerticalJustification,

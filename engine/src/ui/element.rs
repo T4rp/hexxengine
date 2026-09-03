@@ -9,7 +9,10 @@ pub struct UiDim {
 }
 
 impl UiDim {
-    pub fn new(scale_x: f32, scale_y: f32, offset_x: f32, offset_y: f32) -> Self {
+    pub const ZERO: UiDim = UiDim::new(0.0, 0.0, 0.0, 0.0);
+    pub const FILLED: UiDim = UiDim::new(1.0, 1.0, 0.0, 0.0);
+
+    pub const fn new(scale_x: f32, scale_y: f32, offset_x: f32, offset_y: f32) -> Self {
         Self {
             scale: Vec2::new(scale_x, scale_y),
             offset: Vec2::new(offset_x, offset_y),
@@ -25,7 +28,9 @@ pub trait UiElement {
     fn to_enum(self) -> Element;
 }
 
+#[derive(Debug)]
 pub enum Element {
+    Root,
     Frame(Frame),
     TextLabel(TextLabel),
 }
@@ -33,6 +38,7 @@ pub enum Element {
 impl Element {
     pub fn position(&self) -> UiDim {
         match self {
+            Element::Root => UiDim::ZERO,
             Element::Frame(frame) => frame.position(),
             Element::TextLabel(text_label) => text_label.position(),
         }
@@ -40,6 +46,7 @@ impl Element {
 
     pub fn size(&self) -> UiDim {
         match self {
+            Element::Root => UiDim::FILLED,
             Element::Frame(frame) => frame.size(),
             Element::TextLabel(text_label) => text_label.size(),
         }
@@ -47,6 +54,7 @@ impl Element {
 
     pub fn anchor(&self) -> Vec2 {
         match self {
+            Element::Root => Vec2::ZERO,
             Element::Frame(frame) => frame.anchor(),
             Element::TextLabel(text_label) => text_label.anchor(),
         }
@@ -54,6 +62,7 @@ impl Element {
 
     pub fn visible(&self) -> bool {
         match self {
+            Element::Root => true,
             Element::Frame(frame) => frame.visible(),
             Element::TextLabel(text_label) => text_label.visible(),
         }
