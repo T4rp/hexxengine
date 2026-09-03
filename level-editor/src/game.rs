@@ -12,7 +12,7 @@ use hexxengine::{
     winit::{self, keyboard::KeyCode},
 };
 
-use crate::ui::{self, CookieClicker, LevelEditorUi};
+use crate::ui::{self, LevelEditorUi};
 
 const CAMERA_SPEED: f32 = 100.0;
 const CAMERA_SENSITIVITY: f32 = 0.38;
@@ -131,7 +131,7 @@ impl GameHandler for Game {
 
     fn update(&mut self, game_ctx: &mut GameContext, dt: f32) {
         self.update_camera(game_ctx, dt);
-        self.level_editor.update();
+        self.level_editor.update(game_ctx);
     }
 
     fn draw(&mut self, game_ctx: &mut GameContext) {
