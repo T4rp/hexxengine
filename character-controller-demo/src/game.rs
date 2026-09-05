@@ -108,23 +108,12 @@ impl Game {
         let mut to_remove = Vec::new();
 
         for (index, part) in self.world.parts.iter_mut() {
-            let rigid_body = game_ctx
-                .physics_context
-                .rigid_body_set
-                .get(part.rigid_body.rigid_body_handle)
-                .unwrap();
+            part.update(&mut game_ctx.physics_context, dt);
 
-            let pose = rigid_body.position();
-
-            if pose.translation.y < -500.0 {
+            if part.transform.position.y < -500.0 {
                 to_remove.push(index);
                 continue;
             }
-
-            let pos_interpolated = rigid_body.predict_position_using_velocity(dt);
-
-            part.transform.position = pos_interpolated.translation;
-            part.transform.orientation = pos_interpolated.rotation;
         }
 
         for index in to_remove {
@@ -364,15 +353,7 @@ impl GameHandler for Game {
         game_ctx.render_scene.meshes.clear();
 
         for (_i, part) in self.world.parts.iter() {
-            game_ctx.render_scene.meshes.push(MeshNode {
-                position: part.transform.position,
-                orientation: part.transform.orientation,
-                size: part.transform.size,
-                color: part.mesh.color,
-                opacity: part.mesh.opacity,
-                mesh_id: part.mesh.mesh_id,
-                material_id: part.mesh.material,
-            });
+            part.draw(&mut game_ctx.render_scene);
         }
 
         for (_i, character) in self.world.characters.iter() {

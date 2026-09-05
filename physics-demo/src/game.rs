@@ -1,7 +1,7 @@
 use hexxengine::{
     assets::{self, load_skybox},
     color::hsv_to_rgb,
-    entities::Camera,
+    entities::{Camera, Part},
     game::{
         CONE_MESH_ID, CUBE_MESH_ID, GameContext, GameHandler, NOTOSANS_FONT_HANDLE, SPHERE_MESH_ID,
     },
@@ -22,8 +22,6 @@ use rapier3d::prelude::RigidBodyType;
 use rand::{Rng, SeedableRng, rngs::SmallRng};
 use thunderdome::Arena;
 use winit::keyboard::KeyCode;
-
-use crate::part::{Part, PartShape};
 
 const CAMERA_SPEED: f32 = 100.0;
 
@@ -133,7 +131,7 @@ impl GameHandler for Game {
     fn update(&mut self, game_ctx: &mut GameContext, dt: f32) {
         self.move_camera(game_ctx, dt);
         self.handle_spawning_parts(game_ctx);
-        self.clean_parts(game_ctx);
+        self.update_parts(game_ctx, dt);
 
         let elapsed = (game_ctx.last_frame - game_ctx.start_time).as_secs_f32();
 
@@ -150,41 +148,7 @@ impl GameHandler for Game {
         game_ctx.render_scene.meshes.clear();
 
         for (_i, part) in self.parts.iter() {
-            match part.shape {
-                PartShape::Cube(size) => {
-                    game_ctx.render_scene.meshes.push(MeshNode {
-                        position: part.position,
-                        orientation: part.orientation,
-                        size,
-                        color: part.color,
-                        opacity: 1.0,
-                        mesh_id: CUBE_MESH_ID,
-                        material_id: BASE_MATERIAL_INDEX,
-                    });
-                }
-                PartShape::Sphere(radius) => {
-                    game_ctx.render_scene.meshes.push(MeshNode {
-                        position: part.position,
-                        orientation: part.orientation,
-                        size: Vec3::splat(radius * 2.0),
-                        color: part.color,
-                        opacity: 1.0,
-                        mesh_id: SPHERE_MESH_ID,
-                        material_id: BASE_MATERIAL_INDEX,
-                    });
-                }
-                PartShape::Cone { radius, height } => {
-                    game_ctx.render_scene.meshes.push(MeshNode {
-                        position: part.position,
-                        orientation: part.orientation,
-                        size: Vec3::new(radius * 2.0, height, radius * 2.0),
-                        color: part.color,
-                        opacity: 1.0,
-                        mesh_id: CONE_MESH_ID,
-                        material_id: BASE_MATERIAL_INDEX,
-                    });
-                }
-            }
+            part.draw(&mut game_ctx.render_scene);
         }
     }
 }
@@ -298,31 +262,24 @@ impl Game {
             let rigid_body = game_ctx
                 .physics_context
                 .rigid_body_set
-                .get_mut(part.rigid_body_handle)
+                .get_mut(part.rigid_body.rigid_body_handle)
                 .unwrap();
+
             rigid_body.set_linvel(camera_forward * 500.0, true);
+
             self.parts.insert(part);
         }
     }
 
-    fn clean_parts(&mut self, game_ctx: &mut GameContext) {
+    fn update_parts(&mut self, game_ctx: &mut GameContext, dt: f32) {
         let mut to_remove = Vec::new();
 
         for (index, cube) in self.parts.iter_mut() {
-            let rigid_body = game_ctx
-                .physics_context
-                .rigid_body_set
-                .get(cube.rigid_body_handle)
-                .unwrap();
+            cube.update(&mut game_ctx.physics_context, dt);
 
-            let pose = rigid_body.position();
-
-            if pose.translation.y < -500.0 {
+            if cube.transform.position.y < -500.0 {
                 to_remove.push(index);
             }
-
-            cube.position = pose.translation;
-            cube.orientation = pose.rotation;
         }
 
         for index in to_remove {
