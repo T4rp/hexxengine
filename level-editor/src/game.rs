@@ -138,15 +138,7 @@ impl GameHandler for Game {
         game_ctx.render_scene.meshes.clear();
 
         for (_i, part) in self.world.parts.iter() {
-            game_ctx.render_scene.meshes.push(MeshNode {
-                position: part.transform.position,
-                orientation: part.transform.orientation,
-                size: part.transform.size,
-                color: part.mesh.color,
-                opacity: part.mesh.opacity,
-                mesh_id: part.mesh.mesh_id,
-                material_id: part.mesh.material,
-            });
+            part.draw(&mut game_ctx.render_scene);
         }
     }
 }

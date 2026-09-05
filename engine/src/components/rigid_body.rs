@@ -29,6 +29,7 @@ impl RigidBodyComponent {
                 transform.size.y / 2.0,
                 transform.size.z / 2.0,
             ),
+            ShapeType::Cone => SharedShape::cone(transform.size.y / 2.0, transform.size.z / 2.0),
             _ => {
                 panic!("unsupported shape: {:?}", shape_type)
             }
