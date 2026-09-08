@@ -25,7 +25,7 @@ impl LevelEditorUi {
             size: UiDim::new(0.0, 0.0, 500.0, 100.0),
         });
 
-        ctx.root(dock);
+        ctx.parent(ctx.root, dock);
 
         let mut part_button_label = TextLabel::new(UNIFONT_FONT_HANDLE);
         part_button_label.set_vertical_justification(VerticalJustification::Center);
@@ -50,14 +50,8 @@ impl LevelEditorUi {
     pub fn update(&mut self, game_ctx: &mut GameContext) {
         let button = game_ctx.ui_tree.get_element(self.add_part_button).unwrap();
 
-        for event in button.events.as_ref().unwrap() {
-            if event.event_type != UiEventType::Pressed {
-                continue;
-            }
-
+        if button.pressed() {
             println!("Add part button pressed");
         }
-
-        game_ctx.ui_tree.clear_events(self.add_part_button);
     }
 }

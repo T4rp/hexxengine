@@ -38,12 +38,29 @@ pub struct UiNode {
     pub next_sibling: Option<Index>,
     pub prev_sibling: Option<Index>,
     pub element: Element,
-    pub events: Option<Vec<UiEvent>>,
+    pub events: Vec<UiEvent>,
+}
+
+impl UiNode {
+    pub fn pressed(&self) -> bool {
+        for event in self.events.iter() {
+            if event.event_type == UiEventType::Pressed {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    pub fn clear_events(&mut self) {
+        self.events.clear();
+    }
 }
 
 pub struct UiTree {
+    pub root: Index,
     elements: Arena<UiNode>,
-    root: Index,
+    listeners: Vec<Index>,
     is_dirty: bool,
 }
 
@@ -61,12 +78,13 @@ impl UiTree {
             next_sibling: None,
             prev_sibling: None,
             element: Element::Root,
-            events: None,
+            events: Vec::new(),
         });
 
         Self {
             elements,
             root,
+            listeners: Vec::new(),
             is_dirty: true,
         }
     }
@@ -149,18 +167,19 @@ impl UiTree {
     }
 
     pub fn enable_events(&mut self, elem_index: Index) {
-        let elem = self.elements.get_mut(elem_index).unwrap();
-
-        if elem.events.is_none() {
-            elem.events = Some(Vec::new())
+        if self.listeners.iter().find(|e| elem_index == **e).is_none() {
+            self.listeners.push(elem_index)
         }
     }
 
     pub fn disable_events(&mut self, elem_index: Index) {
-        let elem = self.elements.get_mut(elem_index).unwrap();
-
-        if elem.events.is_some() {
-            elem.events = None
+        if let Some(i) = self
+            .listeners
+            .iter()
+            .enumerate()
+            .find_map(|(i, e)| if elem_index == *e { Some(i) } else { None })
+        {
+            self.listeners.swap_remove(i);
         }
     }
 
@@ -175,7 +194,7 @@ impl UiTree {
             next_sibling: None,
             prev_sibling: None,
             element: elem.to_enum(),
-            events: None,
+            events: Vec::new(),
         };
 
         self.elements.insert(ui_node)
@@ -290,14 +309,14 @@ impl UiTree {
         self.elements.get_mut(index)
     }
 
-    pub fn clear_events(&mut self, elem_index: Index) {
-        let node = self.elements.get_mut(elem_index).unwrap();
-
-        if let Some(events) = node.events.as_mut() {
-            events.clear();
+    pub fn clear_events(&mut self) {
+        for listener in self.listeners.iter_mut() {
+            let node = self.elements.get_mut(*listener).unwrap();
+            node.clear_events();
         }
     }
 
+    // PERF: We may want to use a spacial DS for this for faster queries
     pub fn handle_input(&mut self, input_handler: &InputHandler) {
         let Some((button, state, position)) =
             input_handler
@@ -319,33 +338,19 @@ impl UiTree {
             return;
         }
 
-        let mut elements = vec![self.root];
+        for listening_node in self.listeners.iter() {
+            let node = self.elements.get_mut(*listening_node).unwrap();
 
-        while let Some(elem_index) = elements.pop() {
-            let node = self.elements.get(elem_index).unwrap();
-
+            // BUG: We dont check whether a decendant node is visible or not
             if !node.element.visible() {
                 continue;
             }
-
-            let mut current_node = node.first_child;
-
-            while let Some(index) = current_node {
-                elements.push(index);
-                current_node = self.elements.get(index).and_then(|node| node.next_sibling)
-            }
-
-            let node = self.elements.get_mut(elem_index).unwrap();
-
-            let Some(events) = node.events.as_mut() else {
-                continue;
-            };
 
             let top_left = node.world_position;
             let bottom_right = node.world_position + node.world_size;
 
             if position.cmpge(top_left).all() && position.cmple(bottom_right).all() {
-                events.push(UiEvent {
+                node.events.push(UiEvent {
                     input_event: None,
                     event_type: UiEventType::Pressed,
                 })
@@ -528,7 +533,6 @@ mod tests {
 
         let node = ui_tree.get_element(frame_idx).unwrap();
 
-        assert_eq!(node.events.is_some(), true);
-        assert!(node.events.as_ref().unwrap().len() >= 1);
+        assert!(node.events.len() >= 1);
     }
 }

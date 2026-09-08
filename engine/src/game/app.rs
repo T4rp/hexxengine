@@ -48,12 +48,14 @@ impl<T: GameHandler> InitializedGameApp<T> {
             .ui_tree
             .set_root_size(Vec2::new(inner_size.width as f32, inner_size.height as f32));
 
+        self.game_ctx.ui_tree.clear_events();
+
         self.game_ctx
             .ui_tree
             .handle_input(&self.game_ctx.input_state);
 
         // PERF: consider returning the vector to preserve allocation
-        let mut input_events = self.game_ctx.input_state.take_input_events();
+        let input_events = self.game_ctx.input_state.take_input_events();
         for input in input_events {
             self.game_handler.on_input(&mut self.game_ctx, input);
         }
