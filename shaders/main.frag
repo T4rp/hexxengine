@@ -2,6 +2,7 @@
 
 #include "common.glsl"
 
+#ifndef SOLID
 layout (location = 0) in vec3 inColor;
 layout (location = 1) in vec2 inUv;
 layout (location = 2) in vec3 inNorm;
@@ -10,9 +11,16 @@ layout (location = 4) in vec3 inScale;
 layout (location = 5) in vec3 inObjNorm;
 layout (location = 6) in vec4 inPosLightSpace;
 layout (location = 7) in float inOpacity;
+#else // ifndef SOLID
+layout (location = 0) in vec3 inColor;
+layout (location = 1) in vec3 inNorm;
+layout (location = 2) in vec3 inPos;
+layout (location = 3) in float inOpacity;
+#endif // ifndef SOLID
 
 layout (location = 0) out vec4 outFragColor;
 
+#ifndef SOLID
 float getShadow(vec4 shadowCoord, vec2 off) {
 	float shadow = 1.0;
 	vec4 shadowCoordNdc = shadowCoord / shadowCoord.w;
@@ -51,7 +59,9 @@ float shadowFilterPcf(vec4 shadowCoord) {
 
 	return shadowFactor / count;
 }
+#endif // ifndef SOLID
 
+#ifndef SOLID
 void main() {
 	vec2 uv = inUv;
 	int materialFlags = materialUbo.flags;
@@ -83,4 +93,8 @@ void main() {
 
 	outFragColor = vec4(diffuseColor * ambientColor + (1.0 - shadow) * (diffuseColor * diffuse * lightColor * lightPower + specular * lightColor * lightPower), inOpacity);
 }
-
+#else
+void main() {
+	outFragColor = vec4(inColor, inOpacity);
+}
+#endif

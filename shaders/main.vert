@@ -11,6 +11,7 @@ layout (location = 7) in mat3 inModelNormal;
 layout (location = 10) in vec3 inColor;
 layout (location = 11) in float inOpacity;
 
+#ifndef SOLID
 layout (location = 0) out vec3 outColor;
 layout (location = 1) out vec2 outUv;
 layout (location = 2) out vec3 outNorm;
@@ -19,6 +20,12 @@ layout (location = 4) out vec3 outScale;
 layout (location = 5) out vec3 outObjNorm;
 layout (location = 6) out vec4 outPosLightSpace;
 layout (location = 7) out float outOpacity;
+#else
+layout (location = 0) out vec3 outColor;
+layout (location = 1) out vec3 outNorm;
+layout (location = 2) out vec3 outPos;
+layout (location = 3) out float outOpacity;
+#endif
 
 const mat4 bias = mat4(
 	0.5, 0.0, 0.0, 0.0,
@@ -35,12 +42,14 @@ void main() {
 
 	gl_Position = cameraUbo.proj * cameraUbo.view * inModel * vec4(inPos, 1.0f);
 	outColor = inColor;
-	outUv = inUv;
 	outNorm = inModelNormal * inNorm;
 	outPos = vec3(inModel * vec4(inPos, 1.0));
-	outScale = scale;
+	outOpacity = inOpacity;
+#ifndef SOLID
+	outUv = inUv;
 	outObjNorm = inNorm;
 	outPosLightSpace = bias * cameraUbo.lightProj * cameraUbo.lightView * inModel * vec4(inPos, 1.0f);
-	outOpacity = inOpacity;
+	outScale = scale;
+#endif // SOLID
 }
 

@@ -108,6 +108,32 @@ impl Pipelines {
                 .depth_compare_op(vk::CompareOp::GREATER),
         );
 
+        let gizmo_vert_shader_code = fs::read(assets::get_asset_path("gizmo.vert.spv")).unwrap();
+        let gizmo_frag_shader_code = fs::read(assets::get_asset_path("gizmo.frag.spv")).unwrap();
+        let gizmo_vert_shader = vkutils::create_shader_module(device, &gizmo_vert_shader_code)?;
+        let gizmo_frag_shader = vkutils::create_shader_module(device, &gizmo_frag_shader_code)?;
+
+        let gizmo_shader_stages = [
+            vk::PipelineShaderStageCreateInfo::default()
+                .stage(vk::ShaderStageFlags::VERTEX)
+                .module(gizmo_vert_shader)
+                .name(c"main"),
+            vk::PipelineShaderStageCreateInfo::default()
+                .stage(vk::ShaderStageFlags::FRAGMENT)
+                .module(gizmo_frag_shader)
+                .name(c"main"),
+        ];
+
+        let gizmo_pipeline_builder = opaque_pipeline_builder
+            .clone()
+            .shader_stages(&scene_shader_stages)
+            .depth_stencil_state(
+                vk::PipelineDepthStencilStateCreateInfo::default()
+                    .depth_test_enable(false)
+                    .depth_write_enable(false)
+                    .depth_compare_op(vk::CompareOp::GREATER),
+            );
+
         let shadow_vert_shader_code = fs::read(assets::get_asset_path("shadow.vert.spv")).unwrap();
         let shadow_frag_shader_code = fs::read(assets::get_asset_path("shadow.frag.spv")).unwrap();
 

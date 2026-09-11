@@ -3,6 +3,9 @@
 glslc shaders/main.vert -o assets/main.vert.spv
 glslc shaders/main.frag -o assets/main.frag.spv
 
+glslc shaders/main.vert -DSOLID -o assets/gizmo.vert.spv
+glslc shaders/main.frag -DSOLID -o assets/gizmo.frag.spv
+
 glslc shaders/shadow.vert -o assets/shadow.vert.spv
 glslc shaders/shadow.frag -o assets/shadow.frag.spv
 
