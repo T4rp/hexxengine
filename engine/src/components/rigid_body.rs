@@ -21,7 +21,7 @@ impl RigidBodyComponent {
     ) -> RigidBodyComponent {
         let shape = match shape_type {
             ShapeType::Ball => {
-                let radius = transform.size.length() / 2.0;
+                let radius = transform.size.z / 2.0;
                 SharedShape::ball(radius)
             }
             ShapeType::Cuboid => SharedShape::cuboid(

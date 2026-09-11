@@ -64,7 +64,7 @@ impl Part {
     ) -> Self {
         Self::new(
             phys_ctx,
-            TransformComponent::new(position, orientation, Vec3::splat(radius)),
+            TransformComponent::new(position, orientation, Vec3::splat(radius * 2.0)),
             MeshComponent {
                 color,
                 mesh_id: SPHERE_MESH_ID,
