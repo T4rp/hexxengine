@@ -1,12 +1,11 @@
 use hexxengine::{
     assets::{self, load_skybox},
     components::{MeshComponent, TransformComponent},
-    entities::Part,
+    entities::{Part, SelectionBox},
     game::{CUBE_MESH_ID, GameContext, GameHandler, NOTOSANS_FONT_HANDLE},
     glam::{Quat, Vec3, vec3},
     rapier3d::prelude::{RigidBodyType, ShapeType},
-    renderer::render_scene::MeshNode,
-    renderer::renderer::BASE_MATERIAL_INDEX,
+    renderer::{render_scene::MeshNode, renderer::BASE_MATERIAL_INDEX},
     text::FontHandle,
     thunderdome::Arena,
     winit::{self, keyboard::KeyCode},
@@ -20,12 +19,14 @@ const STEP_HZ: f32 = 1.0 / 60.0;
 
 pub struct World {
     parts: Arena<Part>,
+    selections: Arena<SelectionBox>,
 }
 
 impl World {
     fn new() -> Self {
         Self {
             parts: Arena::new(),
+            selections: Arena::new(),
         }
     }
 }
@@ -119,6 +120,27 @@ impl GameHandler for Game {
 
         world.parts.insert(baseplate);
 
+        let random_part = Part::new(
+            &mut game_ctx.physics_context,
+            TransformComponent {
+                position: vec3(0.0, 10.0, 0.0),
+                orientation: Quat::IDENTITY,
+                size: vec3(20.0, 4.0, 20.0),
+            },
+            MeshComponent {
+                color: vec3(0.2, 0.2, 0.2),
+                mesh_id: CUBE_MESH_ID,
+                material: BASE_MATERIAL_INDEX,
+                opacity: 1.0,
+            },
+            RigidBodyType::Fixed,
+            ShapeType::Cuboid,
+        );
+
+        let random_part = world.parts.insert(random_part);
+
+        world.selections.insert(SelectionBox::new(random_part));
+
         // ui::init(&mut game_ctx.ui_tree, NOTOSANS_FONT_HANDLE);
         let level_editor = LevelEditorUi::new(&mut game_ctx.ui_tree);
 
@@ -139,6 +161,14 @@ impl GameHandler for Game {
 
         for (_i, part) in self.world.parts.iter() {
             part.draw(&mut game_ctx.render_scene);
+        }
+
+        for (_i, selection_box) in self.world.selections.iter() {
+            let selected_part = self.world.parts.get(selection_box.selected);
+
+            if let Some(selected_part) = selected_part {
+                selection_box.draw(&mut game_ctx.render_scene, &selected_part.transform);
+            }
         }
     }
 }
