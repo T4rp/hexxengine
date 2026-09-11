@@ -5,22 +5,77 @@ use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
 use thunderdome::{Arena, Index};
 use vk_mem::Alloc;
 
-use crate::{
-    renderer::render_scene::RenderScene,
+use crate::renderer::{
+    render_scene::{MeshNode, RenderScene},
     renderer::{
-        renderer::{
-            BASE_MATERIAL_INDEX, FALLBACK_TEXTURE_INDEX, MaterialDescriptor, MeshBuffer,
-            TextureDescriptors, WHITE_TEXTURE_INDEX,
-        },
-        scene3d::{
-            CameraUniform3d, InstanceVertex, MAX_INSTANCE_COUNT, SHADOW_MAP_RESOLUTION,
-            Scene3dUniform,
-        },
-        textures::Texture,
-        vk_deletion_queue::{self, VulkanDeletionQueue},
-        vkutils,
+        BASE_MATERIAL_INDEX, FALLBACK_TEXTURE_INDEX, MaterialDescriptor, MeshBuffer,
+        TextureDescriptors, WHITE_TEXTURE_INDEX,
     },
+    scene3d::{
+        CameraUniform3d, InstanceVertex, MAX_INSTANCE_COUNT, SHADOW_MAP_RESOLUTION, Scene3dUniform,
+    },
+    textures::Texture,
+    vk_deletion_queue::{self, VulkanDeletionQueue},
+    vkutils,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+
+struct BatchKey {
+    pipeline_id: u32,
+    is_opaque: bool,
+    depth: f32,
+    material_id: Index,
+    mesh_id: Index,
+}
+
+impl Eq for BatchKey {}
+
+impl Ord for BatchKey {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap_or(std::cmp::Ordering::Equal)
+    }
+}
+
+impl BatchKey {
+    fn new(
+        pipeline_id: u32,
+        is_opaque: bool,
+        depth: f32,
+        material_id: Index,
+        mesh_id: Index,
+    ) -> Self {
+        Self {
+            pipeline_id,
+            is_opaque,
+            depth,
+            material_id,
+            mesh_id,
+        }
+    }
+
+    fn from_mesh(pipeline_id: u32, proj_view: Mat4, mesh: &MeshNode) -> Self {
+        let is_opaque = mesh.opacity == 1.0;
+        let depth = if is_opaque {
+            0.0
+        } else {
+            let model =
+                proj_view * Vec4::new(mesh.position.x, mesh.position.y, mesh.position.z, 1.0);
+            let depth = model.z / model.w;
+            depth
+        };
+
+        Self::new(
+            pipeline_id,
+            is_opaque,
+            depth,
+            mesh.material_id,
+            mesh.mesh_id,
+        )
+    }
+}
+
+//(!is_opaque, depth, m.material_id, m.mesh_id)
 
 #[derive(Debug)]
 pub struct MeshBatch {
@@ -324,6 +379,8 @@ impl Resources {
 
             (!is_opaque, depth, m.material_id, m.mesh_id)
         });
+
+        meshes.sort_unstable_by_key(|m| BatchKey::from_mesh(0, proj_view, &m));
 
         let mesh_count = meshes.len().min(MAX_INSTANCE_COUNT);
 
@@ -830,5 +887,40 @@ impl Resources {
         }
 
         Ok(depth_image)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use thunderdome::Index;
+
+    use crate::renderer::scene3d::resources::BatchKey;
+
+    #[test]
+    fn batch_keys_should_compare() {
+        fn create_key(pipeline_id: u32, is_opaque: bool, depth: f32) -> BatchKey {
+            BatchKey::new(
+                pipeline_id,
+                is_opaque,
+                depth,
+                Index::from_bits(1 << 32 | 0).unwrap(),
+                Index::from_bits(1 << 32 | 0).unwrap(),
+            )
+        }
+
+        assert!(
+            create_key(0, true, 0.01).partial_cmp(&create_key(0, true, 0.01))
+                == Some(std::cmp::Ordering::Equal)
+        );
+
+        assert!(
+            create_key(0, true, 0.01).partial_cmp(&create_key(0, false, 0.01))
+                == Some(std::cmp::Ordering::Greater)
+        );
+
+        assert!(
+            create_key(0, false, 0.01).partial_cmp(&create_key(0, false, 0.1))
+                == Some(std::cmp::Ordering::Less)
+        );
     }
 }
