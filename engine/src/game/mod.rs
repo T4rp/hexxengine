@@ -11,6 +11,7 @@ use crate::text::FontHandle;
 pub const CUBE_MESH_ID: Index = Index::from_bits(1 << 32 | 0).unwrap();
 pub const SPHERE_MESH_ID: Index = Index::from_bits(1 << 32 | 1).unwrap();
 pub const CONE_MESH_ID: Index = Index::from_bits(1 << 32 | 2).unwrap();
+pub const CUBE_FRAME_MESH_ID: Index = Index::from_bits(1 << 32 | 3).unwrap();
 
 pub const UNIFONT_FONT_ID: Index = Index::from_bits(1 << 32 | 0).unwrap();
 pub const NOTOSANS_FONT_ID: Index = Index::from_bits(1 << 32 | 1).unwrap();

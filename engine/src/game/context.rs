@@ -10,7 +10,10 @@ use winit::window::Window;
 use crate::{
     assets::{self, get_first_gltf_mesh},
     entities::Camera,
-    game::{CONE_MESH_ID, CUBE_MESH_ID, NOTOSANS_FONT_ID, SPHERE_MESH_ID, UNIFONT_FONT_ID},
+    game::{
+        CONE_MESH_ID, CUBE_FRAME_MESH_ID, CUBE_MESH_ID, NOTOSANS_FONT_ID, SPHERE_MESH_ID,
+        UNIFONT_FONT_ID,
+    },
     input::InputHandler,
     physics::context::PhysicsContext,
     renderer::{
@@ -61,10 +64,16 @@ impl GameContext {
         let cube_mesh = get_first_gltf_mesh(assets::get_asset_path("cube.gltf"));
         let sphere_mesh = get_first_gltf_mesh(assets::get_asset_path("sphere.gltf"));
         let cone_mesh = get_first_gltf_mesh(assets::get_asset_path("cone.gltf"));
+        let cube_frame_mesh = get_first_gltf_mesh(assets::get_asset_path("cube_bound.gltf"));
 
         vk_ctx.load_mesh_with_index(CUBE_MESH_ID, &cube_mesh.vertices, &cube_mesh.indices);
         vk_ctx.load_mesh_with_index(SPHERE_MESH_ID, &sphere_mesh.vertices, &sphere_mesh.indices);
         vk_ctx.load_mesh_with_index(CONE_MESH_ID, &cone_mesh.vertices, &cone_mesh.indices);
+        vk_ctx.load_mesh_with_index(
+            CUBE_FRAME_MESH_ID,
+            &cube_frame_mesh.vertices,
+            &cube_frame_mesh.indices,
+        );
 
         let mut render_scene = RenderScene::new(
             Camera::new(

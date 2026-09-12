@@ -3,7 +3,7 @@ use thunderdome::Index;
 
 use crate::{
     components::TransformComponent,
-    game::CUBE_MESH_ID,
+    game::{CUBE_FRAME_MESH_ID, CUBE_MESH_ID},
     renderer::{
         render_scene::{MeshNode, RenderScene},
         renderer::BASE_MATERIAL_INDEX,
@@ -20,8 +20,8 @@ impl SelectionBox {
     pub fn new(index: Index) -> Self {
         SelectionBox {
             selected: index,
-            color: Vec3::new(0.0, 0.0, 1.0),
-            opacity: 0.4,
+            color: Vec3::new(0.0, 0.8, 1.0),
+            opacity: 0.9,
         }
     }
 
@@ -32,7 +32,7 @@ impl SelectionBox {
             size: transform.size + Vec3::splat(0.5),
             color: self.color,
             opacity: self.opacity,
-            mesh_id: CUBE_MESH_ID,
+            mesh_id: CUBE_FRAME_MESH_ID,
             material_id: BASE_MATERIAL_INDEX,
             is_gizmo: true,
         });
