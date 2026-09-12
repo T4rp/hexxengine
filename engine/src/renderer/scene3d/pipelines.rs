@@ -127,7 +127,7 @@ impl Pipelines {
 
         let gizmo_pipeline_builder = opaque_pipeline_builder
             .clone()
-            .shader_stages(&scene_shader_stages)
+            .shader_stages(&gizmo_shader_stages)
             .depth_stencil_state(
                 vk::PipelineDepthStencilStateCreateInfo::default()
                     .depth_test_enable(true)

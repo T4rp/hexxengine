@@ -21,7 +21,7 @@ impl SelectionBox {
         SelectionBox {
             selected: index,
             color: Vec3::new(0.0, 0.8, 1.0),
-            opacity: 0.9,
+            opacity: 0.5,
         }
     }
 
