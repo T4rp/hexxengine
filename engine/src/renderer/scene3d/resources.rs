@@ -402,9 +402,6 @@ impl Resources {
 
         meshes.sort_unstable_by_key(|m| Reverse(SortKey::from_mesh(0, proj_view, &m)));
 
-        println!("meshes:");
-        println!("{:#?}", meshes);
-
         let mesh_count = meshes.len().min(MAX_INSTANCE_COUNT);
 
         let mut instances: Vec<InstanceVertex> = Vec::new();
