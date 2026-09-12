@@ -65,6 +65,8 @@ impl BatchKey {
             depth
         };
 
+        let pipeline_id = if mesh.is_gizmo { 1 } else { 0 };
+
         Self::new(
             pipeline_id,
             is_opaque,
@@ -79,6 +81,7 @@ impl BatchKey {
 
 #[derive(Debug)]
 pub struct MeshBatch {
+    pub pipeline_id: u32,
     pub mesh_id: Index,
     pub material_id: Index,
     pub instance_offset: u64,
@@ -366,20 +369,6 @@ impl Resources {
         let (proj, view) = scene.camera.calc_perspective_matrices(aspect_ratio);
         let proj_view = proj * view;
 
-        meshes.sort_unstable_by_key(|m| {
-            let opacity = m.opacity;
-            let is_opaque = opacity == 1.0;
-            let depth = if is_opaque {
-                0
-            } else {
-                let model = proj_view * Vec4::new(m.position.x, m.position.y, m.position.z, 1.0);
-                let depth = model.z / model.w;
-                (depth * 100_000_000_000.0).round() as u32
-            };
-
-            (!is_opaque, depth, m.material_id, m.mesh_id)
-        });
-
         meshes.sort_unstable_by_key(|m| BatchKey::from_mesh(0, proj_view, &m));
 
         let mesh_count = meshes.len().min(MAX_INSTANCE_COUNT);
@@ -404,7 +393,7 @@ impl Resources {
                 model.w
             };
 
-            let key = (meshes[start].material_id, meshes[start].mesh_id, depth);
+            let key = BatchKey::from_mesh(0, proj_view, &meshes[start]);
 
             {
                 let mesh = &meshes[start];
@@ -420,21 +409,7 @@ impl Resources {
             let mut end = start + 1;
 
             while end < mesh_count {
-                let is_opaque = meshes[end].opacity == 1.0;
-                let depth = if is_opaque {
-                    0.0
-                } else {
-                    let model = proj_view
-                        * Vec4::new(
-                            meshes[end].position.x,
-                            meshes[end].position.y,
-                            meshes[end].position.z,
-                            1.0,
-                        );
-                    model.w
-                };
-
-                let new_key = (meshes[end].material_id, meshes[end].mesh_id, depth);
+                let new_key = BatchKey::from_mesh(0, proj_view, &meshes[end]);
 
                 if new_key != key {
                     break;
@@ -455,11 +430,12 @@ impl Resources {
             }
 
             batch_infos.push(MeshBatch {
-                mesh_id: key.1,
-                material_id: key.0,
+                mesh_id: key.mesh_id,
+                material_id: key.material_id,
                 instance_offset: start as u64 * mem::size_of::<InstanceVertex>() as u64,
                 instance_count: (end - start) as u32,
                 is_opaque,
+                pipeline_id: key.pipeline_id,
             });
 
             start = end;
