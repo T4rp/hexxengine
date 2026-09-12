@@ -1284,6 +1284,7 @@ impl VulkanContext {
                 command_buffer,
                 self.pipeline_objects.main_graphics_pipeline,
                 self.pipeline_objects.main_transparent_graphics_pipeline,
+                self.pipeline_objects.gizmo_graphics_pipeline,
                 self.pipeline_layout_3d,
                 &self.mesh_buffers,
                 &self.textures,

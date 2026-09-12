@@ -34,6 +34,7 @@ impl SelectionBox {
             opacity: self.opacity,
             mesh_id: CUBE_MESH_ID,
             material_id: BASE_MATERIAL_INDEX,
+            is_gizmo: true,
         });
     }
 }

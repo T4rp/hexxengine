@@ -8,6 +8,7 @@ pub struct RendererPipelines {
     pub main_graphics_pipeline: vk::Pipeline,
     pub shadow_graphics_pipeline: vk::Pipeline,
     pub main_transparent_graphics_pipeline: vk::Pipeline,
+    pub gizmo_graphics_pipeline: vk::Pipeline,
     pub skybox_graphics_pipeline: vk::Pipeline,
     pub text_2d_graphics_pipeline: vk::Pipeline,
 }
@@ -27,6 +28,8 @@ impl RendererPipelines {
 
         let main_graphics_pipeline = pipelines_3d.opaque_pipeline;
         let main_transparent_graphics_pipeline = pipelines_3d.transparent_pipeline;
+        let gizmo_graphics_pipeline = pipelines_3d.gizmo_pipeline;
+
         let shadow_graphics_pipeline = pipelines_3d.shadow_pipeline;
         let skybox_graphics_pipeline = pipelines_3d.skybox_pipeline;
 
@@ -36,6 +39,7 @@ impl RendererPipelines {
         Self {
             main_2d_graphics_pipeline,
             text_2d_graphics_pipeline,
+            gizmo_graphics_pipeline,
 
             main_graphics_pipeline,
             shadow_graphics_pipeline,

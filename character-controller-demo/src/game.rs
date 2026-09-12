@@ -365,6 +365,7 @@ impl GameHandler for Game {
                 opacity: character.mesh.opacity,
                 mesh_id: character.mesh.mesh_id,
                 material_id: character.mesh.material,
+                ..Default::default()
             });
         }
     }

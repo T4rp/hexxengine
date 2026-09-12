@@ -3,7 +3,8 @@ use thunderdome::Index;
 
 use crate::{
     entities::Camera,
-    renderer::{scene2d::Vertex2d, scene3d::MeshVertex},
+    game::CUBE_MESH_ID,
+    renderer::{renderer::BASE_MATERIAL_INDEX, scene2d::Vertex2d, scene3d::MeshVertex},
     text::{FontHandle, GlyphPositions, TextBox},
 };
 
@@ -15,7 +16,7 @@ pub struct Lighting {
     pub skybox_id: Index,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct MeshNode {
     pub position: Vec3,
     pub orientation: Quat,
@@ -24,6 +25,22 @@ pub struct MeshNode {
     pub opacity: f32,
     pub mesh_id: Index,
     pub material_id: Index,
+    pub is_gizmo: bool,
+}
+
+impl Default for MeshNode {
+    fn default() -> Self {
+        Self {
+            position: Vec3::ZERO,
+            orientation: Quat::IDENTITY,
+            size: Vec3::ONE,
+            color: Vec3::ONE,
+            opacity: 1.0,
+            mesh_id: CUBE_MESH_ID,
+            material_id: BASE_MATERIAL_INDEX,
+            is_gizmo: false,
+        }
+    }
 }
 
 pub struct UiFrame {

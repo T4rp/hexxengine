@@ -122,6 +122,7 @@ impl Part {
             opacity: self.mesh.opacity,
             mesh_id: self.mesh.mesh_id,
             material_id: self.mesh.material,
+            ..Default::default()
         });
     }
 

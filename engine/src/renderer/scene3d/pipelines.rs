@@ -16,6 +16,7 @@ pub struct Pipelines {
     pub transparent_pipeline: vk::Pipeline,
     pub shadow_pipeline: vk::Pipeline,
     pub skybox_pipeline: vk::Pipeline,
+    pub gizmo_pipeline: vk::Pipeline,
 }
 
 impl Pipelines {
@@ -103,7 +104,7 @@ impl Pipelines {
 
         let transparent_pipeline_builder = opaque_pipeline_builder.clone().depth_stencil_state(
             vk::PipelineDepthStencilStateCreateInfo::default()
-                .depth_test_enable(false)
+                .depth_test_enable(true)
                 .depth_write_enable(false)
                 .depth_compare_op(vk::CompareOp::GREATER),
         );
@@ -129,7 +130,7 @@ impl Pipelines {
             .shader_stages(&scene_shader_stages)
             .depth_stencil_state(
                 vk::PipelineDepthStencilStateCreateInfo::default()
-                    .depth_test_enable(false)
+                    .depth_test_enable(true)
                     .depth_write_enable(false)
                     .depth_compare_op(vk::CompareOp::GREATER),
             );
@@ -220,6 +221,7 @@ impl Pipelines {
         Ok(Self {
             opaque_pipeline: opaque_pipeline_builder.build(device).unwrap(),
             transparent_pipeline: transparent_pipeline_builder.build(device).unwrap(),
+            gizmo_pipeline: gizmo_pipeline_builder.build(device).unwrap(),
             shadow_pipeline: shadow_pipeline_builder.build(device).unwrap(),
             skybox_pipeline: skybox_pipeline_builder.build(device).unwrap(),
         })

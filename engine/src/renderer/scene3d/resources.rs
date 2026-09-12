@@ -1,4 +1,4 @@
-use std::mem;
+use std::{cmp::Reverse, mem};
 
 use ash::{prelude::VkResult, vk};
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
@@ -19,25 +19,52 @@ use crate::renderer::{
     vkutils,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+const NORMAL_PIPELINE: u32 = 1;
+const GIZMO_PIPELINE: u32 = 0;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct BatchKey {
-    pipeline_id: u32,
     is_opaque: bool,
-    depth: f32,
+    pipeline_id: u32,
     material_id: Index,
     mesh_id: Index,
 }
 
-impl Eq for BatchKey {}
+impl BatchKey {
+    fn from_mesh(mesh: &MeshNode) -> Self {
+        let is_opaque = mesh.opacity == 1.0 && mesh.is_gizmo == false;
+        let pipeline_id = if mesh.is_gizmo {
+            GIZMO_PIPELINE
+        } else {
+            NORMAL_PIPELINE
+        };
+        Self {
+            is_opaque: is_opaque,
+            pipeline_id: pipeline_id,
+            material_id: mesh.material_id,
+            mesh_id: mesh.mesh_id,
+        }
+    }
+}
 
-impl Ord for BatchKey {
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+struct SortKey {
+    is_opaque: bool,
+    depth: f32,
+    pipeline_id: u32,
+    material_id: Index,
+    mesh_id: Index,
+}
+
+impl Eq for SortKey {}
+
+impl Ord for SortKey {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.partial_cmp(other).unwrap_or(std::cmp::Ordering::Equal)
     }
 }
 
-impl BatchKey {
+impl SortKey {
     fn new(
         pipeline_id: u32,
         is_opaque: bool,
@@ -55,17 +82,21 @@ impl BatchKey {
     }
 
     fn from_mesh(pipeline_id: u32, proj_view: Mat4, mesh: &MeshNode) -> Self {
-        let is_opaque = mesh.opacity == 1.0;
+        let is_opaque = mesh.opacity == 1.0 && mesh.is_gizmo == false;
         let depth = if is_opaque {
             0.0
         } else {
             let model =
                 proj_view * Vec4::new(mesh.position.x, mesh.position.y, mesh.position.z, 1.0);
-            let depth = model.z / model.w;
-            depth
+            let depth = model.z;
+            model.w - depth
         };
 
-        let pipeline_id = if mesh.is_gizmo { 1 } else { 0 };
+        let pipeline_id = if mesh.is_gizmo {
+            GIZMO_PIPELINE
+        } else {
+            NORMAL_PIPELINE
+        };
 
         Self::new(
             pipeline_id,
@@ -369,7 +400,10 @@ impl Resources {
         let (proj, view) = scene.camera.calc_perspective_matrices(aspect_ratio);
         let proj_view = proj * view;
 
-        meshes.sort_unstable_by_key(|m| BatchKey::from_mesh(0, proj_view, &m));
+        meshes.sort_unstable_by_key(|m| Reverse(SortKey::from_mesh(0, proj_view, &m)));
+
+        println!("meshes:");
+        println!("{:#?}", meshes);
 
         let mesh_count = meshes.len().min(MAX_INSTANCE_COUNT);
 
@@ -379,21 +413,7 @@ impl Resources {
         let mut start = 0;
 
         while start < mesh_count {
-            let is_opaque = meshes[start].opacity == 1.0;
-            let depth = if is_opaque {
-                0.0
-            } else {
-                let model = proj_view
-                    * Vec4::new(
-                        meshes[start].position.x,
-                        meshes[start].position.y,
-                        meshes[start].position.z,
-                        1.0,
-                    );
-                model.w
-            };
-
-            let key = BatchKey::from_mesh(0, proj_view, &meshes[start]);
+            let key = BatchKey::from_mesh(&meshes[start]);
 
             {
                 let mesh = &meshes[start];
@@ -409,7 +429,7 @@ impl Resources {
             let mut end = start + 1;
 
             while end < mesh_count {
-                let new_key = BatchKey::from_mesh(0, proj_view, &meshes[end]);
+                let new_key = BatchKey::from_mesh(&meshes[end]);
 
                 if new_key != key {
                     break;
@@ -434,7 +454,7 @@ impl Resources {
                 material_id: key.material_id,
                 instance_offset: start as u64 * mem::size_of::<InstanceVertex>() as u64,
                 instance_count: (end - start) as u32,
-                is_opaque,
+                is_opaque: key.is_opaque,
                 pipeline_id: key.pipeline_id,
             });
 
@@ -490,6 +510,10 @@ impl Resources {
                 // opaque objects are already sorted to be before transparent objects
                 if !batch.is_opaque {
                     break;
+                }
+
+                if batch.pipeline_id == GIZMO_PIPELINE {
+                    continue; // skip the gizmo pipeline
                 }
 
                 let mesh_buffer = &meshes.get(batch.mesh_id).unwrap();
@@ -573,6 +597,7 @@ impl Resources {
         command_buffer: vk::CommandBuffer,
         opaque_scene_pipeline: vk::Pipeline,
         transparent_scene_pipeline: vk::Pipeline,
+        gizmo_pipeline: vk::Pipeline,
         pipeline_layout: vk::PipelineLayout,
         meshes: &Arena<MeshBuffer>,
         textures: &Arena<TextureDescriptors>,
@@ -582,15 +607,19 @@ impl Resources {
         unsafe {
             let mut last_material = None;
             let mut is_opaque = None;
+            let mut is_gizmo = None;
 
             for batch in batch_info.iter() {
-                if is_opaque != Some(batch.is_opaque) {
+                if is_opaque != Some(batch.is_opaque)
+                    || is_gizmo != Some(batch.pipeline_id == GIZMO_PIPELINE)
+                {
                     is_opaque = Some(batch.is_opaque);
+                    is_gizmo = Some(batch.pipeline_id == GIZMO_PIPELINE);
 
-                    let pipeline = if batch.is_opaque {
-                        opaque_scene_pipeline
-                    } else {
-                        transparent_scene_pipeline
+                    let pipeline = match (batch.is_opaque, batch.pipeline_id == GIZMO_PIPELINE) {
+                        (true, false) => opaque_scene_pipeline,
+                        (false, false) => transparent_scene_pipeline,
+                        (_, true) => gizmo_pipeline,
                     };
 
                     device.cmd_bind_pipeline(
@@ -870,12 +899,12 @@ impl Resources {
 mod tests {
     use thunderdome::Index;
 
-    use crate::renderer::scene3d::resources::BatchKey;
+    use crate::renderer::scene3d::resources::SortKey;
 
     #[test]
     fn batch_keys_should_compare() {
-        fn create_key(pipeline_id: u32, is_opaque: bool, depth: f32) -> BatchKey {
-            BatchKey::new(
+        fn create_key(pipeline_id: u32, is_opaque: bool, depth: f32) -> SortKey {
+            SortKey::new(
                 pipeline_id,
                 is_opaque,
                 depth,
