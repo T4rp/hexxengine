@@ -108,8 +108,6 @@ impl SortKey {
     }
 }
 
-//(!is_opaque, depth, m.material_id, m.mesh_id)
-
 #[derive(Debug)]
 pub struct MeshBatch {
     pub pipeline_id: u32,
