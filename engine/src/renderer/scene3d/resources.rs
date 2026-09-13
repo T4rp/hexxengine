@@ -601,20 +601,20 @@ impl Resources {
     ) {
         unsafe {
             let mut last_material = None;
+            let mut last_pipeline_id = None;
             let mut is_opaque = None;
-            let mut is_gizmo = None;
 
             for batch in batch_info.iter() {
-                if is_opaque != Some(batch.is_opaque)
-                    || is_gizmo != Some(batch.pipeline_id == GIZMO_PIPELINE)
+                if is_opaque != Some(batch.is_opaque) || last_pipeline_id != Some(batch.pipeline_id)
                 {
                     is_opaque = Some(batch.is_opaque);
-                    is_gizmo = Some(batch.pipeline_id == GIZMO_PIPELINE);
+                    last_pipeline_id = Some(batch.pipeline_id);
 
-                    let pipeline = match (batch.is_opaque, batch.pipeline_id == GIZMO_PIPELINE) {
-                        (true, false) => opaque_scene_pipeline,
-                        (false, false) => transparent_scene_pipeline,
-                        (_, true) => gizmo_pipeline,
+                    let pipeline = match batch.pipeline_id {
+                        NORMAL_PIPELINE if batch.is_opaque => opaque_scene_pipeline,
+                        NORMAL_PIPELINE => transparent_scene_pipeline,
+                        GIZMO_PIPELINE => gizmo_pipeline,
+                        id => panic!("Unhandled pipeline id: {}", id),
                     };
 
                     device.cmd_bind_pipeline(
