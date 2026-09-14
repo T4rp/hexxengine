@@ -1,7 +1,7 @@
 use std::{cmp::Reverse, mem};
 
 use ash::{prelude::VkResult, vk};
-use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
+use glam::{Mat3, Mat4, Quat, Vec3, Vec4, camera::rh as camera_rh};
 use thunderdome::{Arena, Index};
 use vk_mem::Alloc;
 
@@ -291,28 +291,25 @@ impl Resources {
         let radius = (corners[0] - corners[7]).length() / 2.0;
         let texels_per_unit = SHADOW_MAP_RESOLUTION as f32 / (radius * 2.0);
 
-        let scalar = Mat4::IDENTITY * texels_per_unit;
+        let scalar = Mat3::IDENTITY * texels_per_unit;
 
         let lighting = &scene.lighting;
         let camera_position = scene.camera.position;
 
-        let light_view = scalar * Mat4::look_at_rh(Vec3::ZERO, -lighting.sun_direction, Vec3::Y);
+        let light_view =
+            scalar * camera_rh::view::look_at_mat3(Vec3::ZERO, -lighting.sun_direction, Vec3::Y);
         let light_view_inv = light_view.inverse();
 
-        let light_view_mat3 = Mat3::from_mat4(light_view);
-        let light_view_inv_mat3 = Mat3::from_mat4(light_view_inv);
-
-        frustum_center = light_view_mat3 * frustum_center;
+        frustum_center = light_view * frustum_center;
         frustum_center.x = frustum_center.x.floor();
         frustum_center.y = frustum_center.y.floor();
-        frustum_center = light_view_inv_mat3 * frustum_center;
+        frustum_center = light_view_inv * frustum_center;
 
         let eye = frustum_center - (lighting.sun_direction * radius * 2.0);
 
-        let light_view = Mat4::look_at_rh(eye, frustum_center, Vec3::Y);
-        let light_view_inv = light_view.inverse();
+        let light_view = camera_rh::view::look_at_mat4(eye, frustum_center, Vec3::Y);
 
-        let mut light_proj = Mat4::orthographic_rh(
+        let light_proj = camera_rh::proj::vulkan::orthographic(
             -radius,
             radius,
             -radius,
@@ -320,8 +317,6 @@ impl Resources {
             -radius * 6.0,
             radius * 6.0,
         );
-
-        light_proj.y_axis *= Vec4::new(1.0, -1.0, 1.0, 1.0);
 
         let camera_ubo = CameraUniform3d {
             proj: proj_3d,
