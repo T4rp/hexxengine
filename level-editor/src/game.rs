@@ -1,7 +1,7 @@
 use hexxengine::{
     assets::{self, load_skybox},
     components::{MeshComponent, TransformComponent},
-    entities::{Part, SelectionBox},
+    entities::{Part, SelectionBox, TransformHandles, TransformType},
     game::{CUBE_MESH_ID, GameContext, GameHandler, NOTOSANS_FONT_HANDLE},
     glam::{Quat, Vec3, vec3},
     rapier3d::prelude::{RigidBodyType, ShapeType},
@@ -20,6 +20,7 @@ const STEP_HZ: f32 = 1.0 / 60.0;
 pub struct World {
     parts: Arena<Part>,
     selections: Arena<SelectionBox>,
+    handles: Arena<TransformHandles>,
 }
 
 impl World {
@@ -27,6 +28,7 @@ impl World {
         Self {
             parts: Arena::new(),
             selections: Arena::new(),
+            handles: Arena::new(),
         }
     }
 }
@@ -140,6 +142,9 @@ impl GameHandler for Game {
         let random_part = world.parts.insert(random_part);
 
         world.selections.insert(SelectionBox::new(random_part));
+        world
+            .handles
+            .insert(TransformHandles::new(random_part, TransformType::Position));
 
         // ui::init(&mut game_ctx.ui_tree, NOTOSANS_FONT_HANDLE);
         let level_editor = LevelEditorUi::new(&mut game_ctx.ui_tree);
@@ -168,6 +173,14 @@ impl GameHandler for Game {
 
             if let Some(selected_part) = selected_part {
                 selection_box.draw(&mut game_ctx.render_scene, &selected_part.transform);
+            }
+        }
+
+        for (_i, handle) in self.world.handles.iter() {
+            let selected_part = self.world.parts.get(handle.selected);
+
+            if let Some(selected_part) = selected_part {
+                handle.draw(&mut game_ctx.render_scene, &selected_part.transform);
             }
         }
     }

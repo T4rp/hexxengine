@@ -1,4 +1,3 @@
-mod handle;
 mod hierarchy;
 mod mesh;
 mod rigid_body;
