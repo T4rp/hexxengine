@@ -22,7 +22,7 @@ layout (location = 0) out vec4 outFragColor;
 
 #ifndef SOLID
 float getShadow(vec4 shadowCoord, vec2 off) {
-	float shadow = 1.0;
+	float shadow = 0.0;
 	vec4 shadowCoordNdc = shadowCoord / shadowCoord.w;
 
 	if (shadowCoordNdc.z > -1.0 || shadowCoordNdc.z < 1.0) {
@@ -31,8 +31,8 @@ float getShadow(vec4 shadowCoord, vec2 off) {
 		float closestDepth = texture(shadowMapText, shadowUv + off).r;
 		float currentDepth = shadowCoordNdc.z;
 
-		if (shadowCoordNdc.w > 0.0 && currentDepth > closestDepth) {
-			shadow = 0.0;
+		if (shadowCoordNdc.w > 0.0 && currentDepth  - 0.0005 > closestDepth) {
+			shadow = 1.0;
 		}
 	}
 

@@ -278,69 +278,49 @@ impl Resources {
         let aspect_ratio = window_extent.width as f32 / window_extent.height as f32;
         let (proj_3d, view_3d) = scene.camera.calc_perspective_matrices(aspect_ratio);
 
-        let corners = scene
-            .camera
-            .calc_frustrum_corners(aspect_ratio, 30.0, 500.0);
+        let corners = scene.camera.calc_frustrum_corners(aspect_ratio, 0.1, 500.0);
 
-        let mut frustrum_avg = Vec3::ZERO;
+        let mut frustum_center = Vec3::ZERO;
 
         for corner in corners.iter() {
-            frustrum_avg += corner
+            frustum_center += corner
         }
 
-        frustrum_avg /= 8.0;
+        frustum_center /= 8.0;
+
+        let radius = (corners[0] - corners[7]).length() / 2.0;
+        let texels_per_unit = SHADOW_MAP_RESOLUTION as f32 / (radius * 2.0);
+
+        let scalar = Mat4::IDENTITY * texels_per_unit;
 
         let lighting = &scene.lighting;
         let camera_position = scene.camera.position;
 
-        let light_translation = lighting.sun_direction + frustrum_avg;
-
-        let light_rotation = Quat::look_at_rh(light_translation, frustrum_avg, Vec3::Y).inverse();
-
-        let light_view =
-            Mat4::from_rotation_translation(light_rotation, light_translation).inverse();
+        let light_view = scalar * Mat4::look_at_rh(Vec3::ZERO, -lighting.sun_direction, Vec3::Y);
+        let light_view_inv = light_view.inverse();
 
         let light_view_mat3 = Mat3::from_mat4(light_view);
+        let light_view_inv_mat3 = Mat3::from_mat4(light_view_inv);
 
-        let mut min = Vec3::splat(0.0);
-        let mut max = Vec3::splat(0.0);
+        frustum_center = light_view_mat3 * frustum_center;
+        frustum_center.x = frustum_center.x.floor();
+        frustum_center.y = frustum_center.y.floor();
+        frustum_center = light_view_inv_mat3 * frustum_center;
 
-        for corner in corners.iter() {
-            let lsc = light_view_mat3 * corner;
-            min = min.min(lsc);
-            max = max.max(lsc);
-        }
+        let eye = frustum_center - (lighting.sun_direction * radius * 2.0);
 
-        min.x -= 200.0;
-        max.x += 200.0;
-        min.y -= 200.0;
-        max.y += 200.0;
+        let light_view = Mat4::look_at_rh(eye, frustum_center, Vec3::Y);
+        let light_view_inv = light_view.inverse();
 
-        let z_mult = 10.0;
+        let mut light_proj = Mat4::orthographic_rh(
+            -radius,
+            radius,
+            -radius,
+            radius,
+            -radius * 6.0,
+            radius * 6.0,
+        );
 
-        if min.z < 0.0 {
-            min.z *= z_mult
-        } else {
-            min.z /= z_mult
-        }
-
-        if max.z < 0.0 {
-            max.z /= z_mult
-        } else {
-            max.z *= z_mult
-        }
-
-        let shadow_snap = 1.0 / SHADOW_MAP_RESOLUTION as f32;
-
-        min /= shadow_snap;
-        min = min.floor();
-        min *= shadow_snap;
-
-        max /= shadow_snap;
-        max = max.floor();
-        max *= shadow_snap;
-
-        let mut light_proj = Mat4::orthographic_rh(min.x, max.x, min.y, max.y, min.z, max.z);
         light_proj.y_axis *= Vec4::new(1.0, -1.0, 1.0, 1.0);
 
         let camera_ubo = CameraUniform3d {
@@ -353,7 +333,7 @@ impl Resources {
                 0.0,
             ),
             light_proj,
-            light_view,
+            light_view: light_view,
         };
 
         let scene_ubo = Scene3dUniform {
@@ -779,7 +759,7 @@ impl Resources {
             // .compare_op(vk::CompareOp::GREATER)
             .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_BORDER)
             .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_BORDER)
-            .border_color(vk::BorderColor::FLOAT_OPAQUE_BLACK);
+            .border_color(vk::BorderColor::FLOAT_OPAQUE_WHITE);
 
         unsafe { device.create_sampler(&shadow_map_sampler_info, None) }
     }

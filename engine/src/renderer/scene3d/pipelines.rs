@@ -158,6 +158,12 @@ impl Pipelines {
             .clone()
             .pipeline_layout(scene3d_pipeline_layout)
             .shader_stages(&shadow_shader_stages)
+            .depth_stencil_state(
+                vk::PipelineDepthStencilStateCreateInfo::default()
+                    .depth_test_enable(true)
+                    .depth_write_enable(true)
+                    .depth_compare_op(vk::CompareOp::LESS),
+            )
             .no_color_attachments();
 
         let skybox_vert_shader_code = fs::read(assets::get_asset_path("skybox.vert.spv")).unwrap();
