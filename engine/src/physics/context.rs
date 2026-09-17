@@ -1,5 +1,7 @@
 use rapier3d::prelude::*;
 
+use crate::game::STEP_HZ;
+
 pub struct PhysicsContext {
     pub gravity: Vec3,
     pub rigid_body_set: RigidBodySet,
@@ -30,6 +32,7 @@ impl PhysicsContext {
         let gravity = Vec3::new(0.0, -196.0, 0.0);
         let integration_parameters = IntegrationParameters {
             length_unit: 1.0,
+            dt: STEP_HZ,
             ..Default::default()
         };
         let physics_pipeline = PhysicsPipeline::new();

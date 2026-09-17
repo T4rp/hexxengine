@@ -9,9 +9,10 @@ use winit::{
     window::WindowAttributes,
 };
 
-use crate::{game::GameContext, input::InputEvent};
-
-const STEP_HZ: f32 = 1.0 / 60.0;
+use crate::{
+    game::{GameContext, STEP_HZ},
+    input::InputEvent,
+};
 
 pub trait GameHandler {
     fn new(game_ctx: &mut GameContext) -> Self;

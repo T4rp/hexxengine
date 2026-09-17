@@ -7,6 +7,8 @@ use thunderdome::Index;
 
 use crate::text::FontHandle;
 
+pub const STEP_HZ: f32 = 1.0 / 60.0;
+
 // Reserved indices
 pub const CUBE_MESH_ID: Index = Index::from_bits(1 << 32 | 0).unwrap();
 pub const SPHERE_MESH_ID: Index = Index::from_bits(1 << 32 | 1).unwrap();
