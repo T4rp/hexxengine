@@ -2,12 +2,12 @@ use hexxengine::{
     assets::{self, load_skybox},
     components::{MeshComponent, TransformComponent},
     entities::{Part, SelectionBox, TransformHandles, TransformType},
-    game::{CUBE_MESH_ID, GameContext, GameHandler, NOTOSANS_FONT_HANDLE},
-    glam::{Quat, Vec3, vec3},
+    game::{CUBE_MESH_ID, GameContext, GameHandler, NOTOSANS_FONT_HANDLE, SPHERE_MESH_ID},
+    glam::{Quat, Vec3, Vec4, Vec4Swizzles, vec3},
     rapier3d::prelude::{RigidBodyType, ShapeType},
     renderer::{render_scene::MeshNode, renderer::BASE_MATERIAL_INDEX},
     text::FontHandle,
-    thunderdome::Arena,
+    thunderdome::{Arena, Index},
     winit::{self, keyboard::KeyCode},
 };
 
@@ -37,9 +37,26 @@ pub struct Game {
     font: FontHandle,
     world: World,
     level_editor: LevelEditorUi,
+    random_sphere: Index,
 }
 
 impl Game {
+    fn cast_ray_from_cursor(&mut self, game_ctx: &mut GameContext) {
+        let cursor_position = game_ctx.input_state.mouse_position;
+
+        let window_extent = game_ctx.window.inner_size();
+
+        let (origin, direction) = game_ctx.render_scene.camera.screen_to_world_ray(
+            cursor_position.x,
+            cursor_position.y,
+            window_extent.width as f32,
+            window_extent.height as f32,
+        );
+
+        let part = self.world.parts.get_mut(self.random_sphere).unwrap();
+        part.transform.position = origin + direction * 100.0;
+    }
+
     fn update_camera(&mut self, game_ctx: &mut GameContext, dt: f32) {
         let camera = &mut game_ctx.render_scene.camera;
 
@@ -141,6 +158,25 @@ impl GameHandler for Game {
 
         let random_part = world.parts.insert(random_part);
 
+        let random_sphere = Part::new(
+            &mut game_ctx.physics_context,
+            TransformComponent {
+                position: vec3(0.0, 10.0, 0.0),
+                orientation: Quat::IDENTITY,
+                size: vec3(4.0, 4.0, 4.0),
+            },
+            MeshComponent {
+                color: vec3(0.2, 0.2, 0.2),
+                mesh_id: SPHERE_MESH_ID,
+                material: BASE_MATERIAL_INDEX,
+                opacity: 1.0,
+            },
+            RigidBodyType::Fixed,
+            ShapeType::Cuboid,
+        );
+
+        let random_sphere = world.parts.insert(random_sphere);
+
         world.selections.insert(SelectionBox::new(random_part));
         world
             .handles
@@ -153,11 +189,13 @@ impl GameHandler for Game {
             font: NOTOSANS_FONT_HANDLE,
             world,
             level_editor,
+            random_sphere,
         }
     }
 
     fn update(&mut self, game_ctx: &mut GameContext, dt: f32) {
         self.update_camera(game_ctx, dt);
+        self.cast_ray_from_cursor(game_ctx);
         self.level_editor.update(game_ctx);
     }
 
