@@ -1,4 +1,6 @@
-use glam::{Mat4, Quat, Vec3, Vec4, Vec4Swizzles, vec4};
+use glam::{
+    Mat4, Quat, Vec3, Vec4, Vec4Swizzles, camera::rh::proj::vulkan as vk_camera_proj, vec4,
+};
 
 pub struct Camera {
     pub position: Vec3,
@@ -30,9 +32,7 @@ impl Camera {
     pub fn calc_perspective_matrices(&self, aspect_ratio: f32) -> (Mat4, Mat4) {
         let vertical_fov = 2.0 * (self.fov.to_radians() * 0.5).tan().atan2(aspect_ratio);
 
-        let mut proj = Mat4::perspective_infinite_reverse_rh(vertical_fov, aspect_ratio, 1.0);
-        proj.y_axis *= vec4(1.0, -1.0, 1.0, 1.0);
-
+        let proj = vk_camera_proj::perspective_infinite_reverse(vertical_fov, aspect_ratio, 1.0);
         let view = Mat4::from_rotation_translation(self.orientation, self.position).inverse();
 
         (proj, view)
@@ -62,9 +62,7 @@ impl Camera {
     pub fn calc_frustrum_corners(&self, aspect_ratio: f32, near: f32, far: f32) -> [Vec3; 8] {
         let vertical_fov = 2.0 * (self.fov.to_radians() * 0.5).tan().atan2(aspect_ratio);
 
-        let mut proj = Mat4::perspective_rh(vertical_fov, aspect_ratio, near, far);
-        proj.y_axis *= vec4(1.0, -1.0, 1.0, 1.0);
-
+        let proj = vk_camera_proj::perspective(vertical_fov, aspect_ratio, near, far);
         let view = Mat4::from_rotation_translation(self.orientation, self.position).inverse();
 
         let mut corners = [Vec3::ZERO; 8];
