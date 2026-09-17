@@ -4,7 +4,11 @@ use hexxengine::{
     entities::{Part, SelectionBox, TransformHandles, TransformType},
     game::{CUBE_MESH_ID, GameContext, GameHandler, NOTOSANS_FONT_HANDLE, SPHERE_MESH_ID},
     glam::{Quat, Vec3, Vec4, Vec4Swizzles, vec3},
-    rapier3d::prelude::{RigidBodyType, ShapeType},
+    rapier3d::{
+        geometry::Ray,
+        pipeline::QueryFilter,
+        prelude::{RigidBodyType, ShapeType},
+    },
     renderer::{render_scene::MeshNode, renderer::BASE_MATERIAL_INDEX},
     text::FontHandle,
     thunderdome::{Arena, Index},
@@ -53,8 +57,24 @@ impl Game {
             window_extent.height as f32,
         );
 
+        let physics = &mut game_ctx.physics_context;
+        let query_pipeline = physics.broad_phase.as_query_pipeline(
+            physics.narrow_phase.query_dispatcher(),
+            &physics.rigid_body_set,
+            &physics.collider_set,
+            QueryFilter::default(),
+        );
+
+        let ray = Ray::new(origin, direction);
+        let query_result = query_pipeline.cast_ray(&ray, 2000.0, true);
+
         let part = self.world.parts.get_mut(self.random_sphere).unwrap();
-        part.transform.position = origin + direction * 100.0;
+
+        if let Some((_handle, toi)) = query_result {
+            part.transform.position = ray.origin + ray.dir * toi;
+        } else {
+            part.transform.position = ray.origin + ray.dir * 100.0;
+        }
     }
 
     fn update_camera(&mut self, game_ctx: &mut GameContext, dt: f32) {
@@ -197,6 +217,10 @@ impl GameHandler for Game {
         self.update_camera(game_ctx, dt);
         self.cast_ray_from_cursor(game_ctx);
         self.level_editor.update(game_ctx);
+    }
+
+    fn fixed_update(&mut self, game_ctx: &mut GameContext, dt: f32) {
+        game_ctx.physics_context.step();
     }
 
     fn draw(&mut self, game_ctx: &mut GameContext) {
