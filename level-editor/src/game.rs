@@ -198,9 +198,12 @@ impl GameHandler for Game {
         let random_sphere = world.parts.insert(random_sphere);
 
         world.selections.insert(SelectionBox::new(random_part));
-        world
-            .handles
-            .insert(TransformHandles::new(random_part, TransformType::Position));
+
+        world.handles.insert(TransformHandles::new(
+            random_part,
+            &mut game_ctx.physics_context,
+            TransformType::Position,
+        ));
 
         // ui::init(&mut game_ctx.ui_tree, NOTOSANS_FONT_HANDLE);
         let level_editor = LevelEditorUi::new(&mut game_ctx.ui_tree);
@@ -214,6 +217,14 @@ impl GameHandler for Game {
     }
 
     fn update(&mut self, game_ctx: &mut GameContext, dt: f32) {
+        for (_i, handle) in self.world.handles.iter_mut() {
+            let selected_part = self.world.parts.get(handle.selected);
+
+            if let Some(selected_part) = selected_part {
+                handle.update(&mut game_ctx.physics_context, &selected_part.transform);
+            }
+        }
+
         self.update_camera(game_ctx, dt);
         self.cast_ray_from_cursor(game_ctx);
         self.level_editor.update(game_ctx);
