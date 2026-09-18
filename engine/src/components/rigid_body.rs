@@ -1,10 +1,16 @@
 use rapier3d::{
     dynamics::{RigidBodyBuilder, RigidBodyHandle, RigidBodyType},
-    geometry::{ColliderBuilder, ColliderHandle, ShapeType, SharedShape},
+    geometry::{
+        ColliderBuilder, ColliderHandle, InteractionGroups, InteractionTestMode, ShapeType,
+        SharedShape,
+    },
     math::Pose3,
 };
 
-use crate::{components::TransformComponent, physics::context::PhysicsContext};
+use crate::{
+    components::TransformComponent,
+    physics::{PART_INTERACTION_GROUP, context::PhysicsContext},
+};
 
 pub struct RigidBodyComponent {
     pub collider_handle: ColliderHandle,
@@ -35,7 +41,10 @@ impl RigidBodyComponent {
             }
         };
 
-        let collider = ColliderBuilder::new(shape).build();
+        let collider = ColliderBuilder::new(shape)
+            .collision_groups(PART_INTERACTION_GROUP)
+            .solver_groups(PART_INTERACTION_GROUP)
+            .build();
 
         let rigid_body = RigidBodyBuilder::new(body_type)
             .pose(Pose3::from_parts(transform.position, transform.orientation))

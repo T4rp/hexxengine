@@ -1,9 +1,10 @@
 use hexxengine::{
     components::TransformComponent,
     glam::{Quat, Vec3},
-    physics::context::PhysicsContext,
+    physics::{CHARACTER_INTERACTION_GROUP, context::PhysicsContext},
     rapier3d::{
         control::{CharacterCollision, CharacterLength, KinematicCharacterController},
+        geometry::{InteractionGroups, InteractionTestMode},
         math::Pose3,
         prelude::{ColliderBuilder, ColliderHandle, MassProperties, QueryFilter, SharedShape},
     },
@@ -36,6 +37,7 @@ pub struct CharacterControllerComponent {
     pub grounded: bool,
     pub collisions: Vec<CharacterCollision>,
     pub shape: SharedShape,
+    pub query_filter: QueryFilter<'static>,
 }
 
 impl CharacterControllerComponent {
@@ -55,8 +57,15 @@ impl CharacterControllerComponent {
         );
         let mass_properties = capsule_shape.mass_properties(1.0);
 
-        let collider = ColliderBuilder::new(capsule_shape.clone()).build();
+        let collider = ColliderBuilder::new(capsule_shape.clone())
+            .collision_groups(CHARACTER_INTERACTION_GROUP)
+            .solver_groups(CHARACTER_INTERACTION_GROUP)
+            .build();
         let collider_handle = phys_ctx.collider_set.insert(collider);
+
+        let query_filter = QueryFilter::new()
+            .exclude_collider(collider_handle)
+            .groups(CHARACTER_INTERACTION_GROUP);
 
         Self {
             shape: capsule_shape,
@@ -69,6 +78,7 @@ impl CharacterControllerComponent {
             grounded: false,
             collisions: Vec::new(),
             mass_properties,
+            query_filter,
         }
     }
 
@@ -120,13 +130,11 @@ impl CharacterControllerComponent {
     }
 
     fn solve_colisions(&mut self, phys_ctx: &mut PhysicsContext, dt: f32) {
-        let filter = QueryFilter::new().exclude_collider(self.collider);
-
         let mut query_pipeline = phys_ctx.broad_phase.as_query_pipeline_mut(
             phys_ctx.narrow_phase.query_dispatcher(),
             &mut phys_ctx.rigid_body_set,
             &mut phys_ctx.collider_set,
-            filter,
+            self.query_filter,
         );
 
         self.character_controller
@@ -163,13 +171,11 @@ impl CharacterControllerComponent {
             self.accel(dt, wish_dir, AIR_SPEED, AIR_ACCEL);
         }
 
-        let filter = QueryFilter::new().exclude_collider(self.collider);
-
         let query_pipeline = phys_ctx.broad_phase.as_query_pipeline(
             phys_ctx.narrow_phase.query_dispatcher(),
             &phys_ctx.rigid_body_set,
             &phys_ctx.collider_set,
-            filter,
+            self.query_filter,
         );
 
         let movement = self.character_controller.move_shape(
