@@ -4,6 +4,7 @@ use hexxengine::{
     entities::{Part, SelectionBox, TransformHandles, TransformType},
     game::{CUBE_MESH_ID, GameContext, GameHandler, NOTOSANS_FONT_HANDLE, SPHERE_MESH_ID},
     glam::{Quat, Vec3, Vec4, Vec4Swizzles, vec3},
+    physics::{UserdataType, read_userdata},
     rapier3d::{
         geometry::Ray,
         pipeline::QueryFilter,
@@ -23,16 +24,12 @@ const STEP_HZ: f32 = 1.0 / 60.0;
 
 pub struct World {
     parts: Arena<Part>,
-    selections: Arena<SelectionBox>,
-    handles: Arena<TransformHandles>,
 }
 
 impl World {
     fn new() -> Self {
         Self {
             parts: Arena::new(),
-            selections: Arena::new(),
-            handles: Arena::new(),
         }
     }
 }
@@ -42,6 +39,10 @@ pub struct Game {
     world: World,
     level_editor: LevelEditorUi,
     random_sphere: Index,
+
+    selection: Option<Index>,
+    selection_box: SelectionBox,
+    transform_handles: TransformHandles,
 }
 
 impl Game {
@@ -70,7 +71,20 @@ impl Game {
 
         let part = self.world.parts.get_mut(self.random_sphere).unwrap();
 
-        if let Some((_handle, toi)) = query_result {
+        if let Some((handle, toi)) = query_result {
+            let (ty, _index, _extra_data) = read_userdata(
+                game_ctx
+                    .physics_context
+                    .collider_set
+                    .get(handle)
+                    .unwrap()
+                    .user_data,
+            );
+
+            if ty == UserdataType::Handle as u8 {
+                println!("hovering on a handle");
+            }
+
             part.transform.position = ray.origin + ray.dir * toi;
         } else {
             part.transform.position = ray.origin + ray.dir * 100.0;
@@ -197,15 +211,16 @@ impl GameHandler for Game {
 
         let random_sphere = world.parts.insert(random_sphere);
 
-        world.selections.insert(SelectionBox::new(random_part));
+        let selection_box = SelectionBox::new(random_part);
 
-        world.handles.insert(TransformHandles::new(
+        let mut transform_handles = TransformHandles::new(
             random_part,
             &mut game_ctx.physics_context,
             TransformType::Position,
-        ));
+        );
 
-        // ui::init(&mut game_ctx.ui_tree, NOTOSANS_FONT_HANDLE);
+        transform_handles.init_colliders(&mut game_ctx.physics_context, 8);
+
         let level_editor = LevelEditorUi::new(&mut game_ctx.ui_tree);
 
         Game {
@@ -213,15 +228,21 @@ impl GameHandler for Game {
             world,
             level_editor,
             random_sphere,
+            selection: Some(random_part),
+            selection_box,
+            transform_handles,
         }
     }
 
     fn update(&mut self, game_ctx: &mut GameContext, dt: f32) {
-        for (_i, handle) in self.world.handles.iter_mut() {
-            let selected_part = self.world.parts.get(handle.selected);
+        if let Some(selected) = self.selection {
+            let selected_part = self.world.parts.get(selected);
 
             if let Some(selected_part) = selected_part {
-                handle.update(&mut game_ctx.physics_context, &selected_part.transform);
+                self.transform_handles
+                    .update(&mut game_ctx.physics_context, &selected_part.transform);
+            } else {
+                self.selection = None;
             }
         }
 
@@ -241,19 +262,14 @@ impl GameHandler for Game {
             part.draw(&mut game_ctx.render_scene);
         }
 
-        for (_i, selection_box) in self.world.selections.iter() {
-            let selected_part = self.world.parts.get(selection_box.selected);
+        if let Some(selected) = self.selection {
+            let selected_part = self.world.parts.get(selected);
 
             if let Some(selected_part) = selected_part {
-                selection_box.draw(&mut game_ctx.render_scene, &selected_part.transform);
-            }
-        }
-
-        for (_i, handle) in self.world.handles.iter() {
-            let selected_part = self.world.parts.get(handle.selected);
-
-            if let Some(selected_part) = selected_part {
-                handle.draw(&mut game_ctx.render_scene, &selected_part.transform);
+                self.transform_handles
+                    .draw(&mut game_ctx.render_scene, &selected_part.transform);
+                self.selection_box
+                    .draw(&mut game_ctx.render_scene, &selected_part.transform);
             }
         }
     }

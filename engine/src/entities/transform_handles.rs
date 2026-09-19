@@ -8,7 +8,7 @@ use thunderdome::Index;
 use crate::{
     components::TransformComponent,
     game::{CONE_MESH_ID, SPHERE_MESH_ID},
-    physics::{HANDLE_INTERACTION_GROUP, context::PhysicsContext},
+    physics::{HANDLE_INTERACTION_GROUP, context::PhysicsContext, gen_userdata},
     renderer::render_scene::{MeshNode, RenderScene},
 };
 
@@ -38,6 +38,7 @@ pub struct TransformHandles {
     pub selected: Index,
     pub transform_type: TransformType,
     pub collision_boxes: Vec<ColliderHandle>,
+    initialized: bool,
 }
 
 impl TransformHandles {
@@ -63,10 +64,13 @@ impl TransformHandles {
             selected,
             transform_type,
             collision_boxes,
+            initialized: false,
         }
     }
 
     pub fn update(&mut self, physics: &mut PhysicsContext, transform: &TransformComponent) {
+        assert_eq!(self.initialized, true, "handle must be initialized");
+
         for (i, axis) in HANDLE_AXES.iter().enumerate() {
             let direction = transform.orientation * axis;
 
@@ -80,6 +84,18 @@ impl TransformHandles {
 
             collider.set_position(Pose::from_translation(collider_position));
         }
+    }
+
+    pub fn init_colliders(&mut self, physics: &mut PhysicsContext, index: u64) {
+        for (i, _axis) in HANDLE_AXES.iter().enumerate() {
+            let collider = physics
+                .collider_set
+                .get_mut(self.collision_boxes[i])
+                .unwrap();
+            collider.user_data = gen_userdata(crate::physics::UserdataType::Handle, index, i as u32)
+        }
+
+        self.initialized = true
     }
 
     pub fn draw(&self, render_scene: &mut RenderScene, transform: &TransformComponent) {
