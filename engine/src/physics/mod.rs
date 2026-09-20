@@ -31,9 +31,6 @@ pub enum UserdataType {
     Handle = 2,
 }
 
-pub const USERDATA_TYPE_PART: u128 = 1 << 127;
-pub const USERDATA_TYPE_HANDLE: u128 = 1 << 127;
-
 pub const fn gen_userdata(ty: UserdataType, index: u64, extra_data: u32) -> u128 {
     (ty as u128) << 119 | (extra_data as u128) << 64 | index as u128
 }
