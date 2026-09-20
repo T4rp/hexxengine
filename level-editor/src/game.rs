@@ -71,8 +71,10 @@ impl Game {
 
         let part = self.world.parts.get_mut(self.random_sphere).unwrap();
 
+        let mut is_hovering = false;
+
         if let Some((handle, toi)) = query_result {
-            let (ty, _index, _extra_data) = read_userdata(
+            let (ty, _index, extra_data) = read_userdata(
                 game_ctx
                     .physics_context
                     .collider_set
@@ -82,12 +84,17 @@ impl Game {
             );
 
             if ty == UserdataType::Handle as u8 {
-                println!("hovering on a handle");
+                self.transform_handles.mouse_hovering_on = Some(extra_data as usize);
+                is_hovering = true;
             }
 
             part.transform.position = ray.origin + ray.dir * toi;
         } else {
             part.transform.position = ray.origin + ray.dir * 100.0;
+        }
+
+        if !is_hovering {
+            self.transform_handles.mouse_hovering_on = None;
         }
     }
 

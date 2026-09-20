@@ -40,8 +40,8 @@ pub const fn gen_userdata(ty: UserdataType, index: u64, extra_data: u32) -> u128
 
 pub const fn read_userdata(userdata: u128) -> (u8, u64, u32) {
     let ty = userdata >> 119;
-    let extra_data = (userdata >> 64) & (2 ^ 65 - 1);
-    let index = userdata & (2 ^ 65 - 1);
+    let extra_data = (userdata >> 64) & ((1 << 64) - 1);
+    let index = userdata & ((1 << 64) - 1);
     (ty as u8, index as u64, extra_data as u32)
 }
 

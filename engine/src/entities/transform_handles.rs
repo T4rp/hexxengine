@@ -14,7 +14,8 @@ use crate::{
 
 const HANDLE_OFFSET: f32 = 5.0;
 const HANDLE_SIZE: f32 = 5.0;
-const HANDLE_OPACITY: f32 = 0.7;
+const HANDLE_OPACITY: f32 = 0.5;
+const HANDLE_OPACITY_HOVERING: f32 = 1.0;
 
 const HANDLE_AXES: &'static [Vec3] = &[
     Vec3::X,
@@ -39,14 +40,14 @@ struct TransformHandle {
     collision_box: ColliderHandle,
     axis: Vec3,
     color: Vec3,
-    mouse_hovering: bool,
-    mouse_dragging: bool,
 }
 
 pub struct TransformHandles {
     pub selected: Index,
     pub transform_type: TransformType,
     pub handles: Vec<TransformHandle>,
+    pub mouse_hovering_on: Option<usize>,
+    pub mouse_dragging_on: Option<usize>,
     initialized: bool,
 }
 
@@ -75,8 +76,6 @@ impl TransformHandles {
                 collision_box: collider_handle,
                 axis: HANDLE_AXES[i],
                 color: HANDLE_AXES_COLOR[i],
-                mouse_hovering: false,
-                mouse_dragging: false,
             };
 
             handles.push(transform_handle)
@@ -87,6 +86,8 @@ impl TransformHandles {
             transform_type,
             handles,
             initialized: false,
+            mouse_hovering_on: None,
+            mouse_dragging_on: None,
         }
     }
 
@@ -125,13 +126,16 @@ impl TransformHandles {
             TransformType::Rotation => unimplemented!(),
         };
 
-        for handle in self.handles.iter() {
+        for (i, handle) in self.handles.iter().enumerate() {
             render_scene.meshes.push(MeshNode {
                 position: handle.transform.position,
                 orientation: handle.transform.orientation,
                 size: handle.transform.size,
                 color: handle.color,
-                opacity: HANDLE_OPACITY,
+                opacity: match self.mouse_hovering_on {
+                    Some(index) if index == i => HANDLE_OPACITY_HOVERING,
+                    _ => HANDLE_OPACITY,
+                },
                 mesh_id: mesh_id,
                 is_gizmo: true,
                 ..Default::default()
