@@ -1,4 +1,5 @@
 use glam::{Quat, Vec3};
+use rapier3d::math::{Pose, Pose3};
 
 #[derive(Clone, Copy)]
 pub struct TransformComponent {
@@ -14,5 +15,9 @@ impl TransformComponent {
             orientation,
             size,
         }
+    }
+
+    pub fn as_pose(&self) -> Pose {
+        Pose::from_parts(self.position, self.orientation)
     }
 }

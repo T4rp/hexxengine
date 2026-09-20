@@ -34,10 +34,19 @@ pub enum TransformType {
     Size,
 }
 
+struct TransformHandle {
+    transform: TransformComponent,
+    collision_box: ColliderHandle,
+    axis: Vec3,
+    color: Vec3,
+    mouse_hovering: bool,
+    mouse_dragging: bool,
+}
+
 pub struct TransformHandles {
     pub selected: Index,
     pub transform_type: TransformType,
-    pub collision_boxes: Vec<ColliderHandle>,
+    pub handles: Vec<TransformHandle>,
     initialized: bool,
 }
 
@@ -47,23 +56,36 @@ impl TransformHandles {
         physics: &mut PhysicsContext,
         transform_type: TransformType,
     ) -> Self {
-        let mut collision_boxes = Vec::new();
+        let mut handles = Vec::new();
 
-        for _ in 0..HANDLE_AXES.len() {
+        for i in 0..HANDLE_AXES.len() {
             let collider = ColliderBuilder::ball(HANDLE_SIZE / 2.0)
                 .collision_groups(HANDLE_INTERACTION_GROUP)
                 .solver_groups(HANDLE_INTERACTION_GROUP)
                 .build();
 
-            let handle = physics.collider_set.insert(collider);
+            let collider_handle = physics.collider_set.insert(collider);
 
-            collision_boxes.push(handle)
+            let transform_handle = TransformHandle {
+                transform: TransformComponent::new(
+                    Vec3::ZERO,
+                    Quat::IDENTITY,
+                    Vec3::splat(HANDLE_SIZE),
+                ),
+                collision_box: collider_handle,
+                axis: HANDLE_AXES[i],
+                color: HANDLE_AXES_COLOR[i],
+                mouse_hovering: false,
+                mouse_dragging: false,
+            };
+
+            handles.push(transform_handle)
         }
 
         Self {
             selected,
             transform_type,
-            collision_boxes,
+            handles,
             initialized: false,
         }
     }
@@ -71,27 +93,25 @@ impl TransformHandles {
     pub fn update(&mut self, physics: &mut PhysicsContext, transform: &TransformComponent) {
         assert_eq!(self.initialized, true, "handle must be initialized");
 
-        for (i, axis) in HANDLE_AXES.iter().enumerate() {
-            let direction = transform.orientation * axis;
+        for handle in self.handles.iter_mut() {
+            let direction = transform.orientation * handle.axis;
 
-            let collider_position = transform.position
-                + direction * ((transform.size * axis).length() / 2.0 + HANDLE_OFFSET);
+            let handle_position = transform.position
+                + direction * ((transform.size * handle.axis).length() / 2.0 + HANDLE_OFFSET);
 
-            let collider = physics
-                .collider_set
-                .get_mut(self.collision_boxes[i])
-                .unwrap();
+            let handle_orientation = Quat::from_rotation_arc(Vec3::Y, direction);
 
-            collider.set_position(Pose::from_translation(collider_position));
+            handle.transform.position = handle_position;
+            handle.transform.orientation = handle_orientation;
+
+            let collider = physics.collider_set.get_mut(handle.collision_box).unwrap();
+            collider.set_position(handle.transform.as_pose());
         }
     }
 
     pub fn init_colliders(&mut self, physics: &mut PhysicsContext, index: u64) {
-        for (i, _axis) in HANDLE_AXES.iter().enumerate() {
-            let collider = physics
-                .collider_set
-                .get_mut(self.collision_boxes[i])
-                .unwrap();
+        for (i, handle) in self.handles.iter_mut().enumerate() {
+            let collider = physics.collider_set.get_mut(handle.collision_box).unwrap();
             collider.user_data = gen_userdata(crate::physics::UserdataType::Handle, index, i as u32)
         }
 
@@ -105,19 +125,12 @@ impl TransformHandles {
             TransformType::Rotation => unimplemented!(),
         };
 
-        for (i, axis) in HANDLE_AXES.iter().enumerate() {
-            let direction = transform.orientation * axis;
-
-            let collider_position = transform.position
-                + direction * ((transform.size * axis).length() / 2.0 + HANDLE_OFFSET);
-
-            let collider_orientation = Quat::from_rotation_arc(Vec3::Y, direction);
-
+        for handle in self.handles.iter() {
             render_scene.meshes.push(MeshNode {
-                position: collider_position,
-                orientation: collider_orientation,
-                size: Vec3::splat(HANDLE_SIZE),
-                color: HANDLE_AXES_COLOR[i],
+                position: handle.transform.position,
+                orientation: handle.transform.orientation,
+                size: handle.transform.size,
+                color: handle.color,
                 opacity: HANDLE_OPACITY,
                 mesh_id: mesh_id,
                 is_gizmo: true,
