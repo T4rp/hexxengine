@@ -132,6 +132,9 @@ impl<T: GameHandler> ApplicationHandler for GameApp<T> {
             DeviceEvent::Key(key_event) => {
                 app.game_ctx.input_state.raw_key_input(&key_event);
             }
+            DeviceEvent::MouseWheel { delta } => {
+                app.game_ctx.input_state.mouse_wheel(delta);
+            }
             _ => {}
         }
     }

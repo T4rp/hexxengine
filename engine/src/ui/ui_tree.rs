@@ -318,23 +318,11 @@ impl UiTree {
 
     // PERF: We may want to use a spacial DS for this for faster queries
     pub fn handle_input(&mut self, input_handler: &InputHandler) {
-        let Some((button, state, position)) =
-            input_handler
-                .get_input_events()
-                .iter()
-                .find_map(|event| match event {
-                    InputEvent::MouseButtonEvent {
-                        button,
-                        state,
-                        position,
-                    } => Some((button, state, position)),
-                    _ => None,
-                })
-        else {
+        let Some(mouse_event) = input_handler.left_mouse_state() else {
             return;
         };
 
-        if *button != MouseButton::Left || *state != InputState::Pressed {
+        if mouse_event.state != InputState::Pressed {
             return;
         }
 
@@ -349,7 +337,9 @@ impl UiTree {
             let top_left = node.world_position;
             let bottom_right = node.world_position + node.world_size;
 
-            if position.cmpge(top_left).all() && position.cmple(bottom_right).all() {
+            if mouse_event.position.cmpge(top_left).all()
+                && mouse_event.position.cmple(bottom_right).all()
+            {
                 node.events.push(UiEvent {
                     input_event: None,
                     event_type: UiEventType::Pressed,
