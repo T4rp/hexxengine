@@ -1,3 +1,4 @@
+use ash::vk::PhysicalDeviceHostQueryResetFeaturesEXT;
 use rapier3d::{
     dynamics::{RigidBodyBuilder, RigidBodyHandle, RigidBodyType},
     geometry::{
@@ -9,7 +10,7 @@ use rapier3d::{
 
 use crate::{
     components::TransformComponent,
-    physics::{PART_INTERACTION_GROUP, context::PhysicsContext},
+    physics::{PART_INTERACTION_GROUP, UserdataType, context::PhysicsContext, gen_userdata},
 };
 
 pub struct RigidBodyComponent {
@@ -63,6 +64,17 @@ impl RigidBodyComponent {
             collider_handle,
             rigid_body_handle,
         }
+    }
+
+    pub fn update_userdata(&mut self, physics: &mut PhysicsContext, index: u64) {
+        let collider = physics.collider_set.get_mut(self.collider_handle).unwrap();
+        let rigid_body = physics
+            .rigid_body_set
+            .get_mut(self.rigid_body_handle)
+            .unwrap();
+
+        collider.user_data = gen_userdata(UserdataType::Part, index, 0);
+        rigid_body.user_data = gen_userdata(UserdataType::Part, index, 0);
     }
 
     pub fn destroy(&self, phys_ctx: &mut PhysicsContext) {

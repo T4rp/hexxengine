@@ -40,7 +40,9 @@ pub struct Game {
     level_editor: LevelEditorUi,
     random_sphere: Index,
 
+    hovered: Option<Index>,
     selection: Option<Index>,
+    hover_box: SelectionBox,
     selection_box: SelectionBox,
     transform_handles: TransformHandles,
 }
@@ -71,10 +73,11 @@ impl Game {
 
         let part = self.world.parts.get_mut(self.random_sphere).unwrap();
 
-        let mut is_hovering = false;
+        let mut is_hovering_on_handle = false;
+        let mut is_hovering_on_part = false;
 
         if let Some((handle, toi)) = query_result {
-            let (ty, _index, extra_data) = read_userdata(
+            let (ty, index, extra_data) = read_userdata(
                 game_ctx
                     .physics_context
                     .collider_set
@@ -85,7 +88,15 @@ impl Game {
 
             if ty == UserdataType::Handle as u8 {
                 self.transform_handles.mouse_hovering_on = Some(extra_data as usize);
-                is_hovering = true;
+                is_hovering_on_handle = true;
+            }
+
+            if ty == UserdataType::Part as u8 {
+                let index = Index::from_bits(index);
+                if index != self.selection {
+                    self.hovered = index;
+                    is_hovering_on_part = true;
+                }
             }
 
             part.transform.position = ray.origin + ray.dir * toi;
@@ -93,8 +104,20 @@ impl Game {
             part.transform.position = ray.origin + ray.dir * 100.0;
         }
 
-        if !is_hovering {
+        if !is_hovering_on_handle {
             self.transform_handles.mouse_hovering_on = None;
+        }
+
+        if !is_hovering_on_part {
+            self.hovered = None;
+        }
+    }
+
+    fn update_selection(&mut self, game: &mut GameContext) {
+        if game.input_state.left_mouse_down {
+            if self.hovered.is_some() && self.hovered != self.selection {
+                self.selection = self.hovered
+            }
         }
     }
 
@@ -178,7 +201,11 @@ impl GameHandler for Game {
             ShapeType::Cuboid,
         );
 
-        world.parts.insert(baseplate);
+        let index = world.parts.insert(baseplate);
+        if let Some(part) = world.parts.get_mut(index) {
+            part.rigid_body
+                .update_userdata(&mut game_ctx.physics_context, index.to_bits());
+        }
 
         let random_part = Part::new(
             &mut game_ctx.physics_context,
@@ -198,6 +225,11 @@ impl GameHandler for Game {
         );
 
         let random_part = world.parts.insert(random_part);
+
+        if let Some(part) = world.parts.get_mut(random_part) {
+            part.rigid_body
+                .update_userdata(&mut game_ctx.physics_context, random_part.to_bits());
+        }
 
         let random_sphere = Part::new(
             &mut game_ctx.physics_context,
@@ -219,6 +251,7 @@ impl GameHandler for Game {
         let random_sphere = world.parts.insert(random_sphere);
 
         let selection_box = SelectionBox::new(random_part);
+        let hover_box = SelectionBox::new(Index::DANGLING);
 
         let mut transform_handles = TransformHandles::new(
             random_part,
@@ -235,9 +268,11 @@ impl GameHandler for Game {
             world,
             level_editor,
             random_sphere,
-            selection: Some(random_part),
-            selection_box,
             transform_handles,
+            selection: None,
+            selection_box,
+            hovered: None,
+            hover_box,
         }
     }
 
@@ -258,6 +293,7 @@ impl GameHandler for Game {
 
         self.update_camera(game_ctx, dt);
         self.cast_ray_from_cursor(game_ctx);
+        self.update_selection(game_ctx);
         self.level_editor.update(game_ctx);
     }
 
@@ -280,6 +316,15 @@ impl GameHandler for Game {
                     .draw(&mut game_ctx.render_scene, &selected_part.transform);
                 self.selection_box
                     .draw(&mut game_ctx.render_scene, &selected_part.transform);
+            }
+        }
+
+        if let Some(hovered) = self.hovered {
+            let hovered_part = self.world.parts.get(hovered);
+
+            if let Some(hovered_part) = hovered_part {
+                self.hover_box
+                    .draw(&mut game_ctx.render_scene, &hovered_part.transform);
             }
         }
     }
