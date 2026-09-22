@@ -243,11 +243,14 @@ impl GameHandler for Game {
 
     fn update(&mut self, game_ctx: &mut GameContext, dt: f32) {
         if let Some(selected) = self.selection {
-            let selected_part = self.world.parts.get(selected);
+            let selected_part = self.world.parts.get_mut(selected);
 
             if let Some(selected_part) = selected_part {
-                self.transform_handles
-                    .update(&mut game_ctx.physics_context, &selected_part.transform);
+                self.transform_handles.update(
+                    &mut game_ctx.physics_context,
+                    &game_ctx.input_state,
+                    &mut selected_part.transform,
+                );
             } else {
                 self.selection = None;
             }

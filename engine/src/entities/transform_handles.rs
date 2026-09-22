@@ -8,6 +8,7 @@ use thunderdome::Index;
 use crate::{
     components::TransformComponent,
     game::{CONE_MESH_ID, SPHERE_MESH_ID},
+    input::InputHandler,
     physics::{HANDLE_INTERACTION_GROUP, context::PhysicsContext, gen_userdata},
     renderer::render_scene::{MeshNode, RenderScene},
 };
@@ -91,7 +92,12 @@ impl TransformHandles {
         }
     }
 
-    pub fn update(&mut self, physics: &mut PhysicsContext, transform: &TransformComponent) {
+    pub fn update(
+        &mut self,
+        physics: &mut PhysicsContext,
+        input_handler: &InputHandler,
+        transform: &mut TransformComponent,
+    ) {
         assert_eq!(self.initialized, true, "handle must be initialized");
 
         for handle in self.handles.iter_mut() {
@@ -107,6 +113,20 @@ impl TransformHandles {
 
             let collider = physics.collider_set.get_mut(handle.collision_box).unwrap();
             collider.set_position(handle.transform.as_pose());
+        }
+
+        if self.mouse_hovering_on.is_some() && self.mouse_dragging_on.is_none() {
+            if input_handler.left_mouse_down {
+                self.mouse_dragging_on = self.mouse_hovering_on;
+                println!("drag started");
+            }
+        }
+
+        if self.mouse_dragging_on.is_some() {
+            if !input_handler.left_mouse_down {
+                self.mouse_dragging_on = None;
+                println!("drag stopped");
+            }
         }
     }
 
@@ -132,7 +152,7 @@ impl TransformHandles {
                 orientation: handle.transform.orientation,
                 size: handle.transform.size,
                 color: handle.color,
-                opacity: match self.mouse_hovering_on {
+                opacity: match self.mouse_dragging_on.or(self.mouse_hovering_on) {
                     Some(index) if index == i => HANDLE_OPACITY_HOVERING,
                     _ => HANDLE_OPACITY,
                 },
