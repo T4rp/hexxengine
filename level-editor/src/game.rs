@@ -13,7 +13,7 @@ use hexxengine::{
     renderer::{render_scene::MeshNode, renderer::BASE_MATERIAL_INDEX},
     text::FontHandle,
     thunderdome::{Arena, Index},
-    winit::{self, keyboard::KeyCode},
+    winit::{self, event::MouseButton, keyboard::KeyCode},
 };
 
 use crate::ui::{self, LevelEditorUi};
@@ -114,7 +114,7 @@ impl Game {
     }
 
     fn update_selection(&mut self, game: &mut GameContext) {
-        if game.input_state.left_mouse_down {
+        if game.input_state.mouse_button_pressed(MouseButton::Left) {
             if self.hovered.is_some() && self.hovered != self.selection {
                 self.selection = self.hovered
             }
