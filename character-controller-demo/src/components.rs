@@ -37,7 +37,10 @@ pub struct CharacterControllerComponent {
     pub grounded: bool,
     pub collisions: Vec<CharacterCollision>,
     pub shape: SharedShape,
-    pub query_filter: QueryFilter<'static>,
+
+    // NOTE: The explicit lifetime on this type exists to enforce lifetimes on the predicates
+    // parameters. The predicate function itself must have a static lifetime.
+    query_filter: QueryFilter<'static>,
 }
 
 impl CharacterControllerComponent {
