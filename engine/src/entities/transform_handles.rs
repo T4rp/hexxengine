@@ -1,4 +1,4 @@
-use glam::{Quat, Vec3};
+use glam::{Quat, Vec3, Vec3Swizzles};
 use rapier3d::{
     geometry::{
         ColliderBuilder, ColliderHandle, Group, InteractionGroups, InteractionTestMode, Ray,
@@ -34,6 +34,8 @@ const HANDLE_AXES: &'static [Vec3] = &[
 ];
 
 const HANDLE_AXES_COLOR: &'static [Vec3] = &[Vec3::X, Vec3::Y, Vec3::Z, Vec3::X, Vec3::Y, Vec3::Z];
+
+const DRAGGER_SENSITIVITY: f32 = 2.0;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum TransformType {
@@ -98,6 +100,47 @@ impl TransformHandles {
         }
     }
 
+    fn handle_dragging(&mut self, game: &mut GameContext, transform: &mut TransformComponent) {
+        let cursor_position = game.input_state.mouse_position;
+        let window_extent = game.window.inner_size();
+
+        let (origin, direction) = game.render_scene.camera.screen_to_world_ray(
+            cursor_position.x,
+            cursor_position.y,
+            window_extent.width as f32,
+            window_extent.height as f32,
+        );
+
+        let dragging_axis = self.mouse_dragging_on.unwrap();
+        let dragging_axis = HANDLE_AXES[dragging_axis];
+
+        let object_axis = transform.orientation * dragging_axis;
+
+        let camera = &game.render_scene.camera;
+
+        let screen_space = camera
+            .world_to_screen_space(
+                object_axis + transform.position,
+                window_extent.width as f32,
+                window_extent.height as f32,
+            )
+            .xy()
+            - camera
+                .world_to_screen_space(
+                    transform.position,
+                    window_extent.width as f32,
+                    window_extent.height as f32,
+                )
+                .xy();
+
+        let mut mouse_movement = game.input_state.mouse_delta.xy();
+        mouse_movement.y = mouse_movement.y;
+
+        let dot = screen_space.dot(mouse_movement);
+
+        transform.position += object_axis * dot * DRAGGER_SENSITIVITY;
+    }
+
     pub fn update(&mut self, game: &mut GameContext, transform: &mut TransformComponent) {
         assert_eq!(self.initialized, true, "handle must be initialized");
 
@@ -151,14 +194,14 @@ impl TransformHandles {
         if self.mouse_hovering_on.is_some() && self.mouse_dragging_on.is_none() {
             if game.input_state.left_mouse_down {
                 self.mouse_dragging_on = self.mouse_hovering_on;
-                println!("drag started");
             }
         }
 
         if self.mouse_dragging_on.is_some() {
-            if !game.input_state.left_mouse_down {
+            if game.input_state.left_mouse_down {
+                self.handle_dragging(game, transform);
+            } else {
                 self.mouse_dragging_on = None;
-                println!("drag stopped");
             }
         }
     }

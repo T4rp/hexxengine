@@ -99,6 +99,15 @@ impl Part {
         )
     }
 
+    pub fn update_transform(&mut self, phys_ctx: &mut PhysicsContext) {
+        let rigid_body = phys_ctx
+            .rigid_body_set
+            .get_mut(self.rigid_body.rigid_body_handle)
+            .unwrap();
+
+        rigid_body.set_position(self.transform.as_pose(), true);
+    }
+
     pub fn update(&mut self, phyx_ctx: &mut PhysicsContext, dt: f32) {
         let rigid_body = phyx_ctx
             .rigid_body_set

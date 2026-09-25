@@ -273,9 +273,14 @@ impl GameHandler for Game {
             if let Some(selected_part) = selected_part {
                 self.transform_handles
                     .update(game_ctx, &mut selected_part.transform);
+                selected_part.update_transform(&mut game_ctx.physics_context);
             } else {
                 self.selection = None;
             }
+        }
+
+        for (i, part) in self.world.parts.iter_mut() {
+            part.update(&mut game_ctx.physics_context, dt);
         }
 
         self.update_camera(game_ctx, dt);

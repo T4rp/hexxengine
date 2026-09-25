@@ -59,6 +59,18 @@ impl Camera {
         return (self.position, direction);
     }
 
+    pub fn world_to_screen_space(
+        &self,
+        position: Vec3,
+        screen_width: f32,
+        screen_height: f32,
+    ) -> Vec3 {
+        let (proj, view) = self.calc_perspective_matrices(screen_width / screen_height);
+
+        let world_space_ps = proj * view * position.extend(1.0);
+        world_space_ps.xyz() / world_space_ps.w
+    }
+
     pub fn calc_frustrum_corners(&self, aspect_ratio: f32, near: f32, far: f32) -> [Vec3; 8] {
         let vertical_fov = 2.0 * (self.fov.to_radians() * 0.5).tan().atan2(aspect_ratio);
 
