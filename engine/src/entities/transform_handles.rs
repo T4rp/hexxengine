@@ -1,15 +1,21 @@
 use glam::{Quat, Vec3};
 use rapier3d::{
-    geometry::{ColliderBuilder, ColliderHandle, Group, InteractionGroups, InteractionTestMode},
+    geometry::{
+        ColliderBuilder, ColliderHandle, Group, InteractionGroups, InteractionTestMode, Ray,
+    },
     math::Pose,
+    pipeline::QueryFilter,
 };
 use thunderdome::Index;
 
 use crate::{
     components::TransformComponent,
-    game::{CONE_MESH_ID, SPHERE_MESH_ID},
+    game::{CONE_MESH_ID, GameContext, SPHERE_MESH_ID},
     input::InputHandler,
-    physics::{HANDLE_INTERACTION_GROUP, context::PhysicsContext, gen_userdata},
+    physics::{
+        HANDLE_INTERACTION_GROUP, UserdataType, context::PhysicsContext, gen_userdata,
+        read_userdata,
+    },
     renderer::render_scene::{MeshNode, RenderScene},
 };
 
@@ -92,13 +98,40 @@ impl TransformHandles {
         }
     }
 
-    pub fn update(
-        &mut self,
-        physics: &mut PhysicsContext,
-        input_handler: &InputHandler,
-        transform: &mut TransformComponent,
-    ) {
+    pub fn update(&mut self, game: &mut GameContext, transform: &mut TransformComponent) {
         assert_eq!(self.initialized, true, "handle must be initialized");
+
+        let cursor_position = game.input_state.mouse_position;
+        let window_extent = game.window.inner_size();
+
+        let (origin, direction) = game.render_scene.camera.screen_to_world_ray(
+            cursor_position.x,
+            cursor_position.y,
+            window_extent.width as f32,
+            window_extent.height as f32,
+        );
+
+        let physics = &mut game.physics_context;
+        let query_pipeline = physics.broad_phase.as_query_pipeline(
+            physics.narrow_phase.query_dispatcher(),
+            &physics.rigid_body_set,
+            &physics.collider_set,
+            QueryFilter::default(),
+        );
+
+        let ray = Ray::new(origin, direction);
+        let query_result = query_pipeline.cast_ray(&ray, 2000.0, true);
+
+        if let Some((handle, toi)) = query_result {
+            let (ty, index, extra_data) =
+                read_userdata(physics.collider_set.get(handle).unwrap().user_data);
+
+            if ty == UserdataType::Handle as u8 {
+                self.mouse_hovering_on = Some(extra_data as usize);
+            } else {
+                self.mouse_hovering_on = None;
+            }
+        }
 
         for handle in self.handles.iter_mut() {
             let direction = transform.orientation * handle.axis;
@@ -116,14 +149,14 @@ impl TransformHandles {
         }
 
         if self.mouse_hovering_on.is_some() && self.mouse_dragging_on.is_none() {
-            if input_handler.left_mouse_down {
+            if game.input_state.left_mouse_down {
                 self.mouse_dragging_on = self.mouse_hovering_on;
                 println!("drag started");
             }
         }
 
         if self.mouse_dragging_on.is_some() {
-            if !input_handler.left_mouse_down {
+            if !game.input_state.left_mouse_down {
                 self.mouse_dragging_on = None;
                 println!("drag stopped");
             }

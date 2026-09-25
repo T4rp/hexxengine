@@ -73,11 +73,10 @@ impl Game {
 
         let part = self.world.parts.get_mut(self.random_sphere).unwrap();
 
-        let mut is_hovering_on_handle = false;
         let mut is_hovering_on_part = false;
 
         if let Some((handle, toi)) = query_result {
-            let (ty, index, extra_data) = read_userdata(
+            let (ty, index, _extra_data) = read_userdata(
                 game_ctx
                     .physics_context
                     .collider_set
@@ -85,11 +84,6 @@ impl Game {
                     .unwrap()
                     .user_data,
             );
-
-            if ty == UserdataType::Handle as u8 {
-                self.transform_handles.mouse_hovering_on = Some(extra_data as usize);
-                is_hovering_on_handle = true;
-            }
 
             if ty == UserdataType::Part as u8 {
                 let index = Index::from_bits(index);
@@ -102,10 +96,6 @@ impl Game {
             part.transform.position = ray.origin + ray.dir * toi;
         } else {
             part.transform.position = ray.origin + ray.dir * 100.0;
-        }
-
-        if !is_hovering_on_handle {
-            self.transform_handles.mouse_hovering_on = None;
         }
 
         if !is_hovering_on_part {
@@ -281,11 +271,8 @@ impl GameHandler for Game {
             let selected_part = self.world.parts.get_mut(selected);
 
             if let Some(selected_part) = selected_part {
-                self.transform_handles.update(
-                    &mut game_ctx.physics_context,
-                    &game_ctx.input_state,
-                    &mut selected_part.transform,
-                );
+                self.transform_handles
+                    .update(game_ctx, &mut selected_part.transform);
             } else {
                 self.selection = None;
             }
